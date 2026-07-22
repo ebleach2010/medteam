@@ -1,0 +1,125 @@
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #0e1420; touch-action: none;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; user-select: none; -webkit-user-select: none; }
+#game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#ui { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+#ui > * { pointer-events: none; }
+
+#rotate-splash { position: fixed; inset: 0; background: #0e1420; color: #e8eefc; z-index: 200;
+  display: none; align-items: center; justify-content: center; text-align: center; font-size: 28px; }
+#rotate-splash small { font-size: 15px; color: #8fa3c8; }
+@media (orientation: portrait) { #rotate-splash { display: flex; } }
+
+/* ---------- Speech bubbles ---------- */
+.bubble { position: absolute; left: 0; top: 0; max-width: 190px; padding: 7px 11px;
+  background: #fff; color: #1b2233; border-radius: 14px; font-size: 13px; line-height: 1.25;
+  opacity: 0; transform-origin: 50% 100%; will-change: transform, opacity;
+  box-shadow: 0 3px 10px rgba(0,0,0,.35); text-align: center; }
+.bubble::after { content: ''; position: absolute; left: 50%; bottom: -7px; margin-left: -7px;
+  border: 7px solid transparent; border-top-color: #fff; border-bottom: none; }
+.bubble.show { transition: opacity .25s ease, scale .25s ease; opacity: 1; }
+.bubble.hide { transition: opacity .4s ease; opacity: 0; }
+.bubble.angry { background: #ff5d5d; color: #fff; font-weight: 700; animation: bshake .3s infinite; }
+.bubble.angry::after { border-top-color: #ff5d5d; }
+.bubble.critical { background: #ffd23c; color: #5a1010; font-weight: 700; }
+.bubble.critical::after { border-top-color: #ffd23c; }
+.bubble.order { background: #2f80ff; color: #fff; font-size: 20px; }
+.bubble.order::after { border-top-color: #2f80ff; }
+@keyframes bshake { 0%,100% { margin-left: 0; } 25% { margin-left: -3px; } 75% { margin-left: 3px; } }
+
+/* ---------- Item label ---------- */
+.item-label { position: absolute; padding: 2px 8px; background: rgba(10,16,28,.82); color: #cfe0ff;
+  font-size: 11px; border-radius: 8px; white-space: nowrap; }
+
+/* ---------- Joystick ---------- */
+#joy { position: absolute; width: 110px; height: 110px; border-radius: 50%;
+  background: rgba(255,255,255,.07); border: 2px solid rgba(255,255,255,.18); display: none; }
+#joy .knob { position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; border-radius: 50%;
+  background: rgba(255,255,255,.28); transform: translate(-50%,-50%); }
+
+/* ---------- Buttons ---------- */
+.btn { position: absolute; pointer-events: auto; border: none; border-radius: 50%;
+  color: #fff; font-weight: 700; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 1px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.4); text-shadow: 0 1px 2px rgba(0,0,0,.4); }
+.btn:active { filter: brightness(1.25); }
+.btn .ico { font-size: 26px; line-height: 1; }
+.btn .lbl { font-size: 9px; letter-spacing: .3px; max-width: 70px; text-align: center; }
+#btn-grab   { right: 18px;  bottom: 22px; width: 76px; height: 76px; background: #2f80ff; }
+#btn-action { right: 106px; bottom: 60px; width: 86px; height: 86px; background: #21b573; }
+#btn-tackle { right: 62px;  bottom: 148px; width: 68px; height: 68px; background: #ff5d5d; display: none; }
+#btn-swap   { right: 14px;  top: 46px; width: 58px; height: 58px; background: #7a5cff; font-size: 11px; }
+.btn.disabled { opacity: .35; }
+
+/* ---------- Radial wheel ---------- */
+#wheel { position: absolute; width: 260px; height: 260px; pointer-events: none; display: none; z-index: 60; }
+#wheel .sector { position: absolute; left: 50%; top: 50%; width: 74px; height: 74px; margin: -37px;
+  border-radius: 50%; background: rgba(18,26,44,.92); border: 2px solid #3b4d75;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; color: #dbe6ff; }
+#wheel .sector .ico { font-size: 26px; }
+#wheel .sector .txt { font-size: 9px; margin-top: 1px; }
+#wheel .sector.hot { background: #2f80ff; border-color: #9dc1ff; transform: scale(1.12); }
+#wheel .hub { position: absolute; left: 50%; top: 50%; width: 56px; height: 56px; margin: -28px;
+  border-radius: 50%; background: rgba(255,255,255,.1); border: 2px dashed rgba(255,255,255,.3); }
+
+/* ---------- HUD ---------- */
+#hud { position: absolute; top: 0; left: 0; right: 0; height: 40px; display: flex; align-items: center;
+  gap: 14px; padding: 0 12px; background: linear-gradient(rgba(8,12,22,.85), rgba(8,12,22,0));
+  color: #e8eefc; font-size: 14px; }
+#hud .day { font-weight: 800; color: #ffd23c; }
+#hud .clock { font-variant-numeric: tabular-nums; font-weight: 700; }
+#hud .score { color: #7dffb0; font-weight: 700; }
+#hud .cap { display: flex; gap: 3px; }
+#hud .cap i { width: 10px; height: 14px; border-radius: 3px; background: #2a3a5c; }
+#hud .cap i.full { background: #ff5d5d; }
+#hud .cap i.used { background: #ffb03c; }
+#hud .role { margin-left: auto; margin-right: 74px; font-weight: 700; color: #9dc1ff; }
+
+/* ---------- Vitals monitor cards ---------- */
+.mon { position: absolute; width: 148px; padding: 5px 8px; border-radius: 8px;
+  background: rgba(8,14,24,.88); border: 1px solid #2c4166; color: #b9ffd0;
+  font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.35; pointer-events: auto; }
+.mon .nm { color: #9dc1ff; font-weight: 700; font-size: 10px; white-space: nowrap; overflow: hidden; }
+.mon.alarm { border-color: #ff5d5d; animation: monblink .6s infinite; }
+@keyframes monblink { 50% { background: rgba(90,10,16,.9); } }
+.mon .ekg { display: block; width: 100%; height: 18px; }
+
+/* ---------- Modals ---------- */
+#modal-veil { position: absolute; inset: 0; background: rgba(4,8,16,.55); display: none;
+  align-items: center; justify-content: center; pointer-events: auto; z-index: 80; }
+#modal { width: min(480px, 92vw); max-height: 86vh; overflow-y: auto; background: #121a2c;
+  border: 1px solid #334a73; border-radius: 14px; padding: 16px; color: #e8eefc; }
+#modal h3 { font-size: 16px; margin-bottom: 10px; color: #ffd23c; }
+#modal .paper { background: #f6f2e6; color: #222; font-family: 'Courier New', monospace;
+  font-size: 12px; padding: 10px; border-radius: 4px; margin-bottom: 10px; white-space: pre-wrap; }
+#modal .paper b { color: #b00020; }
+#modal img.scan { width: 100%; border-radius: 6px; margin-bottom: 10px; background: #000; }
+#modal .opt { display: block; width: 100%; margin: 6px 0; padding: 11px 12px; border: 1px solid #33518a;
+  background: #1a2540; color: #e8eefc; border-radius: 9px; font-size: 14px; text-align: left; }
+#modal .opt:active { background: #2f80ff; }
+#modal .close { margin-top: 8px; width: 100%; padding: 10px; border: none; border-radius: 9px;
+  background: #26355a; color: #9db5e6; font-size: 13px; }
+
+/* ---------- Fullscreen screens (title / summary / transition) ---------- */
+#fader { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none;
+  transition: opacity .8s ease; z-index: 90; }
+#screen { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center;
+  justify-content: center; gap: 14px; background: radial-gradient(ellipse at center, #16223c, #0a0f1b);
+  color: #e8eefc; text-align: center; pointer-events: auto; z-index: 95; padding: 20px; }
+#screen h1 { font-size: 44px; letter-spacing: 2px; color: #fff; }
+#screen h1 span { color: #ff5d5d; }
+#screen h2 { font-size: 26px; color: #ffd23c; }
+#screen p { font-size: 14px; color: #a9bce0; max-width: 460px; line-height: 1.45; }
+#screen .stats { display: flex; gap: 26px; font-size: 15px; }
+#screen .stats b { display: block; font-size: 26px; }
+#screen .go { padding: 14px 44px; font-size: 18px; font-weight: 800; color: #fff; border: none;
+  border-radius: 999px; background: linear-gradient(#2f80ff, #1b5fd0); box-shadow: 0 6px 18px rgba(47,128,255,.4); }
+#screen .go:active { transform: scale(.96); }
+
+/* toast */
+#toast { position: absolute; left: 50%; top: 52px; transform: translateX(-50%); padding: 8px 16px;
+  background: rgba(16,24,42,.92); border: 1px solid #33518a; color: #e8eefc; border-radius: 999px;
+  font-size: 13px; opacity: 0; transition: opacity .3s; z-index: 70; white-space: nowrap; }
+#toast.show { opacity: 1; }
+#toast.bad { border-color: #ff5d5d; color: #ffb9b9; }
+#toast.good { border-color: #21b573; color: #b9ffd0; }

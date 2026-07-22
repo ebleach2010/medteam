@@ -1,0 +1,523 @@
+// @ts-check
+// The case library: real diagnoses, silly presentation. Times are in-game
+// minutes from arrival. Vitals offsets in timelines are deltas from baseline,
+// linearly interpolated between keyframes.
+//
+// Fields:
+//  tier 1-4 · ambulatory · complaint[] (arrival bubble pool)
+//  bubbles {stable,worse,better,critical}[] · vitals baseline
+//  timeline [{t, vitals?, event? 'critical'|'death', bubble?}]
+//  labs {name: value} — printout; UPPERCASE values render red/bold
+//  imaging {type, options[], correct, required} — must interpret if present
+//  dxOptions[] + correctDx (index) · treatment {meds[], dispo 'discharge'|'icu'|'medsurge'|'ob'}
+//  contra [{med, effect 'death'|'accelerate'|'scare', note}]
+//  agitationRisk /min in bed untreated · patienceMin (waiting-room tolerance)
+
+export const CASES = [
+  // ------------------------------------------------ TIER 1
+  {
+    id: 'tinea', name: 'Tinea pedis', tier: 1, ambulatory: true,
+    complaint: ['My feet itch SO bad dude.', 'My toes are... crusty. Help.'],
+    bubbles: {
+      stable: ['Scratch scratch scratch...', 'It smells in here or is that me?'],
+      worse: ['The itch is SPREADING.'], better: ['Ooh minty.'], critical: [],
+    },
+    vitals: { hr: 78, sbp: 122, dbp: 78, rr: 14, spo2: 99, temp: 36.9 },
+    timeline: [],
+    labs: { 'KOH prep': 'HYPHAE SEEN', 'CBC': 'normal' },
+    dxOptions: ['Athlete’s foot (tinea pedis)', 'Eczema', 'Gout', 'Cellulitis', 'Plantar wart'],
+    correctDx: 0,
+    treatment: { meds: ['antifungal'], dispo: 'discharge' },
+    contra: [{ med: 'steroidcream', effect: 'scare', note: 'Steroids alone feed the fungus!' }],
+    agitationRisk: 0, patienceMin: 600, score: 100, rescueChance: 1,
+  },
+  {
+    id: 'strep', name: 'Strep pharyngitis', tier: 1, ambulatory: true,
+    complaint: ['My throat feels like I swallowed a cactus.', 'Hurts to swallow. Even pudding!'],
+    bubbles: {
+      stable: ['*swallows painfully*', 'Can I get a popsicle?'],
+      worse: ['Throat’s getting worse...'], better: ['Pudding time?'], critical: [],
+    },
+    vitals: { hr: 92, sbp: 118, dbp: 76, rr: 15, spo2: 98, temp: 38.4 },
+    timeline: [],
+    labs: { 'Rapid strep': 'POSITIVE', 'CBC': 'WBC 13.2' },
+    dxOptions: ['Strep throat', 'Mono', 'Viral pharyngitis', 'Epiglottitis', 'Tonsil stone'],
+    correctDx: 0,
+    treatment: { meds: ['amoxicillin'], dispo: 'discharge' },
+    contra: [],
+    agitationRisk: 0, patienceMin: 480, score: 100, rescueChance: 1,
+  },
+  {
+    id: 'uti', name: 'Simple cystitis (UTI)', tier: 1, ambulatory: true,
+    complaint: ['It burns when I pee and I pee every 5 minutes.'],
+    bubbles: {
+      stable: ['Where’s the bathroom?', '...I need the bathroom again.'],
+      worse: ['Now my back kind of hurts?'], better: ['Finally, sweet relief.'], critical: [],
+    },
+    vitals: { hr: 84, sbp: 124, dbp: 80, rr: 14, spo2: 99, temp: 37.4 },
+    timeline: [],
+    labs: { 'Urinalysis': 'NITRITES +, LEUK ESTERASE +', 'BMP': 'normal' },
+    dxOptions: ['Simple UTI', 'Kidney stone', 'Pyelonephritis', 'STI', 'Overactive bladder'],
+    correctDx: 0,
+    treatment: { meds: ['nitrofurantoin'], dispo: 'discharge' },
+    contra: [],
+    agitationRisk: 0, patienceMin: 480, score: 100, rescueChance: 1,
+  },
+  {
+    id: 'ankle', name: 'Ankle injury', tier: 1, ambulatory: true,
+    complaint: ['I dunked. The landing did not go great.', 'Rolled my ankle doing parkour. Worth it.'],
+    bubbles: {
+      stable: ['It’s throbbing, doc.', 'Do I still get to play Saturday?'],
+      worse: ['It’s the size of a grapefruit now.'], better: ['Walking! Ish!'], critical: [],
+    },
+    vitals: { hr: 88, sbp: 130, dbp: 82, rr: 15, spo2: 99, temp: 36.8 },
+    timeline: [],
+    labs: null,
+    imaging: {
+      type: 'ankle_normal', required: true,
+      options: ['No fracture — sprain', 'Distal fibula fracture', 'Dislocation', 'Osteosarcoma'],
+      correct: 0,
+    },
+    dxOptions: ['Ankle sprain', 'Ankle fracture', 'Achilles rupture', 'Gout flare', 'DVT'],
+    correctDx: 0,
+    treatment: { meds: ['nsaid'], dispo: 'discharge' },
+    contra: [],
+    agitationRisk: 0, patienceMin: 420, score: 120, rescueChance: 1,
+  },
+  {
+    id: 'derm', name: 'Contact dermatitis', tier: 1, ambulatory: true,
+    complaint: ['I hugged a plant. The plant won.', 'New detergent. My skin is FURIOUS.'],
+    bubbles: {
+      stable: ['Itchy. So itchy.', 'Don’t scratch don’t scratch don’t—*scratches*'],
+      worse: ['The rash is winning.'], better: ['Ahhh. Relief.'], critical: [],
+    },
+    vitals: { hr: 80, sbp: 120, dbp: 78, rr: 14, spo2: 99, temp: 37.0 },
+    timeline: [],
+    labs: null,
+    dxOptions: ['Contact dermatitis', 'Anaphylaxis', 'Shingles', 'Scabies', 'Psoriasis'],
+    correctDx: 0,
+    treatment: { meds: ['steroidcream'], dispo: 'discharge' },
+    contra: [{ med: 'epi', effect: 'scare', note: 'Epi for a rash?! Their heart is RACING.' }],
+    agitationRisk: 0, patienceMin: 480, score: 100, rescueChance: 1,
+  },
+
+  // ------------------------------------------------ TIER 2
+  {
+    id: 'asthma', name: 'Asthma exacerbation', tier: 2, ambulatory: true,
+    complaint: ['Can’t... catch... my breath...', '*wheeze* Forgot my inhaler *wheeze*'],
+    bubbles: {
+      stable: ['*wheezing intensifies*'],
+      worse: ['Chest... so tight...'], better: ['Oh THANK you, sweet nebulizer.'],
+      critical: ['...can’t... talk...'],
+    },
+    vitals: { hr: 112, sbp: 132, dbp: 84, rr: 28, spo2: 91, temp: 37.0 },
+    timeline: [
+      { t: 60, vitals: { spo2: -4, rr: 6 }, bubble: 'worse' },
+      { t: 140, event: 'critical' },
+      { t: 200, event: 'death', cause: 'respiratory failure' },
+    ],
+    labs: null,
+    imaging: {
+      type: 'cxr_hyper', required: false,
+      options: ['Hyperinflation — asthma', 'Pneumonia', 'Pneumothorax', 'Normal'],
+      correct: 0,
+    },
+    dxOptions: ['Asthma exacerbation', 'Panic attack', 'Pneumonia', 'PE', 'CHF'],
+    correctDx: 0,
+    treatment: { meds: ['albuterol', 'steroids'], dispo: 'discharge' },
+    contra: [{ med: 'metoprolol', effect: 'accelerate', note: 'A beta-blocker in asthma?! Bronchospasm worsening FAST.' }],
+    agitationRisk: 0.001, patienceMin: 200, score: 200, rescueChance: 0.6,
+  },
+  {
+    id: 'anaphylaxis', name: 'Anaphylaxis', tier: 2, ambulatory: true,
+    complaint: ['Bee sting... face feels puffy... is my voice weird??'],
+    bubbles: {
+      stable: ['My lips look like a duck’s.'],
+      worse: ['Throat’s closing... kinda scary...'], better: ['Whew. That epi SLAPS.'],
+      critical: ['*stridor noises*'],
+    },
+    vitals: { hr: 122, sbp: 102, dbp: 64, rr: 26, spo2: 93, temp: 37.1 },
+    timeline: [
+      { t: 40, vitals: { sbp: -20, spo2: -5 }, bubble: 'worse' },
+      { t: 90, event: 'critical' },
+      { t: 140, event: 'death', cause: 'airway obstruction' },
+    ],
+    labs: null,
+    dxOptions: ['Anaphylaxis', 'Angioedema (ACE-i)', 'Asthma', 'Panic attack', 'Croup'],
+    correctDx: 0,
+    treatment: { meds: ['epi', 'steroids'], dispo: 'medsurge' },
+    contra: [],
+    agitationRisk: 0.002, patienceMin: 60, score: 260, rescueChance: 0.6,
+  },
+  {
+    id: 'appy', name: 'Appendicitis', tier: 2, ambulatory: true,
+    complaint: ['My belly button pain MOVED. It’s down-right now. Weird flex.'],
+    bubbles: {
+      stable: ['Please don’t press there. You’re going to press there, aren’t you.'],
+      worse: ['It POPPED?? Something popped!'], better: ['Surgery? As long as I can keep it in a jar.'],
+      critical: ['Everything hurts... and I’m burning up...'],
+    },
+    vitals: { hr: 98, sbp: 126, dbp: 80, rr: 17, spo2: 98, temp: 38.1 },
+    timeline: [
+      { t: 240, vitals: { hr: 30, temp: 1.5, sbp: -20 }, event: 'critical', bubble: 'worse' }, // perforation
+      { t: 420, event: 'death', cause: 'septic shock (perforation)' },
+    ],
+    labs: { 'CBC': 'WBC 15.8', 'CRP': 'ELEVATED' },
+    imaging: {
+      type: 'ct_appy', required: true,
+      options: ['Appendicitis', 'Normal abdomen', 'Kidney stone', 'Ovarian cyst'],
+      correct: 0,
+    },
+    dxOptions: ['Appendicitis', 'Gastroenteritis', 'Kidney stone', 'Ectopic pregnancy', 'Constipation'],
+    correctDx: 0,
+    treatment: { meds: ['ceftriaxone', 'morphine'], dispo: 'medsurge' },
+    contra: [],
+    agitationRisk: 0.001, patienceMin: 240, score: 240, rescueChance: 0.5,
+  },
+  {
+    id: 'ptx', name: 'Spontaneous pneumothorax', tier: 2, ambulatory: true,
+    complaint: ['Sneezed and now my chest feels... deflated?', 'Sharp chest pain — I’m tall and 19, is that bad?'],
+    bubbles: {
+      stable: ['Breathing feels one-sided. Like my lung rage-quit.'],
+      worse: ['Getting harder to breathe...'], better: ['Re-inflated! Like a pool floatie!'],
+      critical: ['*gasping*'],
+    },
+    vitals: { hr: 104, sbp: 124, dbp: 78, rr: 24, spo2: 93, temp: 36.9 },
+    timeline: [
+      { t: 120, vitals: { spo2: -6, hr: 20 }, bubble: 'worse' },
+      { t: 220, event: 'critical' },
+      { t: 300, event: 'death', cause: 'tension pneumothorax' },
+    ],
+    labs: null,
+    imaging: {
+      type: 'cxr_ptx', required: true,
+      options: ['Pneumothorax', 'Normal', 'Pneumonia', 'Rib fracture'],
+      correct: 0,
+    },
+    dxOptions: ['Pneumothorax', 'Pleurisy', 'Costochondritis', 'PE', 'MI'],
+    correctDx: 0,
+    treatment: { meds: ['morphine'], dispo: 'medsurge' },
+    contra: [],
+    agitationRisk: 0.001, patienceMin: 180, score: 240, rescueChance: 0.5,
+  },
+  {
+    id: 'od', name: 'Opioid overdose', tier: 2, ambulatory: false,
+    complaint: ['*found slumped over, barely breathing*'],
+    bubbles: {
+      stable: ['*snoring respirations*'],
+      worse: ['*breathing slows...*'], better: ['WHOA. WHO TOOK MY HIGH. RUDE.'],
+      critical: ['*turning blue*'],
+    },
+    vitals: { hr: 58, sbp: 100, dbp: 60, rr: 6, spo2: 84, temp: 36.2 },
+    timeline: [
+      { t: 50, vitals: { rr: -2, spo2: -8 }, bubble: 'worse' },
+      { t: 90, event: 'critical' },
+      { t: 130, event: 'death', cause: 'respiratory arrest' },
+    ],
+    labs: null,
+    dxOptions: ['Opioid overdose', 'Stroke', 'Hypoglycemia', 'Head injury', 'Drunk'],
+    correctDx: 0,
+    treatment: { meds: ['naloxone'], dispo: 'medsurge' },
+    contra: [],
+    // wakes up FURIOUS post-naloxone — the tackle tutorial
+    agitationRisk: 0, agitateOnTreat: true, patienceMin: 999, score: 260, rescueChance: 0.7,
+  },
+  {
+    id: 'labor', name: 'Precipitous labor', tier: 2, ambulatory: true,
+    complaint: ['THE BABY IS COMING. LIKE, NOW-NOW.'],
+    bubbles: {
+      stable: ['Contractions two minutes apart!! WHERE IS BIRTHPLACE.'],
+      worse: ['I AM NOT NAMING THIS BABY “WAITING ROOM”!!'],
+      better: ['*newborn crying* ...we’re naming them after you.'],
+      critical: ['IT’S HAPPENING RIGHT HERE.'],
+    },
+    vitals: { hr: 110, sbp: 138, dbp: 88, rr: 22, spo2: 98, temp: 37.2 },
+    timeline: [
+      { t: 100, event: 'critical', bubble: 'worse' },
+      { t: 180, event: 'death', cause: 'delivery complications in the hallway' },
+    ],
+    labs: null,
+    dxOptions: ['Active labor', 'Braxton-Hicks', 'Appendicitis', 'Food poisoning', 'Kidney stone'],
+    correctDx: 0,
+    treatment: { meds: [], dispo: 'ob' }, // the treatment IS getting them to Birthplace
+    contra: [],
+    agitationRisk: 0.002, patienceMin: 90, score: 280, rescueChance: 0.6,
+  },
+
+  // ------------------------------------------------ TIER 3
+  {
+    id: 'dka', name: 'Diabetic ketoacidosis', tier: 3, ambulatory: true,
+    complaint: ['So thirsty... drank a lake, still thirsty. And my breath smells like nail polish?'],
+    bubbles: {
+      stable: ['*deep sighing breaths* Water... please...'],
+      worse: ['Feel like a raisin... a dizzy raisin...'], better: ['Feeling less... acidic. Is that a thing?'],
+      critical: ['*barely responsive*'],
+    },
+    vitals: { hr: 118, sbp: 104, dbp: 66, rr: 28, spo2: 97, temp: 37.0 },
+    timeline: [
+      { t: 120, vitals: { hr: 20, sbp: -20 }, bubble: 'worse' },
+      { t: 240, event: 'critical' },
+      { t: 330, event: 'death', cause: 'refractory acidosis' },
+    ],
+    labs: { 'Glucose': '552 HIGH', 'K+': '5.9 HIGH', 'pH': '7.08 ACIDOTIC', 'Ketones': 'LARGE' },
+    dxOptions: ['DKA', 'Hyperosmolar state', 'Sepsis', 'Gastroenteritis', 'Panic attack'],
+    correctDx: 0,
+    treatment: { meds: ['insulin', 'fluids'], dispo: 'icu' },
+    // insulin alone without fluids/K+ awareness: only lethal if labs never drawn
+    labsRequiredForMeds: ['insulin'],
+    contra: [],
+    agitationRisk: 0.001, patienceMin: 180, score: 340, rescueChance: 0.5,
+  },
+  {
+    id: 'sepsis', name: 'Sepsis (pneumonia)', tier: 3, ambulatory: false,
+    complaint: ['Been coughing all week... now I feel really, really wrong.'],
+    bubbles: {
+      stable: ['*teeth chattering* So cold. So hot. Both?'],
+      worse: ['Room’s going fuzzy...'], better: ['I can feel my everything again.'],
+      critical: ['*mumbling incoherently*'],
+    },
+    vitals: { hr: 124, sbp: 92, dbp: 54, rr: 26, spo2: 90, temp: 39.4 },
+    timeline: [
+      { t: 90, vitals: { sbp: -20, hr: 16 }, bubble: 'worse' },
+      { t: 200, event: 'critical' },
+      { t: 300, event: 'death', cause: 'septic shock' },
+    ],
+    labs: { 'Lactate': '4.8 HIGH', 'CBC': 'WBC 22.4', 'Cultures': 'pending' },
+    imaging: {
+      type: 'cxr_infiltrate', required: false,
+      options: ['Lobar pneumonia', 'Normal', 'Pneumothorax', 'CHF'],
+      correct: 0,
+    },
+    dxOptions: ['Sepsis from pneumonia', 'Flu', 'COVID', 'PE', 'Heat stroke'],
+    correctDx: 0,
+    treatment: { meds: ['ceftriaxone', 'fluids'], dispo: 'icu' },
+    contra: [],
+    agitationRisk: 0.002, patienceMin: 120, score: 340, rescueChance: 0.5,
+  },
+  {
+    id: 'stemi', name: 'STEMI', tier: 3, ambulatory: true,
+    complaint: ['Elephant. On my chest. Big one. Left arm’s tingly too.'],
+    bubbles: {
+      stable: ['*clutching chest* It’s squeezing...'],
+      worse: ['The elephant brought FRIENDS.'], better: ['Elephant’s dismounting. Bless you people.'],
+      critical: ['*collapses back, gray and sweaty*'],
+    },
+    vitals: { hr: 105, sbp: 148, dbp: 92, rr: 20, spo2: 94, temp: 37.0 },
+    ekg: 'ST ELEVATION V1-V4',
+    timeline: [
+      { t: 90, vitals: { sbp: -30, hr: 25 }, bubble: 'worse' },
+      { t: 180, event: 'critical' },
+      { t: 250, event: 'death', cause: 'V-fib arrest' },
+    ],
+    labs: { 'Troponin': '2.31 HIGH', 'BMP': 'normal', 'CBC': 'normal' },
+    imaging: {
+      type: 'cxr_normal', required: false,
+      options: ['Normal', 'Widened mediastinum', 'Pneumothorax', 'Cardiomegaly'],
+      correct: 0,
+    },
+    dxOptions: ['STEMI', 'Unstable angina', 'Aortic dissection', 'Pericarditis', 'Heartburn'],
+    correctDx: 0,
+    treatment: { meds: ['aspirin', 'heparin'], dispo: 'icu' },
+    contra: [{ med: 'tpa', effect: 'death', note: 'tPA here?! They needed the cath lab — massive bleed.' }],
+    agitationRisk: 0.001, patienceMin: 90, score: 380, rescueChance: 0.4,
+  },
+  {
+    id: 'stroke_ischemic', name: 'Ischemic stroke', tier: 3, ambulatory: false,
+    complaint: ['My fash ish... shliding off? Arm won’t lishen to me.'],
+    bubbles: {
+      stable: ['Whash happening to my wordsh...'],
+      worse: ['Can’t feel my whole shide now.'], better: ['Words! I have words again!'],
+      critical: ['*unresponsive, one pupil sluggish*'],
+    },
+    vitals: { hr: 96, sbp: 168, dbp: 96, rr: 16, spo2: 96, temp: 37.0 },
+    timeline: [
+      { t: 120, vitals: { sbp: 12 }, bubble: 'worse' },
+      { t: 240, event: 'critical' },
+      { t: 360, event: 'death', cause: 'malignant cerebral edema' },
+    ],
+    labs: { 'Glucose': '104 (mimic ruled out)', 'INR': '1.0' },
+    imaging: {
+      type: 'ct_head_normal', required: true,
+      options: ['No bleed — ischemic', 'Hemorrhage', 'Tumor', 'Normal young brain'],
+      correct: 0,
+    },
+    dxOptions: ['Ischemic stroke', 'Hemorrhagic stroke', 'Bell’s palsy', 'Hypoglycemia', 'Migraine'],
+    correctDx: 0,
+    treatment: { meds: ['tpa'], dispo: 'icu' },
+    tpaNeedsCT: true, // tPA before CT → coin-flip hemorrhage
+    contra: [],
+    agitationRisk: 0.003, patienceMin: 60, score: 420, rescueChance: 0.4,
+  },
+  {
+    id: 'hyperk', name: 'Hyperkalemia', tier: 3, ambulatory: true,
+    complaint: ['Missed dialysis twice... now my heart’s doing jazz.'],
+    bubbles: {
+      stable: ['My heartbeat feels... syncopated.'],
+      worse: ['Whoa. Big skipped beat there.'], better: ['Heart’s back on the metronome.'],
+      critical: ['*clutches chest, rhythm collapsing*'],
+    },
+    vitals: { hr: 54, sbp: 138, dbp: 84, rr: 16, spo2: 97, temp: 36.8 },
+    ekg: 'PEAKED T WAVES',
+    timeline: [
+      { t: 100, vitals: { hr: -10 }, bubble: 'worse' },
+      { t: 180, event: 'critical' },
+      { t: 240, event: 'death', cause: 'hyperkalemic arrest' },
+    ],
+    labs: { 'K+': '7.2 CRITICAL', 'Creatinine': '8.8 HIGH', 'Glucose': '96' },
+    dxOptions: ['Hyperkalemia', 'MI', 'Panic attack', 'Hypokalemia', 'Digoxin toxicity'],
+    correctDx: 0,
+    treatment: { meds: ['calcium', 'insulin'], dispo: 'icu' },
+    labsRequiredForMeds: ['calcium', 'insulin'],
+    contra: [],
+    agitationRisk: 0.001, patienceMin: 120, score: 380, rescueChance: 0.45,
+  },
+  {
+    id: 'ectopic', name: 'Ectopic pregnancy', tier: 3, ambulatory: true,
+    complaint: ['Sharp pain low on one side... and I feel faint.'],
+    bubbles: {
+      stable: ['It’s a stabbing kind of pain...'],
+      worse: ['Shoulder hurts now too? That’s weird, right?'], better: ['OR team’s got me. Thank you.'],
+      critical: ['*pale, barely conscious*'],
+    },
+    vitals: { hr: 108, sbp: 106, dbp: 64, rr: 20, spo2: 98, temp: 37.0 },
+    timeline: [
+      { t: 90, vitals: { sbp: -25, hr: 25 }, bubble: 'worse' },
+      { t: 170, event: 'critical' },
+      { t: 240, event: 'death', cause: 'hemorrhagic shock' },
+    ],
+    labs: { 'β-hCG': 'POSITIVE 4,120', 'Hgb': '9.1 DROPPING' },
+    imaging: {
+      type: 'ct_freefluid', required: true,
+      options: ['Free fluid — ruptured ectopic', 'Normal', 'Appendicitis', 'Kidney stone'],
+      correct: 0,
+    },
+    dxOptions: ['Ectopic pregnancy', 'Ovarian cyst', 'Appendicitis', 'UTI', 'Food poisoning'],
+    correctDx: 0,
+    treatment: { meds: ['fluids'], dispo: 'ob' },
+    contra: [],
+    agitationRisk: 0.001, patienceMin: 90, score: 400, rescueChance: 0.45,
+  },
+  {
+    id: 'htn', name: 'Hypertensive emergency', tier: 3, ambulatory: true,
+    complaint: ['Worst headache of my— no wait, second worst. Vision’s sparkly.'],
+    bubbles: {
+      stable: ['My pulse is pounding in my EARS.'],
+      worse: ['The sparkles are winning...'], better: ['Ears have stopped drumming. Nice.'],
+      critical: ['*confused, slurring*'],
+    },
+    vitals: { hr: 92, sbp: 224, dbp: 128, rr: 16, spo2: 97, temp: 37.0 },
+    timeline: [
+      { t: 130, vitals: { sbp: 10 }, bubble: 'worse' },
+      { t: 250, event: 'critical' },
+      { t: 340, event: 'death', cause: 'intracranial hemorrhage' },
+    ],
+    labs: { 'Creatinine': '2.1 HIGH', 'Troponin': 'normal' },
+    dxOptions: ['Hypertensive emergency', 'Migraine', 'SAH', 'Anxiety', 'Pheochromocytoma'],
+    correctDx: 0,
+    treatment: { meds: ['nicardipine'], dispo: 'icu' },
+    contra: [],
+    agitationRisk: 0.001, patienceMin: 150, score: 360, rescueChance: 0.5,
+  },
+
+  // ------------------------------------------------ TIER 4
+  {
+    id: 'stroke_sah', name: 'Subarachnoid hemorrhage', tier: 4, ambulatory: false,
+    complaint: ['THUNDERCLAP headache. Like a lightning bolt to the skull.'],
+    bubbles: {
+      stable: ['Worst headache of my LIFE. Not exaggerating.'],
+      worse: ['Neck’s stiff as a board now...'], better: ['Neurosurgery? Take me, I’m yours.'],
+      critical: ['*vomits, becoming unresponsive*'],
+    },
+    vitals: { hr: 88, sbp: 186, dbp: 104, rr: 15, spo2: 96, temp: 37.1 },
+    timeline: [
+      { t: 100, vitals: { sbp: 10, hr: -8 }, bubble: 'worse' },
+      { t: 200, event: 'critical' },
+      { t: 280, event: 'death', cause: 're-bleed with herniation' },
+    ],
+    labs: { 'INR': '1.0', 'CBC': 'normal' },
+    imaging: {
+      type: 'ct_head_bleed', required: true,
+      options: ['Hemorrhage — SAH', 'No bleed — ischemic', 'Normal', 'Tumor'],
+      correct: 0,
+    },
+    // LOOKS like the ischemic stroke at triage. The CT is the whole ballgame:
+    dxOptions: ['Subarachnoid hemorrhage', 'Ischemic stroke', 'Migraine', 'Meningitis', 'Tension headache'],
+    correctDx: 0,
+    treatment: { meds: ['nicardipine'], dispo: 'icu' },
+    contra: [{ med: 'tpa', effect: 'death', note: 'tPA in a HEMORRHAGE. The bleed is now a flood.' }],
+    agitationRisk: 0.002, patienceMin: 60, score: 500, rescueChance: 0.35,
+  },
+  {
+    id: 'meningitis', name: 'Bacterial meningitis', tier: 4, ambulatory: true,
+    complaint: ['Fever, my neck won’t bend, and PLEASE dim the lights.'],
+    bubbles: {
+      stable: ['*shielding eyes* Too bright. Everything’s too bright.'],
+      worse: ['Head’s splitting... can’t think...'], better: ['Lights are... tolerable. Progress.'],
+      critical: ['*seizing*'],
+    },
+    vitals: { hr: 116, sbp: 108, dbp: 66, rr: 22, spo2: 96, temp: 39.8 },
+    timeline: [
+      { t: 80, vitals: { temp: 0.6, hr: 12 }, bubble: 'worse' },
+      { t: 170, event: 'critical' },
+      { t: 250, event: 'death', cause: 'cerebral edema' },
+    ],
+    labs: { 'CBC': 'WBC 24.1', 'LP': 'CLOUDY CSF, PMNs, LOW GLUCOSE' },
+    imaging: {
+      type: 'ct_head_normal', required: false,
+      options: ['No bleed / normal', 'Hemorrhage', 'Abscess', 'Tumor'],
+      correct: 0,
+    },
+    dxOptions: ['Bacterial meningitis', 'Migraine', 'Viral meningitis', 'SAH', 'Heat stroke'],
+    correctDx: 0,
+    treatment: { meds: ['ceftriaxone', 'steroids'], dispo: 'icu' },
+    contra: [],
+    agitationRisk: 0.004, patienceMin: 90, score: 480, rescueChance: 0.4,
+  },
+  {
+    id: 'gbs', name: 'Guillain-Barré syndrome', tier: 4, ambulatory: true,
+    complaint: ['My feet went numb last week... now my LEGS are quitting on me.'],
+    bubbles: {
+      stable: ['The tingling’s climbing. Like a slow elevator of nope.'],
+      worse: ['It’s reaching my chest... breathing’s work now...'],
+      better: ['Still weak, but breathing’s easier. IVIG magic.'],
+      critical: ['*can barely breathe*'],
+    },
+    vitals: { hr: 90, sbp: 128, dbp: 80, rr: 18, spo2: 97, temp: 36.9 },
+    timeline: [
+      { t: 150, vitals: { rr: 8, spo2: -4 }, bubble: 'worse' },
+      { t: 300, event: 'critical' },
+      { t: 400, event: 'death', cause: 'neuromuscular respiratory failure' },
+    ],
+    labs: { 'LP': 'HIGH PROTEIN, normal cells (albuminocytologic dissociation)', 'CBC': 'normal' },
+    dxOptions: ['Guillain-Barré', 'MS flare', 'Stroke', 'Conversion disorder', 'Tick paralysis'],
+    correctDx: 0,
+    treatment: { meds: ['ivig'], dispo: 'icu' },
+    contra: [{ med: 'steroids', effect: 'scare', note: 'Steroids don’t help GBS — time wasted!' }],
+    agitationRisk: 0.001, patienceMin: 240, score: 500, rescueChance: 0.4,
+  },
+  {
+    id: 'mg', name: 'Myasthenic crisis', tier: 4, ambulatory: true,
+    complaint: ['My eyelids are on strike and swallowing is a group project.'],
+    bubbles: {
+      stable: ['*droopy-eyed* Everything’s heavy...'],
+      worse: ['Breathing feels like bench-pressing...'],
+      better: ['Eyelids: back online.'],
+      critical: ['*respiratory muscles failing*'],
+    },
+    vitals: { hr: 94, sbp: 132, dbp: 82, rr: 20, spo2: 95, temp: 37.0 },
+    timeline: [
+      { t: 130, vitals: { rr: 8, spo2: -5 }, bubble: 'worse' },
+      { t: 260, event: 'critical' },
+      { t: 350, event: 'death', cause: 'respiratory failure' },
+    ],
+    labs: { 'CBC': 'normal', 'TSH': 'normal', 'Anti-AChR': 'POSITIVE' },
+    dxOptions: ['Myasthenic crisis', 'GBS', 'Stroke', 'Botulism', 'Chronic fatigue'],
+    correctDx: 0,
+    treatment: { meds: ['ivig'], dispo: 'icu' },
+    contra: [{ med: 'gentamicin', effect: 'accelerate', note: 'Aminoglycosides BLOCK the neuromuscular junction — crisis deepens!' }],
+    agitationRisk: 0.001, patienceMin: 200, score: 500, rescueChance: 0.4,
+  },
+];
+
+export const caseById = (id) => CASES.find((c) => c.id === id);
+export const casesByTier = (t) => CASES.filter((c) => c.tier === t);
