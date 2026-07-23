@@ -208,3 +208,52 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0e1420; t
 #toast.show { opacity: 1; }
 #toast.bad { border-color: #ff5d5d; color: #ffb9b9; }
 #toast.good { border-color: #21b573; color: #b9ffd0; }
+
+/* ---- MED-DOC 4000: green-phosphor CRT ---- */
+#modal.crtbox {
+  position: relative;
+  background: #060d08;
+  border: 3px solid #1e4a28;
+  border-radius: 10px;
+  box-shadow: 0 0 44px rgba(57, 255, 110, 0.22), inset 0 0 90px rgba(22, 120, 52, 0.14);
+  color: #4dff7c;
+  font-family: 'Courier New', ui-monospace, monospace;
+}
+#modal.crtbox::after { /* scanlines */
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: 8px;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.22) 0 1px, transparent 1px 3px);
+}
+#modal.crtbox h3 {
+  color: #4dff7c;
+  text-shadow: 0 0 7px rgba(77, 255, 124, 0.8);
+  font-family: inherit;
+  letter-spacing: 2px;
+}
+.crt-log {
+  min-height: 30vh;
+  max-height: 48vh;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #49f07a;
+  text-shadow: 0 0 5px rgba(73, 240, 122, 0.55);
+  margin: 6px 0 8px;
+}
+.crt-log .you { color: #c8ffdb; opacity: 0.95; }
+.crt-ps { align-self: center; margin-right: 4px; font-weight: 700; text-shadow: 0 0 5px rgba(73, 240, 122, 0.55); }
+#modal.crtbox input {
+  background: #04150b;
+  color: #4dff7c;
+  border: 1px solid #1e4a28;
+  font-family: inherit;
+  text-shadow: 0 0 5px rgba(73, 240, 122, 0.45);
+  caret-color: #4dff7c;
+}
+#modal.crtbox .crt-go { background: #123c1e; color: #4dff7c; border-color: #1e4a28; }
+#modal.crtbox .close { background: #0c1a10; color: #7cc796; border: 1px solid #1e4a28; }

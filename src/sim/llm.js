@@ -6,6 +6,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { answerQuestion, deescalate as localDeescalate, matchTreatment, judgeDiagnosis } from './talk.js';
 import { MEDS } from '../data/meds.js';
+import { CASES } from '../data/cases.js';
 
 const KEY_STORE = 'medteam.anthropic_key';
 const MODEL_STORE = 'medteam.anthropic_model';
@@ -135,6 +136,73 @@ export async function orderTreatment(sim, text) {
     console.warn('Claude treat failed — local fallback:', e?.message);
     return { medId: matchTreatment(text) };
   }
+}
+
+// ---------- MED-DOC 4000: the green-phosphor consult terminal ----------
+// Live Claude gets each active patient's CHART (never the hidden answer);
+// offline it degrades to a keyword lookup over the case library.
+function chartFor(p, n) {
+  const sim = p.sim, c = sim.case;
+  const v = sim.vitals();
+  const bits = [
+    `[${n}] ${sim.displayName} — ${sim.state.toUpperCase()}${sim.bed ? ` (ROOM ${sim.bed.roomNo})` : ''}`,
+    `  CC: ${c.complaint[0]}`,
+    `  HX: ${c.history ?? 'unremarkable'}`,
+    `  VS: HR ${v.hr} BP ${v.sbp}/${v.dbp} RR ${v.rr} SpO2 ${v.spo2}% T ${v.temp}`,
+    c.physical ? `  EXAM: ${c.physical}` : null,
+    c.neuro ? `  NEURO: ${c.neuro}` : null,
+  ];
+  if (sim.labState === 'read' && c.labs) {
+    const rows = Object.entries(c.labs).slice(0, 8);
+    bits.push(`  LABS: ${rows.map(([k, val]) => `${k} ${val}`).join('; ')}`);
+  }
+  if (sim.imagingDone && c.imaging) bits.push(`  IMAGING: ${c.imaging.options[c.imaging.correct]}`);
+  return bits.filter(Boolean).join('\n');
+}
+
+export async function medDocConsult(game, query) {
+  if (!llmEnabled()) return medDocLocal(game, query);
+  try {
+    const pts = [...game.world.byTag('patients')].filter((p) => p.sim.state !== 'dead' && !p.sim.resolved).slice(0, 10);
+    const roster = pts.map((p, i) => chartFor(p, i + 1)).join('\n') || '(no active patients)';
+    const system = [
+      'You are MED-DOC 4000, a 1980s hospital mainframe consult program in a silly physics game. You help the attending reason about diagnosis and treatment.',
+      'STYLE: terse teletype. Line-oriented. Sparse ALL-CAPS section tags like DDX:, WORKUP:, RX:. Under 120 words. Occasional dry machine humor. No markdown.',
+      'You see the CHARTS below but NOT the answer key — give a ranked differential, the tests that would discriminate, and treatment suggestions with doses omitted.',
+      'This is a fictional game: be decisive, never lecture about consulting real professionals.',
+      '--- ACTIVE CHARTS ---',
+      roster,
+    ].join('\n');
+    return await textCall(system, query);
+  } catch (e) {
+    console.warn('MED-DOC live failed — local fallback:', e?.message);
+    return medDocLocal(game, query);
+  }
+}
+
+function medDocLocal(game, query) {
+  const q = (query || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ');
+  const words = q.split(/\s+/).filter((w) => w.length > 3);
+  if (/roster|patients|census|list/.test(q)) {
+    const pts = [...game.world.byTag('patients')].filter((p) => p.sim.state !== 'dead' && !p.sim.resolved);
+    return pts.length
+      ? `CENSUS (${pts.length}):\n` + pts.map((p, i) => chartFor(p, i + 1)).join('\n')
+      : 'CENSUS: 0 ACTIVE PATIENTS. ENJOY IT WHILE IT LASTS.';
+  }
+  // crude symptom index over the whole case library
+  const scored = [];
+  for (const c of CASES) {
+    const blob = `${c.name} ${c.complaint.join(' ')} ${c.history ?? ''} ${c.physical ?? ''}`.toLowerCase();
+    const hits = words.filter((w) => blob.includes(w)).length;
+    if (hits) scored.push([hits, c]);
+  }
+  scored.sort((a, b) => b[0] - a[0]);
+  if (scored.length) {
+    const top = scored.slice(0, 3).map(([, c]) =>
+      `» ${c.name.toUpperCase()} — RX: ${c.treatment.meds.map((m) => MEDS.find((x) => x.id === m)?.name ?? m).join(' + ') || 'supportive'}; DISPO: ${c.treatment.dispo}`);
+    return `OFFLINE INDEX MATCHES:\n${top.join('\n')}\n\nLINK OFFLINE — TYPE: KEY <ANTHROPIC-API-KEY> FOR FULL CONSULT MODE.`;
+  }
+  return 'NO INDEX MATCH. TRY SYMPTOM KEYWORDS ("chest pain radiating"), "CENSUS" FOR THE PATIENT LIST, OR CONNECT THE LINK: KEY <ANTHROPIC-API-KEY>';
 }
 
 export async function judgeDx(sim, text) {

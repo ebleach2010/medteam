@@ -11,7 +11,7 @@ document.addEventListener('gesturestart', (e) => e.preventDefault());
 const physics = await initPhysics();
 const params = new URLSearchParams(location.search);
 const game = new Game(document.getElementById('game'), physics, {
-  seed: params.get('seed') ? +params.get('seed') : 1337,
+  seed: params.get('seed') ? +params.get('seed') : ((Math.random() * 0x7fffffff) | 0), // fresh shuffle every boot — no more ankle-sprain openers
   lite: params.has('lite'),
 });
 installTestApi(game);

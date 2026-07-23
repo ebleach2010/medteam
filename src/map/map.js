@@ -390,6 +390,21 @@ export function buildMap(scene, physics) {
     c.rotation.y = Math.PI;
     statics.add(c);
   }
+  // MED-DOC 4000: green-phosphor consult terminal on the desk's east end
+  const crt = new THREE.Group();
+  const crtCase = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.48, 0.5), mat(0xd8d2bd));
+  crtCase.position.y = 0.24;
+  crtCase.castShadow = true;
+  const crtScreen = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.3), emat(0x39ff6e, 0.75));
+  crtScreen.position.set(0, 0.26, 0.258);
+  const crtKeys = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.05, 0.2), mat(0xbfb9a4));
+  crtKeys.position.set(0, 0.03, 0.42);
+  crt.add(crtCase, crtScreen, crtKeys);
+  crt.position.set(-14.75, 0.9, -1.2);
+  crt.rotation.y = Math.PI; // screen faces the corridor side
+  statics.add(crt);
+  const medDoc = { x: -14.75, z: -2.6 }; // stand here → MED-DOC prompt
+
   // when dispatched they round the desk via a fixed lane, then sprint
   // lanes bow NORTH around the seated row first, then round the desk end —
   // running along the row itself just body-checks your seated colleagues
@@ -474,7 +489,7 @@ export function buildMap(scene, physics) {
 
   return {
     beds, seats, centrifuge, imagingPad, diagnostics, shelfUnits, rings, dropRing,
-    roomDesks, roomLights, roomMonitors, knockSpots, triageDesk, receptionSeat, staffSeats, stationExit,
+    roomDesks, roomLights, roomMonitors, knockSpots, triageDesk, receptionSeat, staffSeats, stationExit, medDoc,
     discharge, gateOut, firePit, fire,
     floorYAt: () => 0,
     zoneOf, zoneDoors: ZONE_DOORS,

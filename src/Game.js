@@ -17,7 +17,7 @@ import { giveMed, applyTreatment } from './sim/treatment.js';
 import { INTENT, make } from './intents/intents.js';
 import { UI } from './ui/ui.js';
 import { medById } from './data/meds.js';
-import { dayConfig, QUOTA } from './data/days.js';
+import { dayConfig } from './data/days.js';
 import { generateScan } from './render/xray.js';
 import { glowSprite } from './render/meshes.js';
 import { matchTreatment } from './sim/talk.js';
@@ -69,7 +69,7 @@ export class Game {
     this._acc = 0;
     this._scanJob = null;
     this.aiTask = null; // the idle nurse running labs for the doctor
-    this.quota = QUOTA;
+    this.quota = dayConfig(1).quota;
 
     // comedy FX pools: heel skid lines (fade over 5s) + sprint dust
     this.fx = { skids: [], dusts: [], skidIdx: 0, dustIdx: 0 };
@@ -103,7 +103,9 @@ export class Game {
     this.clock.day = day ?? this.clock.day;
     this.clock.minutes = 0;
     this.spawner.planDay(this.clock.day);
-    this.clock.timeScale = dayConfig(this.clock.day).timeScale;
+    const cfg = dayConfig(this.clock.day);
+    this.clock.timeScale = cfg.timeScale;
+    this.quota = cfg.quota;
     this.dayStats = this._freshStats();
     this.mode = 'playing';
     this.clock.running = true;
@@ -154,7 +156,7 @@ export class Game {
     this.clock.running = false;
     this.tasks.clear();
     this.ui.screens.fade(true);
-    const passed = this.dayStats.treated >= QUOTA;
+    const passed = this.dayStats.treated >= this.quota;
     if (passed) {
       this.save.highestDay = Math.max(this.save.highestDay, this.clock.day + 1);
     }
@@ -165,13 +167,13 @@ export class Game {
     setTimeout(() => {
       this.ui.screens.fade(false);
       if (passed) {
-        this.ui.screens.daySummary(this.dayStats, this.clock.day, QUOTA, () => {
+        this.ui.screens.daySummary(this.dayStats, this.clock.day, this.quota, () => {
           this.ui.screens.fade(true);
           setTimeout(() => { this.ui.screens.fade(false); this.startDay(this.clock.day + 1); }, 700);
         });
       } else {
         // quota missed: game over, back to day one, fresh score
-        this.ui.screens.gameOver(this.dayStats, this.clock.day, QUOTA, () => {
+        this.ui.screens.gameOver(this.dayStats, this.clock.day, this.quota, () => {
           this.score = 0;
           this._clearAllPatients();
           this.ui.screens.fade(true);
@@ -1102,6 +1104,14 @@ export class Game {
       return { ico: '🔪', label: 'CHOOSE SURGERY', color: '#9e4a56', run: () => this.ui.modals.surgeryPick(t2) };
     }
 
+    // MED-DOC 4000: the consult terminal at the east end of the staff desk
+    {
+      const md = this.map.medDoc;
+      const pp = char.pos;
+      if (md && Math.hypot(pp.x - md.x, pp.z - md.z) < 1.7) {
+        return { ico: '🖥', label: 'MED-DOC 4000', color: '#2fae5f', run: () => this.ui.modals.medDoc() };
+      }
+    }
     // med cabinet: any pharmacy shelf is a face of the same tabbed cabinet
     const nearShelf = this.map.shelfUnits.some((u) => Math.hypot(u.x - cp.x, u.z - cp.z) < 2.3);
     if (nearShelf) return { ico: '💊', label: 'OPEN MED CABINET', color: '#d05a9e', run: () => this.ui.modals.cabinet() };

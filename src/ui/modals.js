@@ -1,5 +1,5 @@
 import { generateScan } from '../render/xray.js';
-import { askPatient, talkDown, orderTreatment, judgeDx, llmEnabled, getKey, setKey, getModel, setModel, MODELS } from '../sim/llm.js';
+import { askPatient, talkDown, orderTreatment, judgeDx, medDocConsult, llmEnabled, getKey, setKey, getModel, setModel, MODELS } from '../sim/llm.js';
 import { MEDS, SHELVES } from '../data/meds.js';
 import { PANELS, filterLabs } from '../data/labs.js';
 import { spawnCarryable } from '../entities/Carryable.js';
@@ -23,6 +23,8 @@ function pickByText(list, text) {
   }
   return bs >= 0.6 ? best : null;
 }
+
+const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 const SHELF_NAMES = {
   topicals: 'Topicals', antibiotics: 'Antibiotics', resp: 'Resp/Allergy',
@@ -323,6 +325,55 @@ export class Modals {
     this.box.querySelector('.close')?.addEventListener('pointerdown', () => this.close());
   }
 
+  // 🖥 MED-DOC 4000 — the green-phosphor consult terminal at the station.
+  // Live Claude with the active charts when a key is connected; an offline
+  // symptom index otherwise. KEY <key> stores the API key right here.
+  medDoc() {
+    const g = this.game;
+    g.medDocLog ??= [{
+      who: 'doc',
+      text: `MED-DOC 4000 — CLINICAL CONSULT SYSTEM
+(C) 1987 MEDTEAM GENERAL. ALL RIGHTS RESERVED.
+${llmEnabled() ? `LINK: ● LIVE — ${getModel()}` : 'LINK: ○ OFFLINE — TYPE: KEY <ANTHROPIC-API-KEY>'}
+TYPE A QUESTION. "CENSUS" LISTS PATIENTS. "CLEAR" WIPES.`,
+    }];
+    this.current = { type: 'meddoc', patient: null, options: [] };
+    this.box.classList.add('crtbox');
+    this.box.innerHTML = `<h3>▓ MED-DOC 4000</h3>
+      <div class="crt-log" id="crtlog"></div>
+      <div class="txrow"><span class="crt-ps">C:\\&gt;</span><input id="crtbar" autocomplete="off" spellcheck="false" placeholder="query..." /><button class="opt go-mini crt-go" id="crtgo">⏎</button></div>
+      <button class="close">POWER OFF</button>`;
+    this.veil.style.display = 'flex';
+    const logEl = this.box.querySelector('#crtlog');
+    const paint = () => {
+      logEl.innerHTML = g.medDocLog.map((l) =>
+        l.who === 'you' ? `<div class="you">C:\\&gt; ${esc(l.text)}</div>` : `<div>${esc(l.text)}</div>`).join('');
+      logEl.scrollTop = logEl.scrollHeight;
+    };
+    paint();
+    const input = this.box.querySelector('#crtbar');
+    this._wireTyped('#crtbar', '#crtgo', async (text) => {
+      const t = text.trim();
+      input.value = '';
+      if (/^clear$/i.test(t)) { g.medDocLog = null; this.medDoc(); return; }
+      if (/^key\s+\S/i.test(t)) {
+        setKey(t.replace(/^key\s+/i, '').trim());
+        g.medDocLog.push({ who: 'doc', text: llmEnabled() ? `KEY STORED. LINK: ● LIVE — ${getModel()}` : 'KEY CLEARED. LINK: ○ OFFLINE' });
+        paint();
+        return;
+      }
+      g.medDocLog.push({ who: 'you', text: t });
+      const pending = { who: 'doc', text: '▮ PROCESSING...' };
+      g.medDocLog.push(pending);
+      paint();
+      const reply = await medDocConsult(g, t);
+      pending.text = reply;
+      if (this.current?.type === 'meddoc') paint();
+    });
+    setTimeout(() => input?.focus(), 50);
+    this.box.querySelector('.close').addEventListener('pointerdown', () => this.close());
+  }
+
   // 🔑 connect the player's own Anthropic API key (stored in localStorage,
   // sent only to api.anthropic.com). Reachable from the title screen.
   apiSettings() {
@@ -501,5 +552,5 @@ Your key stays in this browser only.</div>
     this.close();
   }
 
-  close() { clearInterval(this._vfT); this.current = null; this.veil.style.display = 'none'; }
+  close() { clearInterval(this._vfT); this.current = null; this.veil.style.display = 'none'; this.box.classList.remove('crtbox'); }
 }

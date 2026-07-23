@@ -1,12 +1,14 @@
 // Per-day (per-level) config. Five tiers: easy → near-impossible.
-// The house rule: treat at least QUOTA patients (incinerations count ¼)
+// The house rule: treat at least the day's quota (incinerations count ¼)
 // or the shift is failed and you start over from day 1.
-export const QUOTA = 10;
 
 export function dayConfig(day) {
   const d = Math.max(1, day);
   return {
-    patients: Math.min(13 + (d - 1) * 2, 24),
+    // day 1 is a shakedown shift — a handful of walk-ins, room to learn.
+    // The flood starts day 2 and grows from there.
+    patients: d === 1 ? 8 : Math.min(11 + (d - 2) * 2, 24),
+    quota: d === 1 ? 5 : Math.min(10, 7 + (d - 2)),
     tierWeights:
       d === 1 ? [1, 0.15, 0, 0, 0] :
       d === 2 ? [1, 0.7, 0.1, 0, 0] :
