@@ -2,9 +2,10 @@ import * as THREE from 'three';
 import { mat, emat, makeBed, makeChair, makeCentrifuge, makeScanner, makeShelf, makeDesk } from '../render/meshes.js';
 import { SHELVES, MEDS } from '../data/meds.js';
 
-// canvas floor texture: room colors + lino tile grid + speckle, painted once
+// canvas floor texture: bright terrazzo (speckled near-white) with faint
+// pastel zone washes and colored zone borders — the HFF-hospital floor
 function makeFloorTexture() {
-  const W = 1024, H = 640; // maps onto the 58 × 34 m floor slab
+  const W = 2048, H = 1280; // maps onto the 58 × 34 m floor slab
   const c = document.createElement('canvas');
   c.width = W; c.height = H;
   const g = c.getContext('2d');
@@ -14,27 +15,40 @@ function makeFloorTexture() {
     g.fillStyle = col;
     g.fillRect(u(x1), v(z1), u(x2) - u(x1), v(z2) - v(z1));
   };
-  rect(-29, -17, 29, 17, '#262b3e');            // slab
-  rect(-28, -16, -14, -6, '#3d4f73');           // ICU
-  rect(-14, -16, 0, -6, '#3f5a70');             // med-surge
-  rect(0, -16, 14, -6, '#63507a');              // birthplace
-  rect(14, -16, 28, -6, '#333f5c');             // imaging
-  rect(-28, -6, 28, -2, '#4c5a78');             // corridor
-  rect(-28, -2, -18, 16, '#42646a');            // lab
-  rect(-18, -2, 8, 8, '#516285');               // ED bays
-  rect(-18, 8, 8, 16, '#48557a');               // waiting
-  rect(8, -2, 16, 16, '#57688c');               // nurse station
-  rect(16, -2, 28, 16, '#5b567c');              // pharmacy
-  // speckle
-  for (let i = 0; i < 4200; i++) {
-    g.fillStyle = `rgba(255,255,255,${Math.random() * 0.05})`;
-    g.fillRect(Math.random() * W, Math.random() * H, 1.4, 0.7);
+  rect(-29, -17, 29, 17, '#e7e8ea');            // terrazzo base
+  // whisper-faint zone washes (wayfinding without killing the brightness)
+  rect(-28, -16, -14, -6, 'rgba(240,150,80,0.09)');   // ICU
+  rect(-14, -16, 0, -6, 'rgba(90,200,150,0.09)');     // med-surge
+  rect(0, -16, 14, -6, 'rgba(200,120,220,0.09)');     // birthplace
+  rect(14, -16, 28, -6, 'rgba(110,150,240,0.09)');    // imaging
+  rect(-28, -2, -18, 16, 'rgba(60,190,180,0.10)');    // lab
+  rect(-18, -2, 8, 8, 'rgba(110,150,240,0.07)');      // ED bays
+  rect(16, -2, 28, 16, 'rgba(230,100,180,0.08)');     // pharmacy
+  // terrazzo speckle
+  const chips = ['#b8bfca', '#c9c1b2', '#a9b8cf', '#d8cfc2', '#9fb4b8'];
+  for (let i = 0; i < 14000; i++) {
+    g.fillStyle = chips[i % chips.length];
+    g.globalAlpha = 0.14 + Math.random() * 0.12;
+    const s = 1 + Math.random() * 2.4;
+    g.fillRect(Math.random() * W, Math.random() * H, s, s * 0.8);
   }
-  // lino tile grid (2 m)
-  g.strokeStyle = 'rgba(12,16,28,0.35)';
-  g.lineWidth = 1.5;
+  g.globalAlpha = 1;
+  // subtle 2 m tile seams
+  g.strokeStyle = 'rgba(130,140,158,0.20)';
+  g.lineWidth = 2;
   for (let x = -28; x <= 28; x += 2) { g.beginPath(); g.moveTo(u(x), 0); g.lineTo(u(x), H); g.stroke(); }
   for (let z = -16; z <= 16; z += 2) { g.beginPath(); g.moveTo(0, v(z)); g.lineTo(W, v(z)); g.stroke(); }
+  // colored zone border lines (like taped wayfinding lanes)
+  const border = (x1, z1, x2, z2, col) => {
+    g.strokeStyle = col; g.lineWidth = 6;
+    g.strokeRect(u(x1) + 3, v(z1) + 3, u(x2) - u(x1) - 6, v(z2) - v(z1) - 6);
+  };
+  border(-28, -16, -14, -6, 'rgba(235,140,70,0.5)');
+  border(-14, -16, 0, -6, 'rgba(70,190,140,0.5)');
+  border(0, -16, 14, -6, 'rgba(190,110,215,0.5)');
+  border(14, -16, 28, -6, 'rgba(100,140,235,0.5)');
+  border(-28, -2, -18, 16, 'rgba(50,180,170,0.5)');
+  border(16, -2, 28, 16, 'rgba(225,95,170,0.5)');
   const t = new THREE.CanvasTexture(c);
   t.anisotropy = 8;
   t.colorSpace = THREE.SRGBColorSpace;
@@ -106,14 +120,25 @@ export function buildMap(scene, physics) {
   // ED bays / waiting divider
   hwall(8, -18, 8, [{ at: -12, w: 2.6 }, { at: 0, w: 2.6 }]);
 
-  const wallMat = mat(0xb9c2d4);
+  // white walls with a teal wainscot band — bright HFF hospital, not a bunker
+  const wallMat = mat(0xf2f1ee);
+  const bandMat = mat(0x8fb7c9);
   const wallGeo = new THREE.BoxGeometry(1, 1, 1);
   for (const w of wallSegs) {
     const len = w.e - w.s, mid = (w.s + w.e) / 2;
     const m = new THREE.Mesh(wallGeo, wallMat);
-    if (w.horiz) { m.scale.set(len, WALL_H, 0.3); m.position.set(mid, WALL_H / 2, w.at); physics.staticBox(mid, WALL_H / 2, w.at, len / 2, WALL_H / 2, 0.15); }
-    else { m.scale.set(0.3, WALL_H, len); m.position.set(w.at, WALL_H / 2, mid); physics.staticBox(w.at, WALL_H / 2, mid, 0.15, WALL_H / 2, len / 2); }
-    statics.add(m);
+    const band = new THREE.Mesh(wallGeo, bandMat);
+    if (w.horiz) {
+      m.scale.set(len, WALL_H, 0.3); m.position.set(mid, WALL_H / 2, w.at);
+      band.scale.set(len, 0.1, 0.34); band.position.set(mid, 0.62, w.at);
+      physics.staticBox(mid, WALL_H / 2, w.at, len / 2, WALL_H / 2, 0.15);
+    } else {
+      m.scale.set(0.3, WALL_H, len); m.position.set(w.at, WALL_H / 2, mid);
+      band.scale.set(0.34, 0.1, len); band.position.set(w.at, 0.62, mid);
+      physics.staticBox(w.at, WALL_H / 2, mid, 0.15, WALL_H / 2, len / 2);
+    }
+    m.castShadow = true;
+    statics.add(m, band);
   }
 
   // ---- beds ----
@@ -169,18 +194,18 @@ export function buildMap(scene, physics) {
   statics.add(desk);
   physics.staticBox(12, 0.45, 6, 1.6, 0.45, 0.55);
 
-  // ---- neon baseboard strips (the rec-room glow, hospital edition) ----
-  const strip = (w, d, x, z, color) => {
-    const s = new THREE.Mesh(new THREE.BoxGeometry(w, 0.06, d), emat(color, 0.7));
-    s.position.set(x, 0.05, z);
-    statics.add(s);
-  };
-  strip(55, 0.12, 0, -5.8, 0x36e0d6);   // corridor north edge
-  strip(55, 0.12, 0, -2.2, 0xff5db0);   // corridor south edge
-  strip(0.12, 17.4, 27.7, 7, 0xb083ff); // pharmacy east wall
-  strip(0.12, 17.4, -27.7, 7, 0x36e0d6);// lab west wall
-  strip(27.6, 0.12, -14, -15.7, 0xffc24d); // ICU/med-surge north wall
-  strip(27.6, 0.12, 14, -15.7, 0xb083ff);  // birthplace/imaging north wall
+  // ---- wood thresholds under every door gap (reads as a doorway from above) ----
+  const sillMat = mat(0xc9a875);
+  for (const [x, z, w, d] of [
+    [-21, -6, 2.4, 0.5], [-7, -6, 2.4, 0.5], [7, -6, 2.4, 0.5], [21, -6, 2.4, 0.5],
+    [-23, -2, 2.4, 0.5], [-5, -2, 6, 0.5], [12, -2, 3, 0.5], [22, -2, 2.4, 0.5],
+    [-18, 5, 0.5, 2.2], [8, 10, 0.5, 2.4], [16, 6, 0.5, 2.4],
+    [-12, 8, 2.6, 0.5], [0, 8, 2.6, 0.5], [-5, 16, 3.2, 0.5],
+  ]) {
+    const sill = new THREE.Mesh(new THREE.BoxGeometry(w, 0.04, d), sillMat);
+    sill.position.set(x, 0.03, z);
+    statics.add(sill);
+  }
 
   // ---- glow rings marking interactables (pulse when you're close) ----
   const rings = [];

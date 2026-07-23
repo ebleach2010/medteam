@@ -23,6 +23,7 @@ export class PatientSim {
     this.deadCause = null;
     this.leaveHappy = false; this.resolved = false;
     this.sedatedUntil = 0; this.pinnedUntilReal = 0;
+    this.sitting = false;
     this.walkTarget = null;
     this.yaw = 0;
     this.nextBubbleAt = game.clock.minutes + game.rng.range(30, 70);
@@ -109,6 +110,8 @@ export class PatientSim {
       const overCap = g.edOverCapacity();
       if (this.state === 'waiting' && (waited > this.case.patienceMin || (overCap && waited > 25))) {
         this.state = 'angry';
+        this.sitting = false;                      // storms up out of the chair
+        g.setPatientDynamic(this.ent);
         this.ent.setFace('angry');
         this._sayRaw(g.rng.pick(CURSES), 'angry');
       } else if (this.state === 'angry' && waited > this.case.patienceMin * 1.6 + 40) {
@@ -210,7 +213,10 @@ export class PatientSim {
     const stopAt = this.ent.escortedBy ? 1.5 : (this.state === 'angry' ? 1.1 : 0.3);
     if (d < stopAt) {
       body.setLinvel({ x: 0, y: body.linvel().y, z: 0 }, true);
-      if (this.state === 'arriving' && this.seat) this.state = 'waiting';
+      if (this.state === 'arriving') {
+        if (this.seat) g.seatPatient(this);      // plop down in the chair
+        else this.state = 'waiting';
+      }
       if ((this.state === 'walkout' || this.state === 'leaving') && d < 1.2) g.removePatient(this.ent);
       return;
     }
@@ -274,6 +280,7 @@ export class PatientSim {
 
   onGrabbed() {
     this.ent.escortedBy = null;
+    this.sitting = false;
     if (this.bed) this.game.freeBed(this);
     if (this.seat) { this.seat.taken = null; this.seat = null; }
     this.game.setPatientDynamic(this.ent);

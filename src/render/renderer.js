@@ -11,40 +11,26 @@ export class Renderer {
     this.renderer.shadowMap.enabled = !lite;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
+    // Human-Fall-Flat daylight: pale sky, bright soft ambient, one warm sun
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x141126);
-    this.scene.fog = new THREE.FogExp2(0x141126, 0.0075);
+    this.scene.background = new THREE.Color(0xaec6de);
+    this.scene.fog = new THREE.FogExp2(0xaec6de, 0.005);
 
-    // rec-room camera: low third-person tilt (~35°), not a steep top-down
-    this.camera = new THREE.PerspectiveCamera(60, 1, 0.1, 200);
-    this.camOffset = new THREE.Vector3(0, 11, 15);
+    // close chase-ish tilt — the blob should be BIG on screen
+    this.camera = new THREE.PerspectiveCamera(55, 1, 0.1, 160);
+    this.camOffset = new THREE.Vector3(0, 7.5, 10);
     this.camTarget = new THREE.Vector3();
 
-    this.scene.add(new THREE.HemisphereLight(0xffe4c4, 0x2a2050, 1.0));
-    const key = new THREE.DirectionalLight(0xfff0d8, 1.6);
-    key.position.set(6, 26, 12);
+    this.scene.add(new THREE.HemisphereLight(0xffffff, 0xb2bccc, 1.35));
+    const key = new THREE.DirectionalLight(0xfff2dc, 1.9);
+    key.position.set(8, 28, 14);
     key.castShadow = !lite;
-    key.shadow.mapSize.set(1024, 1024);
-    key.shadow.camera.near = 1; key.shadow.camera.far = 80;
+    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.camera.near = 1; key.shadow.camera.far = 90;
     key.shadow.camera.left = -32; key.shadow.camera.right = 32;
     key.shadow.camera.top = 26; key.shadow.camera.bottom = -26;
-    key.shadow.bias = -0.0006; key.shadow.radius = 3;
+    key.shadow.bias = -0.0005; key.shadow.radius = 4;
     this.scene.add(key, key.target);
-
-    // one colored accent light per zone — the arcade glow, hospital edition
-    for (const [color, x, z] of lite ? [] : [
-      [0x6fd1ff, -5, 3],    // ED bays
-      [0x36e0d6, -23, 7],   // lab
-      [0xff5db0, 22, 7],    // pharmacy
-      [0xffc24d, -21, -11], // ICU
-      [0xb083ff, 7, -11],   // birthplace
-      [0x8fb7ff, 21, -11],  // imaging
-      [0xff8a5b, -5, 12],   // waiting room
-    ]) {
-      const p = new THREE.PointLight(color, 42, 16, 1.8);
-      p.position.set(x, 3.2, z);
-      this.scene.add(p);
-    }
 
     this.resize();
     window.addEventListener('resize', () => this.resize());
@@ -60,7 +46,7 @@ export class Renderer {
   follow(pos, dt) {
     this.camTarget.lerp(pos, Math.min(1, dt * 7));
     this.camera.position.copy(this.camTarget).add(this.camOffset);
-    this.camera.lookAt(this.camTarget.x, 1.2, this.camTarget.z);
+    this.camera.lookAt(this.camTarget.x, 1.0, this.camTarget.z);
   }
 
   render() { this.renderer.render(this.scene, this.camera); }

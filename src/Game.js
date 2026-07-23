@@ -507,6 +507,17 @@ export class Game {
     this.addScore(-40, 'Walked out');
   }
 
+  // sit a walked-in patient down on their waiting-room chair
+  seatPatient(sim) {
+    const seat = sim.seat;
+    sim.state = 'waiting';
+    sim.sitting = true;
+    sim.yaw = Math.PI; // chairs face north, into the department
+    sim.ent.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
+    sim.ent.body.setTranslation({ x: seat.x, y: 0.86, z: seat.z + 0.02 }, true);
+    sim.ent.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+  }
+
   freeBed(sim) {
     if (sim.bed) { sim.bed.occupant = null; sim.bed = null; }
     this.setPatientDynamic(sim.ent);

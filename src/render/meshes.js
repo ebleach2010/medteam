@@ -46,32 +46,30 @@ export function glowSprite(color, size, opacity) {
 // ---------- characters (articulated rigs, see rig.js) ----------
 import { buildRig, setRigFace } from './rig.js';
 
-const SKINS = [0xffd9b3, 0xe8b88a, 0xc68e5e, 0x9c6b43, 0x7a4f2e];
-const GOWNS = [0x9db5e6, 0xa6d8c6, 0xe6c39d, 0xd3a6e6, 0xe6a6a6];
-const HAIR = [0x2b2118, 0x4a3320, 0x8a6a3a, 0x9a9aa5, 0xd8c6a0, 0x503a50];
+// HFF-bright blob palettes: faceless near-white heads, soft-toned bodies
+const GOWNS = [0xaec5e8, 0xb5dcc9, 0xe8d4ae, 0xd8b8e2, 0xe8b8b8, 0xc5cee0];
+const HEAD_BASE = 0xf1f1f4;
 
 export function makeCharacterMesh(role) {
   const g = role === 'nurse'
-    ? buildRig({ suit: 0x2fb59e, shade: 0x22857a, accent: 0xffffff, skin: 0xffd9b3, cap: 0xf2f6fb, badge: 0x6effe6 })
-    : buildRig({ suit: 0xf2f2f7, shade: 0xcfd6e2, accent: 0x3a4a6b, skin: 0xe8b88a, hair: 0x2b2118, badge: 0x6fd1ff });
+    ? buildRig({ suit: 0x5ec4b2, shade: 0x48a795, head: HEAD_BASE, cap: 0xffffff })
+    : buildRig({ suit: 0xf4f4f7, shade: 0xd4dae4, head: HEAD_BASE, collar: 0x3a4a6b });
   return g;
 }
 
 export function makePatientMesh(rng) {
-  const skinC = rng.pick(SKINS);
   const gown = rng.pick(GOWNS);
   const g = buildRig({
-    suit: gown, shade: new THREE.Color(gown).multiplyScalar(0.72).getHex(),
-    accent: 0xffffff, skin: skinC, hair: rng.pick(HAIR),
+    suit: gown, shade: new THREE.Color(gown).multiplyScalar(0.78).getHex(),
+    head: HEAD_BASE,
   });
-  g.userData.skin = skinC;
+  g.userData.skin = HEAD_BASE;
   return g;
 }
 
 export function setFace(patientMesh, face) {
-  const skin = patientMesh.userData.skin ?? 0xffd9b3;
-  setRigFace(patientMesh, face === 'angry' ? 0xff4646 : face === 'dead' ? 0x8f9aa8 :
-    face === 'crit' ? 0xb8c4de : skin);
+  setRigFace(patientMesh, face === 'angry' ? 0xff5348 : face === 'dead' ? 0x9aa3b0 :
+    face === 'crit' ? 0xc4cede : (patientMesh.userData.skin ?? HEAD_BASE));
 }
 
 // ---------- props ----------
@@ -90,12 +88,13 @@ export function makeBed(accent = 0x76a9ea) {
 }
 
 export function makeChair() {
+  // beige waiting-room chair, HFF-hospital style
   const g = new THREE.Group();
-  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.1, 0.6), mat(0x5a79b8));
-  seat.position.y = 0.4;
-  const back = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.55, 0.08), mat(0x5a79b8));
-  back.position.set(0, 0.72, 0.26);
-  const legs = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.4, 0.5), mat(0x3a3550));
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.12, 0.6), mat(0xcbbfa4));
+  seat.position.y = 0.42;
+  const back = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.58, 0.1), mat(0xcbbfa4));
+  back.position.set(0, 0.76, 0.27);
+  const legs = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.4, 0.5), mat(0x6b5f4c));
   legs.position.y = 0.2;
   g.add(seat, back, legs);
   return g;
