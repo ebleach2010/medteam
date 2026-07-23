@@ -9,8 +9,10 @@ document.addEventListener('touchmove', (e) => {
 document.addEventListener('gesturestart', (e) => e.preventDefault());
 
 const physics = await initPhysics();
-const seedParam = new URLSearchParams(location.search).get('seed');
-const game = new Game(document.getElementById('game'), physics,
-  { seed: seedParam ? +seedParam : 1337 });
+const params = new URLSearchParams(location.search);
+const game = new Game(document.getElementById('game'), physics, {
+  seed: params.get('seed') ? +params.get('seed') : 1337,
+  lite: params.has('lite'),
+});
 installTestApi(game);
 game.start();

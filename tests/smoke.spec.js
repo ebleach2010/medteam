@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-const url = '/?seed=42';
+const url = '/?seed=42&lite=1'; // lite: CI's software GL can't afford shadows
 
 test('boots to title without console errors and starts a day', async ({ page }) => {
   const errors = [];

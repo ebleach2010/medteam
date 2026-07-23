@@ -1,9 +1,23 @@
 import * as THREE from 'three';
 import { makeCharacterMesh } from '../render/meshes.js';
+import { animateRig } from '../render/rig.js';
 import { springToward, uprightSpring } from '../physics/physics.js';
 
-const MAX_SPEED = 3.6;
+const SPRINT = 4.6;
 const ACCEL = 0.16;
+const TAU = Math.PI * 2;
+
+// rec-room locomotion: joystick magnitude maps to walk / jog / sprint bands
+function targetSpeed(mag) {
+  if (mag < 0.15) return 0;
+  if (mag < 0.55) return 1.4 + ((mag - 0.15) / 0.4) * 1.2;   // walk
+  if (mag < 0.85) return 2.6 + ((mag - 0.55) / 0.3) * 1.3;   // jog
+  return 3.9 + ((mag - 0.85) / 0.15) * (SPRINT - 3.9);       // sprint
+}
+function smoothAngle(cur, tgt, l, dt) {
+  const d = ((tgt - cur + Math.PI) % TAU + TAU) % TAU - Math.PI;
+  return cur + d * (1 - Math.exp(-l * dt));
+}
 
 // The wobbly star of the show. One dynamic capsule with X/Z tilt free and a
 // soft upright spring — it lists while sprinting, staggers when yanked, and
@@ -35,19 +49,22 @@ export class Character {
 
   fixedUpdate(dt) {
     const body = this.body;
-    // movement: velocity-matching impulses (lag = stagger)
-    let speedCap = MAX_SPEED;
-    if (this.dragging) speedCap *= 0.55;
-    if (this.carrying) speedCap *= 0.92;
+    // movement: joystick magnitude → walk/jog/sprint target, chased by impulses
+    const mag = Math.min(1, Math.hypot(this.move.x, this.move.z));
+    let cap = targetSpeed(mag);
+    if (this.dragging) cap *= 0.55;
+    if (this.carrying) cap *= 0.94;
+    const dirX = mag > 0.01 ? this.move.x / mag : 0;
+    const dirZ = mag > 0.01 ? this.move.z / mag : 0;
     const v = body.linvel();
-    const dvx = this.move.x * speedCap - v.x;
-    const dvz = this.move.z * speedCap - v.z;
+    const dvx = dirX * cap - v.x;
+    const dvz = dirZ * cap - v.z;
     if (this.tackleTimer <= 0) {
       body.applyImpulse({ x: 70 * dvx * ACCEL, y: 0, z: 70 * dvz * ACCEL }, true);
     }
-    // face where we run
-    if (Math.hypot(this.move.x, this.move.z) > 0.15) {
-      this.yaw = Math.atan2(this.move.x, this.move.z);
+    // face where we run (smoothed, rec-room style)
+    if (mag > 0.15) {
+      this.yaw = smoothAngle(this.yaw, Math.atan2(this.move.x, this.move.z), 10, dt);
     }
     // upright spring — weakened while sprawling for the faceplant
     this.sprawlTimer = Math.max(0, this.sprawlTimer - dt);
@@ -68,20 +85,18 @@ export class Character {
     }
   }
 
-  syncMesh() {
+  syncMesh(dt, now) {
     const p = this.body.translation();
     const q = this.body.rotation();
     this.mesh.position.set(p.x, p.y - 0.8, p.z);
-    // yaw from movement, tilt from physics
+    // yaw from movement, tilt from physics (the wobble stays!)
     _yawQ.setFromAxisAngle(_up, this.yaw);
     _tiltQ.set(q.x, q.y, q.z, q.w);
     this.mesh.quaternion.copy(_tiltQ).multiply(_yawQ);
-    // arms reach toward carried/dragged thing
-    const { armL, armR } = this.mesh.userData;
-    const reach = this.carrying || this.dragging;
-    const target = reach ? 0.9 : 0;
-    armL.rotation.x += (target * -1.4 - armL.rotation.x) * 0.2;
-    armR.rotation.x += (target * -1.4 - armR.rotation.x) * 0.2;
+    // gait driven by actual velocity
+    const v = this.body.linvel();
+    const speed01 = Math.min(1, Math.hypot(v.x, v.z) / SPRINT);
+    animateRig(this.mesh, dt, now, speed01, { reach: !!(this.carrying || this.dragging) });
   }
 
   tryGrab() {

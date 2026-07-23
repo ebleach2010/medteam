@@ -1,6 +1,45 @@
 import * as THREE from 'three';
-import { mat, makeBed, makeChair, makeCentrifuge, makeScanner, makeShelf, makeDesk } from '../render/meshes.js';
+import { mat, emat, makeBed, makeChair, makeCentrifuge, makeScanner, makeShelf, makeDesk } from '../render/meshes.js';
 import { SHELVES, MEDS } from '../data/meds.js';
+
+// canvas floor texture: room colors + lino tile grid + speckle, painted once
+function makeFloorTexture() {
+  const W = 1024, H = 640; // maps onto the 58 × 34 m floor slab
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const u = (x) => ((x + 29) / 58) * W;
+  const v = (z) => ((z + 17) / 34) * H;
+  const rect = (x1, z1, x2, z2, col) => {
+    g.fillStyle = col;
+    g.fillRect(u(x1), v(z1), u(x2) - u(x1), v(z2) - v(z1));
+  };
+  rect(-29, -17, 29, 17, '#262b3e');            // slab
+  rect(-28, -16, -14, -6, '#3d4f73');           // ICU
+  rect(-14, -16, 0, -6, '#3f5a70');             // med-surge
+  rect(0, -16, 14, -6, '#63507a');              // birthplace
+  rect(14, -16, 28, -6, '#333f5c');             // imaging
+  rect(-28, -6, 28, -2, '#4c5a78');             // corridor
+  rect(-28, -2, -18, 16, '#42646a');            // lab
+  rect(-18, -2, 8, 8, '#516285');               // ED bays
+  rect(-18, 8, 8, 16, '#48557a');               // waiting
+  rect(8, -2, 16, 16, '#57688c');               // nurse station
+  rect(16, -2, 28, 16, '#5b567c');              // pharmacy
+  // speckle
+  for (let i = 0; i < 4200; i++) {
+    g.fillStyle = `rgba(255,255,255,${Math.random() * 0.05})`;
+    g.fillRect(Math.random() * W, Math.random() * H, 1.4, 0.7);
+  }
+  // lino tile grid (2 m)
+  g.strokeStyle = 'rgba(12,16,28,0.35)';
+  g.lineWidth = 1.5;
+  for (let x = -28; x <= 28; x += 2) { g.beginPath(); g.moveTo(u(x), 0); g.lineTo(u(x), H); g.stroke(); }
+  for (let z = -16; z <= 16; z += 2) { g.beginPath(); g.moveTo(0, v(z)); g.lineTo(W, v(z)); g.stroke(); }
+  const t = new THREE.CanvasTexture(c);
+  t.anisotropy = 8;
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
 
 // One hospital floor, 56 × 32 m, origin at center. North = -z.
 //   North wing:  ICU | MED-SURGE | BIRTHPLACE | IMAGING     (z -16..-6)
@@ -19,26 +58,17 @@ export function buildMap(scene, physics) {
   const statics = new THREE.Group();
   scene.add(statics);
 
-  // ---- floor with room tints ----
-  const floor = new THREE.Mesh(new THREE.BoxGeometry(58, 0.2, 34), mat(0x30394f));
-  floor.position.y = -0.1;
+  // ---- floor: painted lino sheet (room colors baked into one canvas texture) ----
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(58, 0.2, 34), mat(0x1a1e2e));
+  slab.position.y = -0.11;
+  statics.add(slab);
+  const floorMat = new THREE.MeshStandardMaterial({ map: makeFloorTexture(), roughness: 0.85, metalness: 0.08 });
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(58, 34), floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = 0.005;
+  floor.receiveShadow = true;
   statics.add(floor);
   physics.staticBox(0, -0.1, 0, 29, 0.1, 17);
-  const tint = (x, z, w, d, color) => {
-    const t = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat(color));
-    t.rotation.x = -Math.PI / 2; t.position.set(x, 0.02, z);
-    statics.add(t);
-  };
-  tint(-21, -11, 13.6, 9.6, 0x394a6b);  // ICU
-  tint(-7, -11, 13.6, 9.6, 0x3b5266);   // med-surge
-  tint(7, -11, 13.6, 9.6, 0x5c4a66);    // birthplace
-  tint(21, -11, 13.6, 9.6, 0x2f3a52);   // imaging
-  tint(0, -4, 55.6, 3.6, 0x46536e);     // corridor
-  tint(-23, 7, 9.6, 17.6, 0x3f5a5e);    // lab
-  tint(-5, 3, 25.6, 9.6, 0x4b5b7c);     // ED bays
-  tint(-5, 12, 25.6, 7.6, 0x445070);    // waiting room
-  tint(12, 7, 7.6, 17.6, 0x50607e);     // nurse station
-  tint(22, 7, 11.6, 17.6, 0x54506e);    // pharmacy
 
   // ---- walls ----
   const wallSegs = [];
@@ -139,9 +169,38 @@ export function buildMap(scene, physics) {
   statics.add(desk);
   physics.staticBox(12, 0.45, 6, 1.6, 0.45, 0.55);
 
-  // room label sprites are skipped (HTML HUD carries orientation); tints suffice.
+  // ---- neon baseboard strips (the rec-room glow, hospital edition) ----
+  const strip = (w, d, x, z, color) => {
+    const s = new THREE.Mesh(new THREE.BoxGeometry(w, 0.06, d), emat(color, 0.7));
+    s.position.set(x, 0.05, z);
+    statics.add(s);
+  };
+  strip(55, 0.12, 0, -5.8, 0x36e0d6);   // corridor north edge
+  strip(55, 0.12, 0, -2.2, 0xff5db0);   // corridor south edge
+  strip(0.12, 17.4, 27.7, 7, 0xb083ff); // pharmacy east wall
+  strip(0.12, 17.4, -27.7, 7, 0x36e0d6);// lab west wall
+  strip(27.6, 0.12, -14, -15.7, 0xffc24d); // ICU/med-surge north wall
+  strip(27.6, 0.12, 14, -15.7, 0xb083ff);  // birthplace/imaging north wall
+
+  // ---- glow rings marking interactables (pulse when you're close) ----
+  const rings = [];
+  const floorRing = (x, z, color, r = 1.5) => {
+    const ring = new THREE.Mesh(new THREE.RingGeometry(r, r + 0.35, 40),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false }));
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(x, 0.04, z);
+    ring.material.fog = false;
+    statics.add(ring);
+    rings.push({ mesh: ring, x, z });
+    return ring;
+  };
+  floorRing(-23.2, 5.8, 0x36e0d6);          // centrifuge
+  floorRing(21, -10.2, 0xb083ff, 1.7);      // imaging pad
+  floorRing(23.2, 2, 0xff5db0, 1.6);        // pharmacy cabinet row 1
+  floorRing(23.2, 9.6, 0xff5db0, 1.6);      // pharmacy cabinet row 2
+
   return {
-    beds, seats, centrifuge, imagingPad, shelfUnits,
+    beds, seats, centrifuge, imagingPad, shelfUnits, rings,
     entrance: { x: -5, z: 15.2 },
     spawnOutside: { x: -5, z: 16.6 },
     nurseSpawn: { x: 10, z: 3 },

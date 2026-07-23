@@ -20,9 +20,9 @@ import { dayConfig } from './data/days.js';
 const FIXED_DT = 1 / 60;
 
 export class Game {
-  constructor(canvas, physics, { seed = 1337 } = {}) {
+  constructor(canvas, physics, { seed = 1337, lite = false } = {}) {
     this.physics = physics;
-    this.renderer = new Renderer(canvas);
+    this.renderer = new Renderer(canvas, lite);
     this.world = new World();
     this.clock = new GameClock();
     this.rng = makeRng(seed);
@@ -199,8 +199,16 @@ export class Game {
   }
 
   renderFrame(dt) {
-    for (const c of this.world.byTag('chars')) c.syncMesh();
-    for (const p of this.world.byTag('patients')) syncPatientMesh(p);
+    const now = this.timeReal;
+    for (const c of this.world.byTag('chars')) c.syncMesh(dt, now);
+    for (const p of this.world.byTag('patients')) syncPatientMesh(p, dt, now);
+    // interactable glow rings pulse when the active character is close
+    const ap0 = this.active.pos;
+    for (const r of this.map.rings) {
+      const near = Math.hypot(r.x - ap0.x, r.z - ap0.z) < 3.2;
+      const target = near ? 0.55 + Math.sin(now * 5) * 0.2 : 0.18;
+      r.mesh.material.opacity += (target - r.mesh.material.opacity) * 0.15;
+    }
     for (const it of this.world.byTag('items')) {
       const t = it.body.translation(), r = it.body.rotation();
       it.mesh.position.set(t.x, t.y, t.z);

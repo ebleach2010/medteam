@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 // Scripted end-to-end playthroughs driven through the intent pipe — the same
 // commands touch input produces (which keeps the co-op seam exercised).
-const url = '/?seed=7';
+const url = '/?seed=7&lite=1'; // lite: CI's software GL can't afford shadows
 
 async function boot(page) {
   await page.goto(url);

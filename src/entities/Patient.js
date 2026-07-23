@@ -1,4 +1,5 @@
 import { makePatientMesh, setFace } from '../render/meshes.js';
+import { animateRig } from '../render/rig.js';
 import { PatientSim } from '../sim/PatientSim.js';
 
 const FIRST_NAMES = ['Sam', 'Riley', 'Jo', 'Max', 'Dee', 'Alex', 'Pat', 'Frankie', 'Lou', 'Bobbie',
@@ -20,11 +21,14 @@ export function spawnPatient(game, caseData, x, z) {
   return ent;
 }
 
-export function syncPatientMesh(p) {
+export function syncPatientMesh(p, dt, now) {
   const pos = p.body.translation();
   const lying = p.sim.isLying();
   p.mesh.position.set(pos.x, lying ? pos.y - 0.45 : pos.y - 0.8, pos.z);
   const targetRotX = lying ? -Math.PI / 2 : 0;
   p.mesh.rotation.x += (targetRotX - p.mesh.rotation.x) * 0.25;
   p.mesh.rotation.y = p.sim.yaw;
+  const v = p.body.linvel();
+  const speed01 = Math.min(1, Math.hypot(v.x, v.z) / 3.4);
+  animateRig(p.mesh, dt, now, lying ? 0 : speed01, { lying, dead: p.sim.state === 'dead' });
 }
