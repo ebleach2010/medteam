@@ -1,8 +1,10 @@
 import { INTENT, make } from '../intents/intents.js';
 
-// Controls: HOLD grab (sticky hands) · big contextual PROMPT pill (the
-// tether/rec-room "Play —" pattern) · ORDERS button opens the radial wheel
-// (press, drag, release) · TACKLE near a rampage · SWAP roles.
+const typing = () => /INPUT|TEXTAREA/.test(document.activeElement?.tagName ?? '');
+
+// Controls: TOGGLE grab (tap to latch sticky hands, tap again to let go) ·
+// contextual CLIPBOARD peeking from the bottom edge (tap → it rises full
+// screen) · ORDERS button opens the radial wheel · TACKLE · SWAP roles.
 export class Buttons {
   constructor(root, game) {
     this.game = game;
@@ -13,37 +15,35 @@ export class Buttons {
       root.appendChild(b);
       return b;
     };
-    this.grab = mk('btn-grab', '✋', 'HOLD TO GRAB');
+    this.grab = mk('btn-grab', '✋', 'GRAB');
     this.orders = mk('btn-action', '📋', 'ORDERS');
     this.tackle = mk('btn-tackle', '💥', 'TACKLE');
     this.swap = mk('btn-swap', '🔄', 'SWAP');
 
-    // the big contextual prompt — appears when the world has something to say
+    // the contextual clipboard, peeking up from the bottom edge — tap it and
+    // the full board rises onto the screen with whatever it's offering
     this.prompt = document.createElement('button');
     this.prompt.id = 'prompt';
+    this.prompt.innerHTML = '<span class="pclip"></span><span class="ptxt"></span>';
     root.appendChild(this.prompt);
+    this.promptTxt = this.prompt.querySelector('.ptxt');
     this.prompt.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       game.enqueue(make(INTENT.ACTION, game.active.id));
       game.audio.tap();
     });
 
-    // HFF grab: HOLD to keep hands sticky, release to let go.
-    // Enqueue FIRST — setPointerCapture can throw on synthetic events.
-    this.grab.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      game.enqueue(make(INTENT.GRAB, game.active.id));
-      try { this.grab.setPointerCapture(e.pointerId); } catch { /* synthetic */ }
-    });
-    const grabUp = (e) => { e.preventDefault(); game.enqueue(make(INTENT.RELEASE, game.active.id)); };
-    this.grab.addEventListener('pointerup', grabUp);
-    this.grab.addEventListener('pointercancel', grabUp);
+    // TOGGLE grab: tap latches the sticky hands, tap again lets go
+    const toggleGrab = () => {
+      const a = game.active;
+      const holding = a.carrying || a.dragging || a.grabHeld;
+      game.enqueue(make(holding ? INTENT.RELEASE : INTENT.GRAB, a.id));
+    };
+    this.grab.addEventListener('pointerdown', (e) => { e.preventDefault(); toggleGrab(); });
     window.addEventListener('keydown', (e) => {
-      if (e.code === 'Space' && !e.repeat) game.enqueue(make(INTENT.GRAB, game.active.id));
+      if (typing()) return; // typing in a text box must never fire game keys
+      if (e.code === 'Space' && !e.repeat) toggleGrab();
       if (e.code === 'KeyE') game.enqueue(make(INTENT.ACTION, game.active.id));
-    });
-    window.addEventListener('keyup', (e) => {
-      if (e.code === 'Space') game.enqueue(make(INTENT.RELEASE, game.active.id));
     });
 
     this.swap.addEventListener('pointerdown', (e) => {
@@ -71,15 +71,13 @@ export class Buttons {
     const ctx = g.actionContext(g.active);
     if (ctx) {
       this.prompt.style.display = 'flex';
-      this.prompt.innerHTML = `<span>${ctx.ico}</span> ${ctx.label}`;
-      this.prompt.style.borderColor = ctx.color ?? '#2f80ff';
-      this.prompt.style.boxShadow = `0 6px 20px rgba(0,0,0,.45), 0 0 22px ${ctx.color ?? '#2f80ff'}66`;
+      this.promptTxt.textContent = `${ctx.ico} ${ctx.label}`;
     } else {
       this.prompt.style.display = 'none';
     }
     const gl = this.grab.querySelector('.lbl');
-    gl.textContent = (g.active.carrying || g.active.dragging) ? 'HOLDING'
-      : g.active.grabHeld ? 'STICKY…' : 'HOLD TO GRAB';
+    gl.textContent = (g.active.carrying || g.active.dragging) ? 'LET GO'
+      : g.active.grabHeld ? 'STICKY…' : 'GRAB';
     const near = g.nearestPatient(g.active, 3.2, (s) => s.state === 'agitated');
     this.tackle.style.display = near ? 'flex' : 'none';
   }

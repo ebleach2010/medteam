@@ -17,6 +17,7 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0e1420; t
   #hud .cap i { width: 8px; height: 12px; }
   #btn-swap { top: 62px; }
   #toast { top: 78px; max-width: 92vw; white-space: normal; text-align: center; }
+  #prompt { right: 104px; width: 172px; }
 }
 
 /* ---------- Speech bubbles ---------- */
@@ -60,15 +61,20 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0e1420; t
 #btn-swap   { right: 14px;  top: 46px; width: 58px; height: 58px; background: #7a5cff; font-size: 11px; }
 .btn.disabled { opacity: .35; }
 
-/* ---------- Contextual prompt pill ---------- */
-#prompt { position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%);
-  display: none; align-items: center; gap: 9px; pointer-events: auto; touch-action: none;
-  padding: 13px 26px; border-radius: 999px; border: 2px solid #2f80ff;
-  background: rgba(14,22,38,.92); color: #fff; font-size: 15px; font-weight: 800;
-  letter-spacing: .6px; animation: promptpulse 1.2s infinite; z-index: 55; }
-#prompt span { font-size: 20px; }
-#prompt:active { transform: translateX(-50%) scale(.95); }
-@keyframes promptpulse { 50% { transform: translateX(-50%) scale(1.045); } }
+/* ---------- Contextual clipboard (peeks from the bottom edge) ---------- */
+#prompt { position: absolute; right: 202px; bottom: -36px; width: 192px; height: 110px;
+  display: none; flex-direction: column; align-items: center; pointer-events: auto;
+  touch-action: none; border: none; background: #a97b42; border-radius: 10px 10px 0 0;
+  box-shadow: 0 -4px 16px rgba(0,0,0,.35); z-index: 55; transform: rotate(-2deg);
+  animation: promptpop .28s ease-out; }
+#prompt:active { transform: rotate(-2deg) translateY(-10px); }
+#prompt .pclip { position: absolute; top: -9px; left: 50%; transform: translateX(-50%);
+  width: 64px; height: 16px; background: linear-gradient(#e6eaef, #98a1ac);
+  border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,.4); }
+#prompt .ptxt { margin-top: 13px; width: 86%; background: #f8f4e8; color: #243044;
+  border-radius: 3px 3px 0 0; font-weight: 800; font-size: 13px; letter-spacing: .4px;
+  padding: 9px 8px 30px; text-align: center; box-shadow: inset 0 0 6px rgba(0,0,0,.08); }
+@keyframes promptpop { from { transform: translateY(80px) rotate(-2deg); } }
 
 /* ---------- Radial wheel ---------- */
 #wheel { position: absolute; width: 260px; height: 260px; pointer-events: none; display: none; z-index: 60; }
@@ -104,22 +110,33 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0e1420; t
 @keyframes monblink { 50% { background: rgba(90,10,16,.9); } }
 .mon .ekg { display: block; width: 100%; height: 18px; }
 
-/* ---------- Modals ---------- */
-#modal-veil { position: absolute; inset: 0; background: rgba(4,8,16,.55); display: none;
-  align-items: center; justify-content: center; pointer-events: auto; touch-action: none; z-index: 80; }
-#modal { touch-action: pan-y; }
-#modal { width: min(480px, 92vw); max-height: 86vh; overflow-y: auto; background: #121a2c;
-  border: 1px solid #334a73; border-radius: 14px; padding: 16px; color: #e8eefc; }
-#modal h3 { font-size: 16px; margin-bottom: 10px; color: #ffd23c; }
-#modal .paper { background: #f6f2e6; color: #222; font-family: 'Courier New', monospace;
-  font-size: 12px; padding: 10px; border-radius: 4px; margin-bottom: 10px; white-space: pre-wrap; }
+/* ---------- Modals: everything opens as a clipboard that rises up ---------- */
+#modal-veil { position: absolute; inset: 0; background: rgba(4,8,16,.45); display: none;
+  align-items: flex-end; justify-content: center; pointer-events: auto; touch-action: none; z-index: 80; }
+#modal { touch-action: pan-y; position: relative;
+  width: min(520px, 94vw); max-height: 92vh; overflow-y: auto;
+  background: #f8f4e8; color: #243044;
+  border: 12px solid #a97b42; border-top-width: 30px; border-bottom-width: 0;
+  border-radius: 14px 14px 0 0; padding: 26px 16px 18px;
+  box-shadow: 0 -10px 40px rgba(0,0,0,.5);
+  animation: clipRise .45s cubic-bezier(.2, 1.1, .4, 1); }
+#modal::before { /* the metal clip */
+  content: ''; position: absolute; top: 6px; left: 50%; margin-left: -42px;
+  width: 84px; height: 18px; background: linear-gradient(#e6eaef, #98a1ac);
+  border-radius: 6px; box-shadow: 0 2px 5px rgba(0,0,0,.35); }
+#modal h3 { font-size: 17px; margin-bottom: 10px; color: #7a4d1c; }
+#modal .paper { background: #fffdf6; color: #222; font-family: 'Courier New', monospace;
+  font-size: 12px; padding: 10px; border-radius: 4px; margin-bottom: 10px; white-space: pre-wrap;
+  border: 1px solid #d8cdb2; }
 #modal .paper b { color: #b00020; }
 #modal img.scan { width: 100%; border-radius: 6px; margin-bottom: 10px; background: #000; }
-#modal .opt { display: block; width: 100%; margin: 6px 0; padding: 11px 12px; border: 1px solid #33518a;
-  background: #1a2540; color: #e8eefc; border-radius: 9px; font-size: 14px; text-align: left; }
-#modal .opt:active { background: #2f80ff; }
-#modal .close { margin-top: 8px; width: 100%; padding: 10px; border: none; border-radius: 9px;
-  background: #26355a; color: #9db5e6; font-size: 13px; }
+/* options: simple ruled rows on the paper, not app buttons */
+#modal .opt { display: block; width: 100%; margin: 0; padding: 12px 6px;
+  border: none; border-bottom: 1px dashed #c9bd9e; background: transparent;
+  color: #243044; font-size: 15px; text-align: left; }
+#modal .opt:active { background: #efe6cd; }
+#modal .close { margin-top: 10px; width: 100%; padding: 11px; border: none; border-radius: 9px;
+  background: #e6dcc2; color: #6b5a35; font-size: 13px; font-weight: 700; }
 
 /* ---------- Fullscreen screens (title / summary / transition) ---------- */
 #fader { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none;
@@ -154,17 +171,18 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0e1420; t
 
 /* ---------- med cabinet ---------- */
 #modal .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
-#modal .tab { padding: 7px 10px; border-radius: 8px; background: #1a2540; border: 1px solid #33518a;
-  color: #9db5e6; font-size: 12px; }
-#modal .tab.on { background: #2f80ff; border-color: #9dc1ff; color: #fff; }
+#modal .tab { padding: 7px 10px; border-radius: 8px; background: #efe6cd; border: 1px solid #c9bd9e;
+  color: #6b5a35; font-size: 12px; }
+#modal .tab.on { background: #7a4d1c; border-color: #7a4d1c; color: #fff; }
 #modal .medbtn { display: flex; align-items: center; gap: 10px; }
 #modal .medbtn i { width: 14px; height: 14px; border-radius: 4px; flex: none; }
 
 #modal .txrow { display: flex; gap: 6px; margin: 8px 0; }
-#modal .txrow input { flex: 1; padding: 10px 12px; border-radius: 9px; border: 1px solid #33518a;
-  background: #0e1830; color: #e8eefc; font-size: 14px; }
-#modal .go-mini { width: 52px; flex: none; text-align: center; margin: 0; }
-#modal .chatline { font-size: 12px; color: #b9c8e6; background: #18243e;
+#modal .txrow input { flex: 1; padding: 10px 12px; border-radius: 9px; border: 1px solid #c9bd9e;
+  background: #fffdf6; color: #243044; font-size: 14px; }
+#modal .go-mini { width: 52px; flex: none; text-align: center; margin: 0;
+  border: 1px solid #c9bd9e; border-radius: 9px; background: #efe6cd; font-size: 17px; }
+#modal .chatline { font-size: 12px; color: #4a5468; background: #efe9d6;
   border-radius: 8px; padding: 7px 9px; margin: 5px 0; line-height: 1.4; }
 #modal.rise { animation: clipRise .45s cubic-bezier(.2,1.4,.4,1); }
 @keyframes clipRise { from { transform: translateY(60vh) scale(.6) rotate(4deg); opacity: 0; } }

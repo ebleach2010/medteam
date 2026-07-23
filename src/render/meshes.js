@@ -56,6 +56,7 @@ const ROLE_RIGS = {
   aide: { suit: 0x7fae5f, shade: 0x648a4a, head: HEAD_BASE, cap: 0xe8f0dc },
   porter: { suit: 0x5a8fd0, shade: 0x4674ac, head: HEAD_BASE, cap: 0x3a5a8a },
   tech: { suit: 0x4a6a78, shade: 0x3a545f, head: HEAD_BASE, collar: 0x8fd0c9 },
+  surgeon: { suit: 0x9e4a56, shade: 0x7c3944, head: HEAD_BASE, cap: 0x6e3a42 },
 };
 export function makeCharacterMesh(role) {
   return buildRig(ROLE_RIGS[role] ?? ROLE_RIGS.nurse);

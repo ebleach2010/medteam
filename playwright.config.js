@@ -3,6 +3,9 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir: './tests',
   timeout: 90_000,
+  // one worker: two software-GL browsers starve each other and the walked
+  // drag tests (wall-clock intervals vs a slowed sim) go flaky
+  workers: 1,
   use: {
     viewport: { width: 844, height: 390 },
     deviceScaleFactor: 2,

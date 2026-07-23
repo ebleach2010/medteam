@@ -2,6 +2,25 @@ import { generateScan } from '../render/xray.js';
 import { answerQuestion, deescalate, matchTreatment, judgeDiagnosis } from '../sim/talk.js';
 import { MEDS, SHELVES } from '../data/meds.js';
 
+// fuzzy pick from a {id,label} menu by typed text: score by how much of the
+// text the label covers and vice versa ("ct with contrast" → CT + contrast)
+function pickByText(list, text) {
+  const norm = (s) => ` ${s.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim()} `;
+  const t = norm(text ?? '');
+  if (t.trim() === '') return null;
+  const tWords = t.trim().split(' ');
+  let best = null, bs = 0;
+  for (const m of list) {
+    const l = norm(m.label + ' ' + m.id);
+    const lWords = norm(m.label).trim().split(' ');
+    const cover = tWords.filter((w) => l.includes(` ${w} `)).length / tWords.length;
+    const back = lWords.filter((w) => t.includes(` ${w} `)).length / lWords.length;
+    const s = cover + back;
+    if (s > bs) { bs = s; best = m; }
+  }
+  return bs >= 0.6 ? best : null;
+}
+
 const SHELF_NAMES = {
   topicals: 'Topicals', antibiotics: 'Antibiotics', resp: 'Resp/Allergy',
   cardiac: 'Cardiac', critical: 'Critical', sedation: 'Sedation/Pain',
@@ -107,23 +126,61 @@ export class Modals {
         }
         this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'workup', choice: w2 } });
       }));
+    for (const [sel, w] of [['#askbar', 'ask'], ['#treatbar', 'treat']]) {
+      this._wireTyped(sel, null, (text) => // button taps handled by the .opt loop above
+        this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'workup', choice: w, text } }));
+    }
     this.box.querySelector('.close').addEventListener('pointerdown', () => this.close());
   }
 
-  // pick an imaging modality for the porter to run
-  modalityPick(patient) {
-    this.current = { type: 'modality', patient, options: [] };
-    let body = `<h3>📷 Order imaging — ${patient.sim.displayName}</h3>`;
+  // the tech's board: every study on the menu, or type what you want and
+  // confirm with the ✅ — typing NEVER closes or submits this by accident
+  studyPick(task) {
+    this.current = { type: 'study', patient: task.patient, options: [], task };
+    let body = `<h3>📷 Order a study — ${task.patient.sim.displayName}</h3>
+      <div class="txrow"><input id="studybar" placeholder="Type a study (e.g. CT with contrast)..." /><button class="opt go-mini" id="studygo">✅</button></div>
+      <p style="color:#8a7a55;font-size:11px;margin:2px 0 6px">...or tap one from the board:</p>`;
     for (const m of this.game.constructor.MODALITIES) {
-      body += `<button class="opt" data-m="${m.id}">${m.label}</button>`;
+      body += `<button class="opt" data-m="${m.id}">${m.label} <span style="float:right;color:#8a7a55">${m.t}s</span></button>`;
     }
-    body += '<button class="close">Cancel</button>';
+    body += '<button class="close">Not yet</button>';
     this.box.innerHTML = body;
     this.veil.style.display = 'flex';
-    this.box.querySelectorAll('.opt').forEach((b) =>
+    this.box.querySelectorAll('.opt[data-m]').forEach((b) =>
       b.addEventListener('pointerdown', () =>
-        this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'modality', choice: b.dataset.m } })));
+        this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'study', choice: b.dataset.m } })));
+    this._wireTyped('#studybar', '#studygo', (text) =>
+      this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'study', text } }));
     this.box.querySelector('.close').addEventListener('pointerdown', () => this.close());
+  }
+
+  // the surgeon's board — same deal, sharper consequences
+  surgeryPick(task) {
+    this.current = { type: 'surgery', patient: task.patient, options: [], task };
+    let body = `<h3>🔪 Choose the operation — ${task.patient.sim.displayName}</h3>
+      <div class="txrow"><input id="surgbar" placeholder="Type an operation..." /><button class="opt go-mini" id="surggo">✅</button></div>
+      <p style="color:#8a7a55;font-size:11px;margin:2px 0 6px">...or tap one from the board:</p>`;
+    for (const s of this.game.constructor.SURGERIES) {
+      body += `<button class="opt" data-s="${s.id}">${s.label} <span style="float:right;color:#8a7a55">${s.t}s</span></button>`;
+    }
+    body += '<button class="close">Not yet</button>';
+    this.box.innerHTML = body;
+    this.veil.style.display = 'flex';
+    this.box.querySelectorAll('.opt[data-s]').forEach((b) =>
+      b.addEventListener('pointerdown', () =>
+        this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'surgery', choice: b.dataset.s } })));
+    this._wireTyped('#surgbar', '#surggo', (text) =>
+      this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'surgery', text } }));
+    this.box.querySelector('.close').addEventListener('pointerdown', () => this.close());
+  }
+
+  // text bars submit ONLY via their ✅ button (or a deliberate Enter);
+  // keystrokes are fenced off from the game's hotkeys
+  _wireTyped(inputSel, btnSel, submit) {
+    const input = this.box.querySelector(inputSel);
+    const go = () => { const t = input?.value ?? ''; if (t.trim()) submit(t); };
+    if (btnSel) this.box.querySelector(btnSel)?.addEventListener('pointerdown', go);
+    input?.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); e.stopPropagation(); });
   }
 
   // clipboard rises up with the imaging report
@@ -149,11 +206,8 @@ export class Modals {
       <div class="txrow"><input id="talkbar" placeholder="Say something calming..." /><button class="opt go-mini" data-t="1">💬</button></div>
       <button class="close">Walk away</button>`;
     this.veil.style.display = 'flex';
-    this.box.querySelector('[data-t]').addEventListener('pointerdown', () => {
-      const text = this.box.querySelector('#talkbar')?.value ?? '';
-      if (!text.trim()) return;
-      this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'talk', text } });
-    });
+    this._wireTyped('#talkbar', '[data-t]', (text) =>
+      this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'talk', text } }));
     this.box.querySelector('.close').addEventListener('pointerdown', () => this.close());
   }
 
@@ -184,11 +238,8 @@ export class Modals {
     this.box.querySelectorAll('.opt[data-i]').forEach((b) =>
       b.addEventListener('pointerdown', () =>
         this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'dx', choice: +b.dataset.i } })));
-    this.box.querySelector('#dxgo')?.addEventListener('pointerdown', () => {
-      const text = this.box.querySelector('#dxbar')?.value ?? '';
-      if (!text.trim()) return;
-      this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'dx', text } });
-    });
+    this._wireTyped('#dxbar', '#dxgo', (text) =>
+      this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'dx', text } }));
     this.box.querySelector('.close').addEventListener('pointerdown', () => this.close());
   }
 
@@ -240,8 +291,21 @@ export class Modals {
       this.workup(cur.patient); // re-render with the new finding
       return;
     }
-    if (cur.type === 'modality') {
-      g.orderImaging(cur.patient, choice);
+    if (cur.type === 'study' || cur.type === 'surgery') {
+      const list = cur.type === 'study' ? g.constructor.MODALITIES : g.constructor.SURGERIES;
+      const picked = choice !== undefined
+        ? list.find((m) => m.id === choice)
+        : pickByText(list, text);
+      if (!picked) {
+        g.ui.toast(cur.type === 'study'
+          ? 'Tech: “never heard of that study.”' : 'Surgeon: “that is not an operation.”', 'bad');
+        return; // board stays up — fix the typo and hit ✅ again
+      }
+      const t2 = cur.task;
+      if (t2?.phase === 'awaitChoice') {
+        if (cur.type === 'study') g.beginScan(t2, picked);
+        else g.beginSurgery(t2, picked);
+      }
       this.close();
       return;
     }

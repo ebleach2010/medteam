@@ -147,6 +147,71 @@ test('radiology pipeline: order CT, porter round-trip, clipboard on the desk', a
   await page.screenshot({ path: 'test-results/shots/radiology.png' });
 });
 
+test('phlebotomist drags the patient to the lab, spins, drags them back with results', async ({ page }) => {
+  await boot(page);
+  await page.evaluate(helpers);
+  const res = await page.evaluate(async () => {
+    const g = window.__game, api = window.__api;
+    const id = g.spawnCase('sepsis', -20, 8);
+    await api.sleep(300);
+    g.bedPatientTo(id, 1);                    // Room 2
+    g.orderLabs(id);
+    await api.until(() => g.taskPhases().includes('labs:waitSpin'), 60000);
+    g.centrifugeFastForward();
+    await api.until(() => api.patient(id)?.state === 'inbed' &&
+      g.state().items.some((i) => i.kind === 'paper' && !i.held), 60000);
+    return { done: true, lab: api.patient(id).lab };
+  });
+  expect(res.done).toBe(true);
+  expect(res.lab).toBe('ready');
+});
+
+test('tech waits at the machine; you show up, pick CT from the board, scan runs', async ({ page }) => {
+  await boot(page);
+  await page.evaluate(helpers);
+  const res = await page.evaluate(async () => {
+    const g = window.__game, api = window.__api;
+    const id = g.spawnCase('stroke_sah', -20, 8);
+    await api.sleep(300);
+    g.bedPatientTo(id, 7);
+    g.orderImaging(id);                       // NO modality — chosen at the machine
+    await api.until(() => g.taskPhases().includes('imaging:awaitChoice'), 40000);
+    // walk of shame: teleport the nurse to the machine; the tech should ask
+    g.teleport('nurse', 7.2, -1.2);
+    await api.until(() => g.state().modal === 'study', 8000);
+    g.inject({ type: 'SELECT', actorId: g.game.nurse.id, payload: { modal: 'study', choice: 'CT' } });
+    await api.until(() => g.taskPhases().includes('imaging:scanning'), 8000);
+    g.fastForwardImaging();
+    await api.until(() => api.patient(id)?.state === 'inbed' &&
+      g.state().items.some((i) => i.label.startsWith('Imaging:')), 40000);
+    return { done: true };
+  });
+  expect(res.done).toBe(true);
+});
+
+test('surgery team: waits at the bedside, you pick the right op, patient treated', async ({ page }) => {
+  await boot(page);
+  await page.evaluate(helpers);
+  const res = await page.evaluate(async () => {
+    const g = window.__game, api = window.__api;
+    const id = g.spawnCase('appy', -20, 8);
+    await api.sleep(300);
+    g.bedPatientTo(id, 4);                    // Room 5
+    g.orderSurgery(id);
+    await api.until(() => g.taskPhases().includes('surgery:awaitChoice'), 40000);
+    const bed = g.game.map.beds[4];
+    g.teleport('nurse', bed.x + 1.0, bed.z + 1.1);
+    await api.until(() => g.state().modal === 'surgery', 8000);
+    // type it in and confirm — the typed path, not the tap path
+    g.inject({ type: 'SELECT', actorId: g.game.nurse.id, payload: { modal: 'surgery', text: 'appendectomy' } });
+    await api.until(() => g.taskPhases().includes('surgery:operating'), 8000);
+    g.fastForwardSurgery();
+    await api.until(() => api.patient(id)?.treated, 10000);
+    return { done: true };
+  });
+  expect(res.done).toBe(true);
+});
+
 test('agitation: naloxone wakes the OD furious; tackle, sedate, re-bed', async ({ page }) => {
   await boot(page);
   await page.evaluate(helpers);

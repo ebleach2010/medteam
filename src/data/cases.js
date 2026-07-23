@@ -395,5 +395,15 @@ export const CASES = [
     { fail: 'resp', pace: 0.7, v: { hr: 52, rr: 24 }, phys: 'SLUDGE: salivation, lacrimation, pinpoint pupils, fasciculations' }),
 ];
 
+// cases where an operation is the definitive fix — the surgery team's menu
+// checks the pick against this (operating on anyone else is malpractice)
+const SURGERY_MAP = {
+  appy: 'appendectomy', chole: 'cholecystectomy', ectopic: 'salpingectomy',
+  ptx: 'chest_tube', tension_ptx: 'chest_tube', tamponade: 'peri_window',
+  boerhaave: 'thoracotomy', dissect: 'thoracotomy', necfasc: 'debridement',
+  armfx: 'orif', cauda: 'laminectomy', stroke_sah: 'craniotomy',
+};
+for (const c of CASES) if (SURGERY_MAP[c.id]) c.surgery = SURGERY_MAP[c.id];
+
 export const caseById = (id) => CASES.find((c) => c.id === id);
 export const casesByTier = (t) => CASES.filter((c) => c.tier === t);

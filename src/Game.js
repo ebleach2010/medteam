@@ -11,7 +11,7 @@ import { Character } from './entities/Character.js';
 import { syncPatientMesh } from './entities/Patient.js';
 import { spawnCarryable } from './entities/Carryable.js';
 import { Spawner } from './sim/spawner.js';
-import { giveMed } from './sim/treatment.js';
+import { giveMed, applyTreatment } from './sim/treatment.js';
 import { INTENT, make } from './intents/intents.js';
 import { UI } from './ui/ui.js';
 import { medById } from './data/meds.js';
@@ -40,6 +40,7 @@ export class Game {
     this.aide = this.world.add(new Character(this, 'aide', this.map.nurseSpawn.x - 2, this.map.nurseSpawn.z + 1), 'chars');
     this.porter = this.world.add(new Character(this, 'porter', this.map.porterSpawn.x, this.map.porterSpawn.z), 'chars');
     this.tech = this.world.add(new Character(this, 'tech', this.map.diagnostics.tech.x, this.map.diagnostics.tech.z), 'chars');
+    this.surgeon = this.world.add(new Character(this, 'surgeon', this.map.doctorSpawn.x - 1.5, this.map.doctorSpawn.z - 1), 'chars');
     this.tasks = new Map();      // staff char → current task
     this.activeIdx = 0;
 
@@ -55,10 +56,10 @@ export class Game {
     this.aiTask = null; // the idle nurse running labs for the doctor
     this.quota = QUOTA;
 
-    // comedy FX pools: body skid marks (fade over 5s) + sprint dust
+    // comedy FX pools: heel skid lines (fade over 5s) + sprint dust
     this.fx = { skids: [], dusts: [], skidIdx: 0, dustIdx: 0 };
-    const skidGeo = new THREE.PlaneGeometry(0.42, 0.95);
-    for (let i = 0; i < 48; i++) {
+    const skidGeo = new THREE.PlaneGeometry(0.075, 0.62);
+    for (let i = 0; i < 96; i++) {
       const m = new THREE.Mesh(skidGeo, new THREE.MeshBasicMaterial({
         color: 0x574b40, transparent: true, opacity: 0, depthWrite: false }));
       m.rotation.x = -Math.PI / 2;
@@ -248,15 +249,27 @@ export class Game {
     this.ui.bubbles.say(this.aide, '🩸 On it!', { hold: 3 });
   }
 
-  orderImaging(patient, modality) {
+  // modality is optional: without one the porter still hauls the patient to
+  // diagnostics, and the tech waits for YOU to show up and choose the study
+  orderImaging(patient, modality = null) {
     const sim = patient.sim;
-    const M = Game.MODALITIES.find((m) => m.id === modality);
-    if (!M || sim.state !== 'inbed') { this.ui.toast('They need to be in a room bed'); return; }
-    if (sim.imagingOrder) { this.ui.toast('Imaging already ordered'); return; }
+    const M = modality ? Game.MODALITIES.find((m) => m.id === modality) : null;
+    if (modality && !M) { this.ui.toast('Unknown study'); return; }
+    if (sim.state !== 'inbed') { this.ui.toast('They need to be in a room bed'); return; }
+    if (sim.imagingOrder) { this.ui.toast('Imaging already in motion'); return; }
     if (!this.dispatch(this.porter, { type: 'imaging', phase: 'toRoom', patient, modality: M,
       bed: sim.bed, route: this._routeToRoomBed(this.porter.pos, sim.bed) })) return;
-    sim.imagingOrder = { modality: M.id, phase: 'transport' };
+    sim.imagingOrder = { modality: M?.id ?? 'TBD', phase: 'transport' };
     this.ui.bubbles.say(this.porter, '🛏️ Transport rolling!', { hold: 3 });
+  }
+
+  orderSurgery(patient) {
+    const sim = patient.sim;
+    if (sim.state !== 'inbed') { this.ui.toast('They need to be in a room bed first'); return; }
+    if (sim.surgeryDone) { this.ui.toast('They have already been to surgery'); return; }
+    if (!this.dispatch(this.surgeon, { type: 'surgery', phase: 'toPatient', patient,
+      bed: sim.bed, route: this._routeToRoomBed(this.surgeon.pos, sim.bed) })) return;
+    this.ui.bubbles.say(this.surgeon, '🔪 Surgery — on our way.', { hold: 3 });
   }
 
   orderMedFetch(patient, medId) {
@@ -285,47 +298,85 @@ export class Game {
 
   _done(ch) { this.tasks.delete(ch); }
 
+  // the phlebotomist doesn't come to you — they scoop the patient up and DRAG
+  // them to the lab, draw there, spin, and drag them back with the results
   _task_labs(ch, t, dt) {
     const sim = t.patient?.sim;
+    if (!sim || sim.state === 'dead') {
+      if (ch.dragging) { ch.dragging.draggedBy = null; ch.dragging = null; }
+      this._done(ch); return;
+    }
     if (t.phase === 'toPatient') {
-      if (!sim || sim.state !== 'inbed' || sim.labState !== 'none') { this._done(ch); return; }
-      t.wait += dt;
-      if (t.wait > 1.5) {
-        sim.labState = 'drawn';
-        sim.lastRoomNo = sim.bed?.roomNo;
-        const a = ch.handAnchor();
-        const vial = spawnCarryable(this, 'vial', a.x, a.y, a.z,
-          { patientId: t.patient.id, label: `Blood: ${sim.displayName}` });
-        ch.carrying = vial; vial.heldBy = ch;
-        t.phase = 'toLab'; t.wait = 0;
-        t.route = this._routeTo(ch.pos, this.map.centrifuge);
-      }
+      if (sim.state !== 'inbed' || sim.labState !== 'none') { this._done(ch); return; }
+      sim.lastRoomNo = sim.bed?.roomNo;
+      t.bed = sim.bed; t.bed.occupant = t.patient; // hold their room
+      sim.onGrabbed();
+      sim.state = 'transport';
+      sim.bed = t.bed;
+      ch.dragging = t.patient; t.patient.draggedBy = ch;
+      t.phase = 'toLab';
+      const rd = this.map.roomDoor(t.bed.index);
+      t.route = [
+        { x: rd.x, z: -6 },                                       // out the room door
+        ...this._routeTo({ x: rd.x, z: -5.6 }, { x: -2, z: -5.2 }), // corridor (zone doors included)
+        { x: -2, z: -2.6 },                                       // in the lab door
+        { x: -0.9, z: -1.8 },                                     // beside the centrifuge
+      ];
       return;
     }
     if (t.phase === 'toLab') {
-      if (!ch.carrying) { t.phase = 'waitSpin'; }
+      // park them by the machine and get the needle in
+      ch.dragging = null; t.patient.draggedBy = null;
+      t.patient.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
+      t.patient.body.setTranslation({ x: -0.9, y: 0.95, z: -1.8 }, true);
+      sim.state = 'transport';
+      t.phase = 'draw'; t.wait = 0;
+      return;
+    }
+    if (t.phase === 'draw') {
+      t.wait += dt;
+      if (t.wait < 1.5) return;
+      const c = this.map.centrifuge;
+      if (c.busy) return; // queue behind whoever's spinning
+      sim.labState = 'spinning';
+      c.busy = { patientId: t.patient.id };
+      c.timer = 20;
+      this.ui.toast('🩸 Drawn in the lab — centrifuge spinning (20s)...');
+      t.phase = 'waitSpin';
       return;
     }
     if (t.phase === 'waitSpin') {
       const paper = [...this.world.byTag('items')].find((i) =>
         i.itemKind === 'paper' && !i.heldBy && i.data.patientId === t.patient.id);
-      if (paper) {
-        ch.carrying = paper; paper.heldBy = ch;
-        t.phase = 'toDesk';
-        const desk = this._deskFor(t.patient.sim);
-        t.route = desk ? this._routeTo(ch.pos, { x: desk.x, z: desk.z + 1 }) : this._routeTo(ch.pos, this.map.nurseSpawn);
-        t.desk = desk;
-      }
+      if (!paper) return;
+      ch.carrying = paper; paper.heldBy = ch;
+      // results in one hand, patient in the other — back to their room
+      sim.onGrabbed();
+      sim.state = 'transport';
+      sim.bed = t.bed; t.bed.occupant = t.patient;
+      ch.dragging = t.patient; t.patient.draggedBy = ch;
+      t.phase = 'toRoomBack';
+      const rd2 = this.map.roomDoor(t.bed.index);
+      t.route = [
+        { x: -2, z: -2.6 },                                        // back out the lab door
+        { x: -2, z: -5.4 },
+        ...this._routeTo({ x: -2, z: -5.6 }, { x: rd2.x, z: -5.6 }),
+        { x: rd2.x, z: -6 },
+        { x: t.bed.x + 0.9, z: t.bed.z + 1.1 },
+      ];
       return;
     }
-    if (t.phase === 'toDesk') {
+    if (t.phase === 'toRoomBack') {
+      ch.dragging = null; t.patient.draggedBy = null;
+      this.bedPatient(t.patient, t.bed);
+      const desk = this.map.roomDesks[t.bed.roomNo - 1];
       const item = ch.carrying;
-      if (item && t.desk) {
+      if (item && desk) {
         ch.carrying = null; item.heldBy = null;
         item.data.clip = 'labs';
         item.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
-        item.body.setTranslation({ x: t.desk.x, y: t.desk.y + 0.04, z: t.desk.z }, true);
-        this.ui.toast(`📋 Lab results on the desk — Room ${t.desk.roomNo}`, 'good');
+        item.body.setTranslation({ x: desk.x, y: desk.y + 0.04, z: desk.z }, true);
+        this.ui.toast(`📋 Lab results on the desk — Room ${t.bed.roomNo}`, 'good');
         this.audio.good();
       }
       t.phase = 'home';
@@ -335,12 +386,37 @@ export class Game {
     this._done(ch);
   }
 
+  // the diagnostics machine is a shapeshifter — one dock, every study a real
+  // doctor would order. The tech runs whichever one you pick at the machine.
   static MODALITIES = [
-    { id: 'XRAY', label: 'X-ray — 12s', t: 12, match: ['cxr', 'ankle'] },
-    { id: 'US', label: 'Ultrasound — 16s', t: 16, match: ['ct_freefluid'] },
-    { id: 'CT', label: 'CT — 22s', t: 22, match: ['ct'] },
-    { id: 'MRI', label: 'MRI — 45s', t: 45, match: ['mri'] },
-    { id: 'MRIC', label: 'MRI + contrast — 70s', t: 70, match: ['mri'] },
+    { id: 'XRAY', label: 'X-ray', t: 12, match: ['cxr', 'ankle'] },
+    { id: 'US', label: 'Ultrasound', t: 16, match: ['ct_freefluid'] },
+    { id: 'ECHO', label: 'Echo + bubble study', t: 20, match: ['echo'] },
+    { id: 'EKG12', label: '12-lead EKG', t: 8, match: ['ekg'] },
+    { id: 'CT', label: 'CT', t: 22, match: ['ct'] },
+    { id: 'CTC', label: 'CT + contrast', t: 30, match: ['ct'] },
+    { id: 'MRI', label: 'MRI', t: 45, match: ['mri'] },
+    { id: 'MRIC', label: 'MRI + contrast', t: 70, match: ['mri'] },
+    { id: 'SCOPE', label: 'Endoscopy', t: 35, match: ['scope'] },
+    { id: 'BIOPSY', label: 'Biopsy', t: 40, match: ['biopsy'] },
+    { id: 'STRESS', label: 'Stress test', t: 50, match: ['stress'] },
+  ];
+
+  // the surgery team's menu — pick right and it's curative, pick wrong and
+  // you just operated on someone for fun
+  static SURGERIES = [
+    { id: 'chest_tube', label: 'Chest tube', t: 14 },
+    { id: 'debridement', label: 'Surgical debridement', t: 24 },
+    { id: 'peri_window', label: 'Pericardial window', t: 26 },
+    { id: 'orif', label: 'ORIF (fracture fixation)', t: 28 },
+    { id: 'appendectomy', label: 'Appendectomy', t: 30 },
+    { id: 'salpingectomy', label: 'Salpingectomy (ectopic)', t: 30 },
+    { id: 'cholecystectomy', label: 'Cholecystectomy', t: 32 },
+    { id: 'laminectomy', label: 'Decompressive laminectomy', t: 36 },
+    { id: 'exlap', label: 'Exploratory laparotomy', t: 38 },
+    { id: 'thoracotomy', label: 'Thoracotomy', t: 40 },
+    { id: 'craniotomy', label: 'Craniotomy', t: 45 },
+    { id: 'cabg', label: 'CABG', t: 60 },
   ];
 
   _task_imaging(ch, t, dt) {
@@ -371,14 +447,24 @@ export class Game {
       t.patient.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
       t.patient.body.setTranslation({ x: this.map.diagnostics.dock.x, y: 0.95, z: this.map.diagnostics.dock.z }, true);
       sim.state = 'transport';
-      t.phase = 'scanning';
-      t.wait = t.modality.t;
-      this.ui.toast(`📷 ${t.modality.id} running on ${sim.displayName} (${t.modality.t}s)...`);
+      if (t.modality) { this.beginScan(t, t.modality); return; }
+      // no study chosen yet — the tech waits for YOU to come and order one
+      t.phase = 'awaitChoice';
+      this.ui.toast('🧑‍⚕️ Tech: patient is on the machine — come to DIAGNOSTICS and order the study.');
+      this.ui.bubbles.say(this.tech, '📷 What are we running? Come tell me.', { hold: 5 });
+      return;
+    }
+    if (t.phase === 'awaitChoice') {
+      const d = this.map.diagnostics.dock;
+      const a = this.active.pos;
+      if (Math.hypot(a.x - d.x, a.z - d.z) > 3.4) { t.asked = false; return; }
+      if (!t.asked && !this.ui.modals.open) { t.asked = true; this.ui.modals.studyPick(t); }
       return;
     }
     if (t.phase === 'scanning') {
       t.wait -= dt;
       if (t.wait > 0) return;
+      if (!t.modality) { this._done(ch); return; }
       const img = sim.case.imaging;
       const matches = img && t.modality.match.some((pre) => img.type.startsWith(pre));
       t.report = matches
@@ -417,6 +503,63 @@ export class Game {
     this._done(ch);
   }
 
+  beginScan(t, M) {
+    const sim = t.patient.sim;
+    t.modality = M;
+    sim.imagingOrder = { modality: M.id, phase: 'scanning' };
+    t.phase = 'scanning';
+    t.wait = M.t;
+    this.ui.toast(`📷 ${M.label} running on ${sim.displayName} (${M.t}s)...`);
+    this.audio.tap();
+  }
+
+  beginSurgery(t, S) {
+    t.surgery = S;
+    t.phase = 'operating';
+    t.wait = S.t;
+    this.ui.toast(`🔪 ${S.label} underway (${S.t}s)...`);
+    this.ui.bubbles.say(this.surgeon, '🔪 Scrubbing in.', { hold: 3 });
+  }
+
+  // the surgery team comes to the ROOM, then waits for you to pick the op
+  _task_surgery(ch, t, dt) {
+    const sim = t.patient?.sim;
+    if (!sim || sim.state === 'dead') { this._done(ch); return; }
+    if (t.phase === 'toPatient') {
+      if (sim.state !== 'inbed') { this._done(ch); return; }
+      t.phase = 'awaitChoice';
+      this.ui.bubbles.say(ch, '🔪 What are we doing? Come tell me.', { hold: 4.5 });
+      return;
+    }
+    if (t.phase === 'awaitChoice') {
+      if (sim.state !== 'inbed') { this._done(ch); return; }
+      const a = this.active.pos, s = ch.pos;
+      if (Math.hypot(a.x - s.x, a.z - s.z) > 3.2) { t.asked = false; return; }
+      if (!t.asked && !this.ui.modals.open) { t.asked = true; this.ui.modals.surgeryPick(t); }
+      return;
+    }
+    if (t.phase === 'operating') {
+      t.wait -= dt;
+      if (t.wait > 0) return;
+      sim.surgeryDone = t.surgery.id;
+      if (sim.case.surgery && sim.case.surgery === t.surgery.id) {
+        applyTreatment(this, sim);
+        this.addScore(140, 'Correct surgery');
+        this.ui.toast(`✅ ${t.surgery.label} went beautifully.`, 'good');
+        this.audio.good();
+      } else {
+        this.addScore(-80, 'Unnecessary surgery');
+        this.ui.toast(`⚠ ${t.surgery.label}... that was NOT the operation they needed.`, 'bad');
+        sim.accel *= 2;
+        if (!sim.case.surgery && this.rng.chance(0.25)) sim._goCritical();
+      }
+      t.phase = 'home';
+      t.route = this._routeTo(ch.pos, this.map.doctorSpawn);
+      return;
+    }
+    this._done(ch);
+  }
+
   _task_fetch(ch, t, dt) {
     const sim = t.patient?.sim;
     if (t.phase === 'toPharmacy') {
@@ -447,12 +590,18 @@ export class Game {
   }
 
   _spawnSkid(x, z, yaw) {
-    const f = this.fx.skids[this.fx.skidIdx];
-    this.fx.skidIdx = (this.fx.skidIdx + 1) % this.fx.skids.length;
-    f.mesh.position.set(x + (this.rng.next() - 0.5) * 0.2, 0.028, z + (this.rng.next() - 0.5) * 0.2);
-    f.mesh.rotation.z = -yaw + (this.rng.next() - 0.5) * 0.3;
-    f.mesh.visible = true;
-    f.life = 1;
+    // two thin parallel lines where the HEELS scrape — the feet trail behind
+    // the dragged body, spaced a hip apart
+    const fx = x - Math.sin(yaw) * 0.55, fz = z - Math.cos(yaw) * 0.55;
+    const px = Math.cos(yaw), pz = -Math.sin(yaw); // perpendicular to travel
+    for (const side of [-0.13, 0.13]) {
+      const f = this.fx.skids[this.fx.skidIdx];
+      this.fx.skidIdx = (this.fx.skidIdx + 1) % this.fx.skids.length;
+      f.mesh.position.set(fx + px * side, 0.028, fz + pz * side);
+      f.mesh.rotation.z = -yaw + (this.rng.next() - 0.5) * 0.12;
+      f.mesh.visible = true;
+      f.life = 1;
+    }
   }
 
   _spawnDust(x, z) {
@@ -677,11 +826,8 @@ export class Game {
     const pt = [...this.world.byTag('patients')].find((p) => p.id === patientId);
     if (!pt) { this.ui.toast('No patient nearby'); return; }
     if (order === 'labs') { this.orderLabs(pt); return; }
-    if (order === 'imaging') {
-      if (pt.sim.state !== 'inbed') { this.ui.toast('Get them into a room bed first'); return; }
-      this.ui.modals.modalityPick(pt);
-      return;
-    }
+    if (order === 'imaging') { this.orderImaging(pt); return; } // study chosen AT the machine
+    if (order === 'surgery') { this.orderSurgery(pt); return; }
     if (order === 'dx') { this.ui.modals.diagnose(pt); return; }
     if (order === 'discharge') {
       if (pt.sim.stabilized) {
@@ -772,8 +918,19 @@ export class Game {
       };
     }
 
-    // med cabinet: any pharmacy shelf is a face of the same tabbed cabinet
+    // a staffer standing by, waiting for your order (tech at the machine,
+    // surgeon at the bedside) — the clipboard re-opens their menu
     const cp = char.pos;
+    for (const [ch2, t2] of this.tasks) {
+      if (t2.phase !== 'awaitChoice') continue;
+      const sp = ch2.pos;
+      if (Math.hypot(sp.x - cp.x, sp.z - cp.z) > 3.2) continue;
+      return t2.type === 'imaging'
+        ? { ico: '📷', label: 'ORDER STUDY', color: '#4a6a78', run: () => this.ui.modals.studyPick(t2) }
+        : { ico: '🔪', label: 'CHOOSE SURGERY', color: '#9e4a56', run: () => this.ui.modals.surgeryPick(t2) };
+    }
+
+    // med cabinet: any pharmacy shelf is a face of the same tabbed cabinet
     const nearShelf = this.map.shelfUnits.some((u) => Math.hypot(u.x - cp.x, u.z - cp.z) < 2.3);
     if (nearShelf) return { ico: '💊', label: 'OPEN MED CABINET', color: '#d05a9e', run: () => this.ui.modals.cabinet() };
 

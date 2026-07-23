@@ -1,4 +1,6 @@
-// Floating virtual joystick: appears wherever the left half is touched.
+// Floating virtual joystick: appears wherever the screen is touched.
+// (Buttons sit above the zone in the DOM, so they still win their taps.)
+const typing = () => /INPUT|TEXTAREA/.test(document.activeElement?.tagName ?? '');
 export class Joystick {
   constructor(root) {
     this.vec = { x: 0, z: 0 };
@@ -13,7 +15,7 @@ export class Joystick {
     const zone = document.createElement('div');
     // touch-action:none is critical: it isn't inherited, and without it the
     // browser (or an embedding page) treats the thumb drag as a scroll gesture
-    zone.style.cssText = 'position:absolute;left:0;top:0;bottom:0;width:46%;pointer-events:auto;touch-action:none;';
+    zone.style.cssText = 'position:absolute;inset:0;pointer-events:auto;touch-action:none;';
     root.appendChild(zone);
 
     zone.addEventListener('pointerdown', (e) => {
@@ -45,9 +47,10 @@ export class Joystick {
     zone.addEventListener('pointerup', end);
     zone.addEventListener('pointercancel', end);
 
-    // keyboard fallback for desktop dev/testing
+    // keyboard fallback for desktop dev/testing — but NEVER while typing in a
+    // text box (wasd used to walk you away mid-sentence)
     this.keys = new Set();
-    window.addEventListener('keydown', (e) => { this.keys.add(e.key); this._keyVec(); });
+    window.addEventListener('keydown', (e) => { if (typing()) return; this.keys.add(e.key); this._keyVec(); });
     window.addEventListener('keyup', (e) => { this.keys.delete(e.key); this._keyVec(); });
   }
 

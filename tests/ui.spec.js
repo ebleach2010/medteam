@@ -33,7 +33,7 @@ test('joystick drag moves the character', async ({ page }) => {
   expect(after).toBeGreaterThan(before + 1);
 });
 
-test('HOLD TO GRAB button actually grabs; release lets go', async ({ page }) => {
+test('GRAB button toggles: tap grabs, tap again lets go', async ({ page }) => {
   await boot(page);
   await page.locator('#screen .go').click();
   await page.evaluate(() => {
@@ -46,7 +46,10 @@ test('HOLD TO GRAB button actually grabs; release lets go', async ({ page }) => 
   const grab = page.locator('#btn-grab');
   await grab.dispatchEvent('pointerdown');
   await page.waitForFunction(() => !!window.__game.game.nurse.dragging, null, { timeout: 5000 });
-  await grab.dispatchEvent('pointerup');
+  await grab.dispatchEvent('pointerup');   // lifting the finger must NOT release
+  await page.waitForTimeout(400);
+  expect(await page.evaluate(() => !!window.__game.game.nurse.dragging)).toBe(true);
+  await grab.dispatchEvent('pointerdown'); // second tap lets go
   await page.waitForFunction(() => !window.__game.game.nurse.dragging);
 });
 

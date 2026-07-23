@@ -71,5 +71,11 @@ export function installTestApi(game) {
       if (p) game.orderImaging(p, modality);
     },
     fastForwardImaging() { for (const t of game.tasks.values()) if (t.type === 'imaging' && t.phase === 'scanning') t.wait = 0.05; },
+    fastForwardSurgery() { for (const t of game.tasks.values()) if (t.type === 'surgery' && t.phase === 'operating') t.wait = 0.05; },
+    orderSurgery(id) {
+      const p = [...game.world.byTag('patients')].find((q) => q.id === id);
+      if (p) game.orderSurgery(p);
+    },
+    taskPhases() { return [...game.tasks.values()].map((t) => `${t.type}:${t.phase}`); },
   };
 }
