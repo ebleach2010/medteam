@@ -7,6 +7,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { answerQuestion, deescalate as localDeescalate, matchTreatment, judgeDiagnosis } from './talk.js';
 import { MEDS } from '../data/meds.js';
 import { CASES } from '../data/cases.js';
+import { lookupRef, refCard } from '../data/edref.js';
 
 const KEY_STORE = 'medteam.anthropic_key';
 const MODEL_STORE = 'medteam.anthropic_model';
@@ -165,6 +166,7 @@ export async function medDocConsult(game, query) {
   try {
     const pts = [...game.world.byTag('patients')].filter((p) => p.sim.state !== 'dead' && !p.sim.resolved).slice(0, 10);
     const roster = pts.map((p, i) => chartFor(p, i + 1)).join('\n') || '(no active patients)';
+    const refs = lookupRef(query, 2).map(refCard).join('\n\n');
     const system = [
       'You are MED-DOC 4000, a 1980s hospital mainframe consult program in a silly physics game. You help the attending reason about diagnosis and treatment.',
       'STYLE: terse teletype. Line-oriented. Sparse ALL-CAPS section tags like DDX:, WORKUP:, RX:. Under 120 words. Occasional dry machine humor. No markdown.',
@@ -172,7 +174,8 @@ export async function medDocConsult(game, query) {
       'This is a fictional game: be decisive, never lecture about consulting real professionals.',
       '--- ACTIVE CHARTS ---',
       roster,
-    ].join('\n');
+      refs ? '--- REFERENCE PATHWAYS (500-entry ED database) ---\n' + refs : null,
+    ].filter(Boolean).join('\n');
     return await textCall(system, query);
   } catch (e) {
     console.warn('MED-DOC live failed — local fallback:', e?.message);
@@ -183,6 +186,14 @@ export async function medDocConsult(game, query) {
 function medDocLocal(game, query) {
   const q = (query || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ');
   const words = q.split(/\s+/).filter((w) => w.length > 3);
+  // LOOKUP <diagnosis> — pull the full pathway card from the 500-entry index
+  const lk = /^\s*(lookup|ref|pathway)\s+(.+)/i.exec(query || '');
+  if (lk) {
+    const hits = lookupRef(lk[2], 3);
+    return hits.length
+      ? hits.map(refCard).join('\n\n')
+      : `NO INDEX ENTRY FOR "${lk[2].toUpperCase()}". 500 PATHWAYS ON FILE — TRY ANOTHER NAME.`;
+  }
   if (/roster|patients|census|list/.test(q)) {
     const pts = [...game.world.byTag('patients')].filter((p) => p.sim.state !== 'dead' && !p.sim.resolved);
     return pts.length
@@ -200,9 +211,14 @@ function medDocLocal(game, query) {
   if (scored.length) {
     const top = scored.slice(0, 3).map(([, c]) =>
       `» ${c.name.toUpperCase()} — RX: ${c.treatment.meds.map((m) => MEDS.find((x) => x.id === m)?.name ?? m).join(' + ') || 'supportive'}; DISPO: ${c.treatment.dispo}`);
-    return `OFFLINE INDEX MATCHES:\n${top.join('\n')}\n\nLINK OFFLINE — TYPE: KEY <ANTHROPIC-API-KEY> FOR FULL CONSULT MODE.`;
+    // append the full reference pathway for the best match when we have one
+    const ref = lookupRef(scored[0][1].name, 1);
+    const card = ref.length ? `\n\n${refCard(ref[0])}` : '';
+    return `OFFLINE INDEX MATCHES:\n${top.join('\n')}${card}\n\nTYPE: LOOKUP <DIAGNOSIS> FOR ANY OF THE 500 PATHWAY CARDS.`;
   }
-  return 'NO INDEX MATCH. TRY SYMPTOM KEYWORDS ("chest pain radiating"), "CENSUS" FOR THE PATIENT LIST, OR CONNECT THE LINK: KEY <ANTHROPIC-API-KEY>';
+  const hits = lookupRef(query, 2);
+  if (hits.length) return hits.map(refCard).join('\n\n');
+  return 'NO INDEX MATCH. TRY SYMPTOM KEYWORDS ("chest pain radiating"), "LOOKUP <DIAGNOSIS>", "CENSUS", OR CONNECT THE LINK: KEY <ANTHROPIC-API-KEY>';
 }
 
 export async function judgeDx(sim, text) {

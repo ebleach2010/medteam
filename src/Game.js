@@ -296,6 +296,7 @@ export class Game {
     const sim = patient.sim;
     if (sim.state !== 'inbed') { this.ui.toast('Get them into a room bed first'); return; }
     if (sim.labState !== 'none') { this.ui.toast('Labs already in motion'); return; }
+    if (this.tasks.has(this.aide)) { this._queueJob(this.aide, { kind: 'labs', patientId: patient.id, panels }, sim, 'labs'); return; }
     if (!this.dispatch(this.aide, { type: 'labs', phase: 'toPatient', patient, panels,
       route: this._routeToRoomBed(this.aide.pos, sim.bed) })) return;
     sim.orders.add('labs');
@@ -319,6 +320,7 @@ export class Game {
     if (modality && !M) { this.ui.toast('Unknown study'); return; }
     if (sim.state !== 'inbed') { this.ui.toast('They need to be in a room bed'); return; }
     if (sim.imagingOrder) { this.ui.toast('Imaging already in motion'); return; }
+    if (this.tasks.has(this.porter)) { this._queueJob(this.porter, { kind: 'imaging', patientId: patient.id, modality }, sim, 'imaging'); return; }
     if (!this.dispatch(this.porter, { type: 'imaging', phase: 'toRoom', patient, modality: M,
       bed: sim.bed, route: this._routeToRoomBed(this.porter.pos, sim.bed) })) return;
     sim.imagingOrder = { modality: M?.id ?? 'TBD', phase: 'transport' };
@@ -329,6 +331,8 @@ export class Game {
     const sim = patient.sim;
     if (sim.state !== 'inbed') { this.ui.toast('They need to be in a room bed first'); return; }
     if (sim.surgeryDone) { this.ui.toast('They have already been to surgery'); return; }
+    if (sim._surgQueued) { this.ui.toast('Already in the surgery queue'); return; }
+    if (this.tasks.has(this.surgeon)) { this._queueJob(this.surgeon, { kind: 'surgery', patientId: patient.id }, sim, 'surgery'); return; }
     if (!this.dispatch(this.surgeon, { type: 'surgery', phase: 'toPatient', patient,
       bed: sim.bed, route: this._routeToRoomBed(this.surgeon.pos, sim.bed) })) return;
     this.ui.bubbles.say(this.surgeon, '🔪 Surgery — on our way.', { hold: 3 });
@@ -337,6 +341,7 @@ export class Game {
   orderMedFetch(patient, medId) {
     const med = medById(medId);
     if (!med) return false;
+    if (this.tasks.has(this.aide)) { this._queueJob(this.aide, { kind: 'fetch', patientId: patient.id, medId }, patient.sim, 'med fetch'); return true; }
     if (!this.dispatch(this.aide, { type: 'fetch', phase: 'toPharmacy', patient, medId,
       route: this._routeTo(this.aide.pos, { x: -9.5, z: 17.4 }) })) return false;
     this.ui.toast(`💊 Nurse fetching ${med.name}...`);
@@ -425,7 +430,35 @@ export class Game {
     }
   }
 
-  _done(ch) { this.tasks.delete(ch); }
+  _done(ch) {
+    this.tasks.delete(ch);
+    this._drainQueue(ch);
+  }
+
+  // busy staffer? the order goes in their line (blinking orange room light).
+  // Queue as many as you want — jobs run back-to-back in the order called.
+  _queueJob(ch, job, sim, label) {
+    (ch._jobQueue ??= []).push(job);
+    if (job.kind === 'imaging') sim.imagingOrder = { modality: job.modality ?? 'TBD', phase: 'queued' };
+    if (job.kind === 'labs') sim.labState = 'queued';
+    if (job.kind === 'surgery') sim._surgQueued = true;
+    this.ui.toast(`🟠 ${sim.displayName} queued for ${label} (#${ch._jobQueue.length} in line)`);
+    this.audio?.blip?.();
+  }
+
+  _drainQueue(ch) {
+    const q = ch._jobQueue;
+    while (q?.length && !this.tasks.has(ch)) {
+      const job = q.shift();
+      const pt = [...this.world.byTag('patients')].find((p) => p.id === job.patientId);
+      if (!pt || pt.sim.state === 'dead' || pt.sim.resolved) continue;
+      const sim = pt.sim;
+      if (job.kind === 'imaging') { sim.imagingOrder = null; this.orderImaging(pt, job.modality); }
+      else if (job.kind === 'labs') { if (sim.labState === 'queued') sim.labState = 'none'; this.orderLabs(pt, job.panels); }
+      else if (job.kind === 'surgery') { sim._surgQueued = false; this.orderSurgery(pt); }
+      else if (job.kind === 'fetch') { this.orderMedFetch(pt, job.medId); }
+    }
+  }
 
   _playerNear(p, d) {
     for (const c of [this.nurse, this.doctor]) {
@@ -914,8 +947,10 @@ export class Game {
       const sim2 = bed.occupant?.sim;
       let c = 0x8a94a4, inten = 0.25;
       if (sim2) {
+        const queued = sim2.imagingOrder?.phase === 'queued' || sim2.labState === 'queued' || sim2._surgQueued;
         if (sim2.state === 'dead') { c = 0x60646e; inten = 0.4; }
         else if (sim2.critical) { c = 0xff2e2e; inten = 1.4 + Math.sin(now * 10) * 1.2; }
+        else if (queued) { c = 0xff8c1a; inten = (now % 0.9) < 0.45 ? 1.6 : 0.15; } // in line — blink orange
         else if (sim2.stabilized) { c = 0x35e06a; inten = 1.3; }
         else if (sim2.labsPending || sim2.imagingOrder) { c = 0xffc23c; inten = 1.0; }
         else { c = 0x6fa8ff; inten = 0.55; }

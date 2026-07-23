@@ -335,7 +335,8 @@ export class Modals {
       text: `MED-DOC 4000 — CLINICAL CONSULT SYSTEM
 (C) 1987 MEDTEAM GENERAL. ALL RIGHTS RESERVED.
 ${llmEnabled() ? `LINK: ● LIVE — ${getModel()}` : 'LINK: ○ OFFLINE — TYPE: KEY <ANTHROPIC-API-KEY>'}
-TYPE A QUESTION. "CENSUS" LISTS PATIENTS. "CLEAR" WIPES.`,
+REF DB: 500 ED PATHWAYS LOADED.
+TYPE A QUESTION · "LOOKUP <DX>" · "CENSUS" · "CLEAR"`,
     }];
     this.current = { type: 'meddoc', patient: null, options: [] };
     this.box.classList.add('crtbox');
