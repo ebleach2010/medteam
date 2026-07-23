@@ -199,7 +199,7 @@ export class Game {
     const pt = patient.body.translation();
     const route = this._routeTo(nurse.pos, pt);
     // exam rooms are entered through their door
-    if (patient.sim.bed?.room === 'exam') route.splice(route.length - 1, 0, { ...this.map.examDoors[patient.sim.bed.index] });
+    if (patient.sim.bed?.room === 'room') route.splice(route.length - 1, 0, { ...this.map.roomDoor(patient.sim.bed.index) });
     this.aiTask = { char: nurse, phase: 'toPatient', patient, route, wait: 0 };
     this.ui.bubbles.say(nurse, '🩸 On it!', { hold: 3 });
   }
@@ -660,12 +660,8 @@ export class Game {
     sim.state = 'inbed';
     sim.yaw = 0;
     pt.setFace(sim.critical ? 'crit' : 'normal');
-    if (bed.room === 'ed') {
-      this.ui.toast(`${sim.displayName} → ED bed ${bed.index + 1}`);
-      this.addScore(15, 'Bedded');
-    } else {
-      this._resolveWardPlacement(pt, bed);
-    }
+    this.ui.toast(`${sim.displayName} → Room ${bed.roomNo ?? bed.index + 1}`);
+    this.addScore(15, 'Admitted to a room');
   }
 
   _resolveWardPlacement(pt, bed) {
@@ -776,7 +772,7 @@ export class Game {
   }
 
   edOverCapacity() {
-    const free = this.map.beds.filter((b) => b.room === 'ed' && !b.occupant).length;
+    const free = this.map.beds.filter((b) => !b.occupant).length;
     const waiting = [...this.world.byTag('patients')]
       .filter((p) => ['waiting', 'angry'].includes(p.sim.state)).length;
     return (free === 0 && waiting > 0) || waiting >= 8;

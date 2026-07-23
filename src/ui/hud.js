@@ -36,7 +36,7 @@ export class HUD {
     const tr = Math.round(g.dayStats.treated * 100) / 100;
     this.quota.textContent = `✅ ${tr}/${g.quota}`;
     this.quota.style.color = tr >= g.quota ? '#7dffb0' : '#ffb03c';
-    const edBeds = g.map.beds.filter((b) => b.room === 'ed');
+    const edBeds = g.map.beds;
     const used = edBeds.filter((b) => b.occupant).length;
     const waiting = [...g.world.byTag('patients')]
       .filter((p) => ['waiting', 'angry', 'arriving'].includes(p.sim.state)).length;

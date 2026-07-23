@@ -29,16 +29,16 @@ export class UI {
     }
     // sign plates over each area, like the reference cutaway (navy; ER red)
     this.roomLabels = [
-      ['RECEPTION', -24.5, 8.8, 1.6, '#3a4a5e'],
+      ['TRIAGE', -24.5, 8.8, 1.6, '#3a4a5e'],
       ['WAITING', -21, 14.6, 1.4, '#3a4a5e'],
-      ['EMERGENCY ROOM', -6, 7.4, 1.7, '#c0392b'],
-      ['PHARMACY', -4.2, 16.2, 1.6, '#7d5ba6'],
-      ['WARDS 2A', -21, -9.5, 3.9, '#3a4a5e'],
-      ['BIRTHPLACE', -9.2, -9.5, 3.9, '#a85b96'],
-      ['NURSE STN', -18, -3.4, 3.7, '#3a4a5e'],
-      ['LAB 3B', -1.5, -8.6, 6.2, '#2f7f78'],
-      ['ICU', 7.3, -9.5, 6.2, '#b06040'],
-      ['IMAGING', 10, -19, 8.5, '#4a5ba6'],
+      ['PHARMACY', -9.5, 18.2, 1.6, '#7d5ba6'],
+      ['STAFF STN', -16, -1.2, 1.5, '#3a4a5e'],
+      ['LAB', -2.4, 0.4, 1.6, '#2f7f78'],
+      ['DIAGNOSTICS', 8.5, 0.6, 1.7, '#4a5ba6'],
+      ['DISCHARGE', 5, -20.5, 1.6, '#2e7d4f'],
+      ['INCINERATOR', 11.3, -16.4, 1.5, '#a04a2c'],
+      ...[-28, -24, -20, -16, -12, -8, -3.5, 1.5, 6.5, 11.5].map((x, i) =>
+        [`ROOM ${i + 1}`, x, -7.2, 1.55, '#c0392b']),
     ].map(([text, x, z, y, bg]) => {
       const el = document.createElement('div');
       el.className = 'room-label';
