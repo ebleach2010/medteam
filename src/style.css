@@ -117,6 +117,22 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0e1420; t
   border-radius: 999px; background: linear-gradient(#2f80ff, #1b5fd0); box-shadow: 0 6px 18px rgba(47,128,255,.4); }
 #screen .go:active { transform: scale(.96); }
 
+/* ---------- navigability ---------- */
+.room-label { position: absolute; color: rgba(230,240,255,.30); font-weight: 800; font-size: 14px;
+  letter-spacing: 3px; transform: translate(-50%,-50%); white-space: nowrap; text-shadow: 0 1px 3px rgba(0,0,0,.5); }
+.edge-arrow { position: absolute; display: none; align-items: center; gap: 2px; padding: 4px 7px;
+  background: rgba(16,24,42,.9); border: 1px solid #ffb03c; border-radius: 999px; color: #ffb03c;
+  font-size: 15px; transform: translate(-50%,-50%); z-index: 40; }
+.edge-arrow .dir { display: inline-block; font-size: 12px; }
+
+/* ---------- med cabinet ---------- */
+#modal .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+#modal .tab { padding: 7px 10px; border-radius: 8px; background: #1a2540; border: 1px solid #33518a;
+  color: #9db5e6; font-size: 12px; }
+#modal .tab.on { background: #2f80ff; border-color: #9dc1ff; color: #fff; }
+#modal .medbtn { display: flex; align-items: center; gap: 10px; }
+#modal .medbtn i { width: 14px; height: 14px; border-radius: 4px; flex: none; }
+
 /* toast */
 #toast { position: absolute; left: 50%; top: 52px; transform: translateX(-50%); padding: 8px 16px;
   background: rgba(16,24,42,.92); border: 1px solid #33518a; color: #e8eefc; border-radius: 999px;

@@ -77,22 +77,12 @@ test('full lab loop: bed → labs → centrifuge → results → dx → meds →
     g.inject({ type: 'SELECT', actorId: g.game.doctor.id, payload: { modal: 'dx', choice: 0 } });
     await api.until(() => api.patient(id).dx === 0);
 
-    // pharmacy: find the amoxicillin box on the antibiotics shelf and grab it
-    const box = g.state().items.find((i) => i.label === 'Amoxicillin' && !i.held);
-    if (!box) throw new Error('no amoxicillin on the shelf?');
-    g.teleport('doctor', box.pos.x, box.pos.z + 0.7);
-    api.grab('doctor');
-    await api.until(() => g.state().chars[1].carrying);
-    if (g.state().chars[1].carrying !== 'Amoxicillin') {
-      // grabbed a neighbor box — drop and nudge closer
-      api.grab('doctor');
-      await api.sleep(200);
-      g.teleport('doctor', box.pos.x, box.pos.z + 0.55);
-      api.grab('doctor');
-      await api.until(() => g.state().chars[1].carrying);
-    }
-    if (g.state().chars[1].carrying !== 'Amoxicillin')
-      throw new Error('got ' + g.state().chars[1].carrying);
+    // pharmacy: open the med cabinet at a shelf and take amoxicillin
+    g.teleport('doctor', 23.2, 2.4);
+    api.act('doctor');
+    await api.until(() => g.state().modal === 'cabinet');
+    g.inject({ type: 'SELECT', actorId: g.game.doctor.id, payload: { modal: 'cabinet', choice: 'amoxicillin' } });
+    await api.until(() => g.state().chars[1].carrying === 'Amoxicillin');
 
     g.teleport('doctor', -15, 1.9);
     api.act('doctor');                        // give the med → treated

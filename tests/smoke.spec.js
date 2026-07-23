@@ -18,6 +18,10 @@ test('boots to title without console errors and starts a day', async ({ page }) 
   expect(st.mode).toBe('playing');
   expect(st.day).toBe(1);
   await page.screenshot({ path: 'test-results/shots/day1-start.png' });
+
+  // the first patient must walk in within the first ~20 real seconds
+  await page.waitForFunction(() => window.__game.state().patients.length >= 1, null, { timeout: 25000 });
+  await page.screenshot({ path: 'test-results/shots/first-patient.png' });
   expect(errors).toEqual([]);
 });
 

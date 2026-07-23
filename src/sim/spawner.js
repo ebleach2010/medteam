@@ -19,9 +19,14 @@ export class Spawner {
       const pool = casesByTier(tier);
       picks.push(g.rng.pick(pool.length ? pool : CASES));
     }
-    // arrival minutes: 12:30 AM .. 8 PM, sorted, min spacing
-    const times = picks.map(() => g.rng.range(30, 1200)).sort((a, b) => a - b);
-    for (let i = 1; i < times.length; i++) times[i] = Math.max(times[i], times[i - 1] + 15);
+    // arrival minutes: first patient walks in almost immediately, the rest are
+    // spread evenly across the day with jitter — a steady drip, not a desert
+    const n = picks.length;
+    const times = [];
+    for (let i = 0; i < n; i++) times.push(15 + (i * 1000) / n + g.rng.range(-25, 25));
+    times.sort((a, b) => a - b);
+    times[0] = Math.min(times[0], 18);
+    for (let i = 1; i < times.length; i++) times[i] = Math.max(times[i], times[i - 1] + 12);
     this.schedule = picks.map((c, i) => ({ at: times[i], caseData: freshCase(c), done: false }));
   }
 

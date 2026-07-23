@@ -8,7 +8,7 @@ export class Renderer {
     this.scene.background = new THREE.Color(0x11182a);
 
     this.camera = new THREE.PerspectiveCamera(50, 1, 0.1, 120);
-    this.camOffset = new THREE.Vector3(0, 17, 8.5);
+    this.camOffset = new THREE.Vector3(0, 20, 9.5);
     this.camTarget = new THREE.Vector3();
 
     const hemi = new THREE.HemisphereLight(0xdfe8ff, 0x2a3350, 1.15);

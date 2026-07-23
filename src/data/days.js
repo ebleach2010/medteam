@@ -3,7 +3,7 @@
 export function dayConfig(day) {
   const d = Math.max(1, day);
   return {
-    patients: Math.min(3 + Math.round(d * 1.6), 14),
+    patients: Math.min(4 + Math.round(d * 1.8), 16),
     tierWeights:
       d === 1 ? [1, 0, 0, 0] :
       d === 2 ? [2, 1, 0, 0] :

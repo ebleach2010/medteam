@@ -60,28 +60,23 @@ export class Game {
     this.spawner.planDay(this.clock.day);
     this.clock.timeScale = dayConfig(this.clock.day).timeScale;
     this.dayStats = this._freshStats();
-    this._restockPharmacy();
     this.mode = 'playing';
     this.clock.running = true;
     this.ui.screens.fade(false);
     this.ui.toast(`Day ${this.clock.day} — 12:00 AM. Here they come.`);
   }
 
-  // fresh med boxes on the shelves every morning (yesterday's rummage mess is swept)
-  _restockPharmacy() {
-    for (const it of [...this.world.byTag('items')]) {
-      if (it.itemKind === 'med' && !it.heldBy) this.world.remove(it, this);
-    }
-    for (const unit of this.map.shelfUnits) {
-      unit.meds.forEach((med, i) => {
-        for (let n = 0; n < 2; n++) {
-          const x = unit.x - 1.0 + ((i * 2 + n) % 5) * 0.5 + this.rng.range(-0.06, 0.06);
-          const z = unit.z + this.rng.range(-0.14, 0.14);
-          spawnCarryable(this, 'med', x, 1.25 + 0.3 * Math.floor((i * 2 + n) / 5), z,
-            { medId: med.id, color: med.color, label: med.name });
-        }
-      });
-    }
+  // pull a med out of the cabinet UI straight into the character's hands
+  takeMedFromCabinet(char, medId) {
+    const med = medById(medId);
+    if (!med) return;
+    if (char.carrying) this._consumeHeld(char); // swap: old box vanishes
+    const a = char.handAnchor();
+    const item = spawnCarryable(this, 'med', a.x, 0.9, a.z,
+      { medId: med.id, color: med.color, label: med.name });
+    char.carrying = item; item.heldBy = char;
+    this.ui.toast(`Took ${med.name}`);
+    this.audio.tap();
   }
 
   endDay() {
@@ -232,7 +227,7 @@ export class Game {
         this.ui.toast(`You are now the ${this.active.role.toUpperCase()}`);
         break;
       case INTENT.ORDER: this._handleOrder(char, i.payload); break;
-      case INTENT.SELECT: this.ui.modals.resolve(i.payload.choice); break;
+      case INTENT.SELECT: this.ui.modals.resolve(i.payload.choice, char); break;
     }
   }
 
@@ -322,6 +317,11 @@ export class Game {
         },
       };
     }
+
+    // med cabinet: any pharmacy shelf is a face of the same tabbed cabinet
+    const cp = char.pos;
+    const nearShelf = this.map.shelfUnits.some((u) => Math.hypot(u.x - cp.x, u.z - cp.z) < 2.3);
+    if (nearShelf) return { ico: '💊', label: 'MED CABINET', run: () => this.ui.modals.cabinet() };
 
     const pt = this.nearestPatient(char, 1.9, (s) => s.state !== 'dead');
     if (!pt) return null;

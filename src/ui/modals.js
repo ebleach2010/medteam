@@ -1,4 +1,10 @@
 import { generateScan } from '../render/xray.js';
+import { MEDS, SHELVES } from '../data/meds.js';
+
+const SHELF_NAMES = {
+  topicals: 'Topicals', antibiotics: 'Antibiotics', resp: 'Resp/Allergy',
+  cardiac: 'Cardiac', critical: 'Critical', sedation: 'Sedation/Pain',
+};
 
 // One modal system, several bodies: lab printout, imaging interpretation,
 // diagnosis picker. Options resolve through SELECT intents so tests (and
@@ -41,6 +47,25 @@ export class Modals {
     });
   }
 
+  // the med cabinet: tabbed by class, pick a med to take it in hand
+  cabinet(tab = 'antibiotics') {
+    this.current = { type: 'cabinet', patient: null, options: [] };
+    const tabs = SHELVES.map((s) =>
+      `<button class="tab${s === tab ? ' on' : ''}" data-tab="${s}">${SHELF_NAMES[s]}</button>`).join('');
+    const meds = MEDS.filter((m) => m.shelf === tab).map((m) =>
+      `<button class="opt medbtn" data-med="${m.id}">
+         <i style="background:#${m.color.toString(16).padStart(6, '0')}"></i>${m.name}</button>`).join('');
+    this.box.innerHTML = `<h3>💊 Med cabinet</h3><div class="tabs">${tabs}</div>${meds}
+      <button class="close">Close</button>`;
+    this.veil.style.display = 'flex';
+    this.box.querySelectorAll('.tab').forEach((b) =>
+      b.addEventListener('pointerdown', () => this.cabinet(b.dataset.tab)));
+    this.box.querySelectorAll('.medbtn').forEach((b) =>
+      b.addEventListener('pointerdown', () =>
+        this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'cabinet', choice: b.dataset.med } })));
+    this.box.querySelector('.close').addEventListener('pointerdown', () => this.close());
+  }
+
   diagnose(patient) {
     const c = patient.sim.case;
     const hints = [];
@@ -69,10 +94,16 @@ export class Modals {
   }
 
   // called by Game when a SELECT intent lands
-  resolve(choice) {
+  resolve(choice, actor) {
     const cur = this.current;
     if (!cur) return;
-    const g = this.game, sim = cur.patient.sim;
+    const g = this.game;
+    if (cur.type === 'cabinet') {
+      g.takeMedFromCabinet(actor ?? g.active, choice);
+      this.close();
+      return;
+    }
+    const sim = cur.patient.sim;
     if (cur.type === 'imaging') {
       sim.imagingDone = true;
       sim.imagingRead = choice;
