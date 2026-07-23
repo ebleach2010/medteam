@@ -23,7 +23,8 @@ export function spawnPatient(game, caseData, x, z) {
 
 export function syncPatientMesh(p, dt, now) {
   const pos = p.body.translation();
-  const lying = p.sim.isLying();
+  const dragged = !!p.draggedBy;
+  const lying = p.sim.isLying() || dragged;
   const sitting = !!p.sim.sitting && !lying;
   p.mesh.position.set(pos.x, lying ? pos.y - 0.45 : sitting ? pos.y - 0.62 : pos.y - 0.8, pos.z);
   const targetRotX = lying ? -Math.PI / 2 : 0;
@@ -31,6 +32,13 @@ export function syncPatientMesh(p, dt, now) {
   p.mesh.rotation.y = p.sim.yaw;
   const v = p.body.linvel();
   const speed01 = Math.min(1, Math.hypot(v.x, v.z) / 3.4);
+  if (dragged) {
+    // face along the tow and wobble like a sack of laundry
+    if (Math.hypot(v.x, v.z) > 0.6) p.sim.yaw = Math.atan2(v.x, v.z);
+    p.mesh.rotation.z = Math.sin(now * 9 + p.id) * 0.2;
+  } else if (Math.abs(p.mesh.rotation.z) > 0.01) {
+    p.mesh.rotation.z *= 0.8;
+  }
   animateRig(p.mesh, dt, now, (lying || sitting) ? 0 : speed01,
-    { lying, sitting, dead: p.sim.state === 'dead' });
+    { lying, sitting, dragged, dead: p.sim.state === 'dead' });
 }

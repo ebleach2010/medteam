@@ -17,8 +17,8 @@ export class Renderer {
     this.scene.fog = new THREE.FogExp2(0xaec6de, 0.005);
 
     // narrow, in-the-action chase view — you should always feel in a rush
-    this.camera = new THREE.PerspectiveCamera(46, 1, 0.1, 160);
-    this.camOffset = new THREE.Vector3(0, 6.2, 7.6);
+    this.camera = new THREE.PerspectiveCamera(40, 1, 0.1, 160);
+    this.camOffset = new THREE.Vector3(0, 4.9, 6.0); // tight third-person — a few rooms, not the whole hospital
     this.camTarget = new THREE.Vector3();
 
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0xb2bccc, 1.35));

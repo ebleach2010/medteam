@@ -84,7 +84,7 @@ export function buildRig(p) {
 
 // Gait + poses. speed01 drives cadence/stride/lean; `reach` = sticky HFF arms
 // up-and-forward; `sitting` = waiting-room chair pose; `lying` = bed/floor.
-export function animateRig(root, dt, now, speed01, { reach = false, lying = false, dead = false, sitting = false } = {}) {
+export function animateRig(root, dt, now, speed01, { reach = false, lying = false, dead = false, sitting = false, dragged = false } = {}) {
   const r = root.userData.rig;
   const cadence = lerp(0.9, 3.4, speed01);
   r.walkClock += cadence * TAU * dt;
@@ -113,6 +113,7 @@ export function animateRig(root, dt, now, speed01, { reach = false, lying = fals
   let aR = Math.sin(r.walkClock) * armSwing - idleSway;
   if (sitting) { aL = aR = -0.4; }
   if (lying) { aL = aR = dead ? -0.9 : -0.25; }
+  if (dragged) { aL = Math.sin(now * 8) * 0.9 - 0.5; aR = Math.sin(now * 8 + 2.1) * 0.9 - 0.5; } // flail
   if (reach) { aL = aR = -1.55; }                    // HFF sticky hands, up and out
   r.armL.rotation.x += (aL - r.armL.rotation.x) * 0.35;
   r.armR.rotation.x += (aR - r.armR.rotation.x) * 0.35;

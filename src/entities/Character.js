@@ -86,7 +86,7 @@ export class Character {
     }
     if (this.dragging) {
       const a = this.handAnchor();
-      const t = { x: a.x, y: this.body.translation().y - 0.3, z: a.z };
+      const t = { x: a.x, y: this.body.translation().y - 0.55, z: a.z }; // scrape them along the floor
       const imp = springToward(this.dragging.body, t, { k: 3200, c: 700, maxForce: 2400, dt });
       // equal-and-opposite reaction: a heavy patient visibly yanks you around
       this.body.applyImpulse({ x: -imp.x * 0.3, y: 0, z: -imp.z * 0.3 }, true);

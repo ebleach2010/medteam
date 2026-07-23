@@ -17,6 +17,7 @@ import { UI } from './ui/ui.js';
 import { medById } from './data/meds.js';
 import { dayConfig, QUOTA } from './data/days.js';
 import { generateScan } from './render/xray.js';
+import { glowSprite } from './render/meshes.js';
 import { matchTreatment } from './sim/talk.js';
 
 const FIXED_DT = 1 / 60;
@@ -53,6 +54,25 @@ export class Game {
     this._scanJob = null;
     this.aiTask = null; // the idle nurse running labs for the doctor
     this.quota = QUOTA;
+
+    // comedy FX pools: body skid marks (fade over 5s) + sprint dust
+    this.fx = { skids: [], dusts: [], skidIdx: 0, dustIdx: 0 };
+    const skidGeo = new THREE.PlaneGeometry(0.42, 0.95);
+    for (let i = 0; i < 48; i++) {
+      const m = new THREE.Mesh(skidGeo, new THREE.MeshBasicMaterial({
+        color: 0x574b40, transparent: true, opacity: 0, depthWrite: false }));
+      m.rotation.x = -Math.PI / 2;
+      m.position.y = 0.028;
+      m.visible = false;
+      this.renderer.scene.add(m);
+      this.fx.skids.push({ mesh: m, life: 0 });
+    }
+    for (let i = 0; i < 20; i++) {
+      const sp = glowSprite(0xcfc9bd, 0.5, 0);
+      sp.visible = false;
+      this.renderer.scene.add(sp);
+      this.fx.dusts.push({ sp, life: 0 });
+    }
 
     this.ui.screens.title(() => this.startDay(1));
   }
@@ -426,7 +446,46 @@ export class Game {
     this._done(ch);
   }
 
+  _spawnSkid(x, z, yaw) {
+    const f = this.fx.skids[this.fx.skidIdx];
+    this.fx.skidIdx = (this.fx.skidIdx + 1) % this.fx.skids.length;
+    f.mesh.position.set(x + (this.rng.next() - 0.5) * 0.2, 0.028, z + (this.rng.next() - 0.5) * 0.2);
+    f.mesh.rotation.z = -yaw + (this.rng.next() - 0.5) * 0.3;
+    f.mesh.visible = true;
+    f.life = 1;
+  }
+
+  _spawnDust(x, z) {
+    const f = this.fx.dusts[this.fx.dustIdx];
+    this.fx.dustIdx = (this.fx.dustIdx + 1) % this.fx.dusts.length;
+    f.sp.position.set(x, 0.16, z);
+    f.sp.visible = true;
+    f.life = 1;
+  }
+
   _postPhysics(dt) {
+    // dragged bodies squeak out skid marks; sprinters kick dust
+    for (const ch of this.world.byTag('chars')) {
+      if (ch.dragging) {
+        const dp = ch.dragging.body.translation();
+        if (!ch._lastSkid) ch._lastSkid = { x: dp.x, z: dp.z };
+        else if (Math.hypot(dp.x - ch._lastSkid.x, dp.z - ch._lastSkid.z) > 0.42) {
+          const dv = ch.dragging.body.linvel();
+          this._spawnSkid(dp.x, dp.z, Math.atan2(dv.x, dv.z));
+          ch._lastSkid = { x: dp.x, z: dp.z };
+        }
+      } else ch._lastSkid = null;
+      const v = ch.body.linvel();
+      if (Math.hypot(v.x, v.z) > 4.2) {
+        ch._dustT = (ch._dustT ?? 0) + dt;
+        if (ch._dustT > 0.16) {
+          const cp = ch.pos;
+          this._spawnDust(cp.x - Math.sin(ch.yaw) * 0.3, cp.z - Math.cos(ch.yaw) * 0.3);
+          ch._dustT = 0;
+        }
+      }
+    }
+
     // tackle connects: a lunging character near an agitated runner pins them
     for (const c of this.world.byTag('chars')) {
       if (c.tackleTimer <= 0) continue;
@@ -542,6 +601,22 @@ export class Game {
       }
       L.mat.color.setHex(c); L.mat.emissive.setHex(c); L.mat.emissiveIntensity = inten;
     });
+
+    // FX fades: skids over 5s (oldest first), dust puffs fast
+    for (const f of this.fx.skids) {
+      if (f.life <= 0) continue;
+      f.life -= dt / 5;
+      if (f.life <= 0) { f.mesh.visible = false; continue; }
+      f.mesh.material.opacity = f.life * 0.38;
+    }
+    for (const f of this.fx.dusts) {
+      if (f.life <= 0) continue;
+      f.life -= dt * 2.4;
+      if (f.life <= 0) { f.sp.visible = false; continue; }
+      const sc = 0.35 + (1 - f.life) * 0.8;
+      f.sp.scale.set(sc, sc, 1);
+      f.sp.material.opacity = f.life * 0.4;
+    }
 
     // the pit flickers; flares when fed
     const fire = this.map.fire;

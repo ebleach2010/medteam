@@ -52,7 +52,11 @@ const helpers = `
             }
             g.inject({ type: 'MOVE', actorId: ch.id, payload: { x: dx / d, z: dz / d } });
           }, 16);
-          setTimeout(() => { clearInterval(t); res(); }, 14000);
+          setTimeout(() => { // waypoint timed out — stop walking, don't leave MOVE latched
+            clearInterval(t);
+            g.inject({ type: 'MOVE', actorId: ch.id, payload: { x: 0, z: 0 } });
+            res();
+          }, 14000);
         });
       }
     },
@@ -157,7 +161,14 @@ test('agitation: naloxone wakes the OD furious; tackle, sedate, re-bed', async (
     await api.until(() => api.patient(id).state === 'inbed');
 
     // hand the nurse naloxone directly (the pharmacy run is covered above);
-    // holding it at the bedside administers it → treated → FURY
+    // holding it at the bedside administers it → treated → FURY.
+    // Step to the bedside first — under CI load the walked drive can stop
+    // just outside the med-dwell radius.
+    // (door side of the bed — beside/behind it is furniture that shoves you
+    // out past the 1.7 m med-dwell radius)
+    const bp0 = api.patient(id).pos;
+    g.teleport('nurse', bp0.x + 1.0, bp0.z + 1.1);
+    await api.sleep(150);
     const { spawnCarryable } = await import('/src/entities/Carryable.js');
     const c = g.game.nurse.pos;
     const item = spawnCarryable(g.game, 'med', c.x, 1, c.z,

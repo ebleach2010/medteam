@@ -42,6 +42,7 @@ export function installTestApi(game) {
       const y = game.map.floorYAt(x, z) + 1.0;
       ch.body.setTranslation({ x, y, z }, true);
       ch.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      ch.applyMove(0, 0); // plant the feet — a latched MOVE would walk them off the mark
       if (ch.carrying) { // a carried item rides along (walking would have brought it)
         ch.carrying.body.setTranslation({ x, y: y + 0.1, z: z + 0.4 }, true);
         ch.carrying.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
