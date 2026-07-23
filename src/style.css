@@ -2,8 +2,11 @@
 html, body { width: 100%; height: 100%; overflow: hidden; background: #0e1420; touch-action: none;
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; user-select: none; -webkit-user-select: none; }
 #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+/* pointer-events is inherited: children stay inert unless they opt in with
+   pointer-events:auto. NEVER add an `#ui > *` override here — the ID
+   specificity silently beats `.btn { pointer-events:auto }` and kills every
+   button on touch devices. (Learned the hard way.) */
 #ui { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
-#ui > * { pointer-events: none; }
 
 #rotate-splash { position: fixed; inset: 0; background: #0e1420; color: #e8eefc; z-index: 200;
   display: none; align-items: center; justify-content: center; text-align: center; font-size: 28px; }

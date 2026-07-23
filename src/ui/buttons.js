@@ -28,11 +28,12 @@ export class Buttons {
       game.audio.tap();
     });
 
-    // HFF grab: HOLD to keep hands sticky, release to let go
+    // HFF grab: HOLD to keep hands sticky, release to let go.
+    // Enqueue FIRST — setPointerCapture can throw on synthetic events.
     this.grab.addEventListener('pointerdown', (e) => {
       e.preventDefault();
-      this.grab.setPointerCapture(e.pointerId);
       game.enqueue(make(INTENT.GRAB, game.active.id));
+      try { this.grab.setPointerCapture(e.pointerId); } catch { /* synthetic */ }
     });
     const grabUp = (e) => { e.preventDefault(); game.enqueue(make(INTENT.RELEASE, game.active.id)); };
     this.grab.addEventListener('pointerup', grabUp);
@@ -57,8 +58,8 @@ export class Buttons {
     // ORDERS wheel: opens on press, pick by dragging, commits on release
     this.orders.addEventListener('pointerdown', (e) => {
       e.preventDefault();
-      this.orders.setPointerCapture(e.pointerId);
       game.ui.wheel.open(e.clientX, e.clientY);
+      try { this.orders.setPointerCapture(e.pointerId); } catch { /* synthetic */ }
     });
     this.orders.addEventListener('pointermove', (e) => game.ui.wheel.track(e.clientX, e.clientY));
     this.orders.addEventListener('pointerup', () => game.ui.wheel.commit());
