@@ -42,8 +42,9 @@ export function buildRig(p) {
     mesh.castShadow = true;
     return mesh;
   };
-  const hips = lathe([[0.02, 0.27], [0.26, 0.32], [0.38, 0.52], [0.42, 0.78]], botM);
-  const shirt = lathe([[0.42, 0.74], [0.41, 0.92], [0.33, 1.06], [0.16, 1.14], [0.02, 1.16]], topM);
+  // slim, mini-figure proportions: narrow hips/shoulders, big head
+  const hips = lathe([[0.02, 0.27], [0.16, 0.31], [0.23, 0.52], [0.25, 0.78]], botM);
+  const shirt = lathe([[0.25, 0.74], [0.26, 0.94], [0.22, 1.07], [0.12, 1.15], [0.02, 1.17]], topM);
   chest.add(hips, shirt);
 
   // faceless skin-toned head set into the shoulders
@@ -96,30 +97,30 @@ export function buildRig(p) {
 
   // accessories on the chest
   if (p.stethoscope) {
-    const tube = new THREE.Mesh(new THREE.TorusGeometry(0.20, 0.032, 6, 14, Math.PI * 1.3), mat(0x2b3440));
+    const tube = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.028, 6, 14, Math.PI * 1.3), mat(0x2b3440));
     tube.rotation.z = Math.PI * 0.85; // drapes around the neck, open at the top
-    tube.position.set(0, 1.10, 0.30);
-    const bell = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.025, 10), mat(0x8a94a4));
+    tube.position.set(0, 1.10, 0.20);
+    const bell = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.022, 10), mat(0x8a94a4));
     bell.rotation.x = Math.PI / 2;
-    bell.position.set(0.13, 0.94, 0.36);
+    bell.position.set(0.10, 0.94, 0.25);
     chest.add(tube, bell);
   }
   if (p.badge) {
-    const badge = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.14, 0.02), mat(0xf2efe6));
-    badge.position.set(0.16, 1.0, 0.33);
+    const badge = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.13, 0.02), mat(0xf2efe6));
+    badge.position.set(0.12, 1.0, 0.23);
     badge.rotation.x = -0.15;
     chest.add(badge);
   }
 
-  // arms: sleeve in shirt color, hands in skin (or exam gloves)
+  // slender limbs: sleeve in shirt color, hands in skin (or exam gloves)
   const handM = mat(p.gloves ?? p.skin);
   const shoeM = mat(p.shoes ?? 0x4a4038);
-  const armL = limb(0.52, 0.13, 0.10, topM, handM); armL.position.set(-0.40, 0.98, 0); chest.add(armL);
-  const armR = limb(0.52, 0.13, 0.10, topM, handM); armR.position.set(0.40, 0.98, 0); chest.add(armR);
-  const legL = limb(0.36, 0.16, 0.13, botM, shoeM); legL.position.set(-0.18, 0.40, 0); chest.add(legL);
-  const legR = limb(0.36, 0.16, 0.13, botM, shoeM); legR.position.set(0.18, 0.40, 0); chest.add(legR);
+  const armL = limb(0.54, 0.085, 0.07, topM, handM); armL.position.set(-0.30, 1.0, 0); chest.add(armL);
+  const armR = limb(0.54, 0.085, 0.07, topM, handM); armR.position.set(0.30, 1.0, 0); chest.add(armR);
+  const legL = limb(0.38, 0.105, 0.09, botM, shoeM); legL.position.set(-0.125, 0.42, 0); chest.add(legL);
+  const legR = limb(0.38, 0.105, 0.09, botM, shoeM); legR.position.set(0.125, 0.42, 0); chest.add(legR);
 
-  const blob = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6),
+  const blob = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 1.2),
     new THREE.MeshBasicMaterial({ map: GLOW_TEX, color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false }));
   blob.rotation.x = -Math.PI / 2;
   blob.position.y = 0.02;
