@@ -10,14 +10,20 @@ export class Spawner {
   planDay(day) {
     const g = this.game, cfg = dayConfig(day);
     const picks = [];
-    for (const id of cfg.forceCases) picks.push(caseById(id));
-    while (picks.length < cfg.patients) {
+    const used = new Set(); // ONE of each diagnosis per day — no ankle-sprain parade
+    for (const id of cfg.forceCases) { picks.push(caseById(id)); used.add(id); }
+    let guard = 0;
+    while (picks.length < cfg.patients && guard++ < 400) {
       const w = cfg.tierWeights;
-      const total = w[0] + w[1] + w[2] + w[3];
+      const total = w.reduce((a, b) => a + b, 0);
       let r = g.rng.next() * total, tier = 1;
-      for (let i = 0; i < 4; i++) { if (r < w[i]) { tier = i + 1; break; } r -= w[i]; }
-      const pool = casesByTier(tier);
-      picks.push(g.rng.pick(pool.length ? pool : CASES));
+      for (let i = 0; i < w.length; i++) { if (r < w[i]) { tier = i + 1; break; } r -= w[i]; }
+      let pool = casesByTier(tier).filter((c) => !used.has(c.id));
+      if (!pool.length) pool = CASES.filter((c) => !used.has(c.id)); // tier drained — pull anywhere
+      if (!pool.length) break;                                      // 100 uniques exhausted (never on one day)
+      const c = g.rng.pick(pool);
+      used.add(c.id);
+      picks.push(c);
     }
     // arrival minutes: first patient walks in almost immediately, the rest are
     // spread evenly across the day with jitter — a steady drip, not a desert

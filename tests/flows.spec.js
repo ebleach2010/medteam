@@ -88,7 +88,9 @@ test('full lab loop: bed → labs → centrifuge → results → dx → meds →
     g.inject({ type: 'SELECT', actorId: g.game.nurse.id, payload: { modal: 'dx', choice: 0 } });
     await api.until(() => api.patient(id).dx === 0);
 
-    api.act('nurse');                         // draw blood
+    api.act('nurse');                         // draw blood → the panel board opens
+    await api.until(() => g.state().modal === 'labs_order');
+    g.inject({ type: 'SELECT', actorId: g.game.nurse.id, payload: { modal: 'labs_order', choice: ['CBC', 'CHEM', 'INFECT'] } });
     await api.until(() => g.state().chars[0].carrying?.startsWith('Blood'));
     g.teleport('nurse', -2.4, 0);             // lab feeds itself
     await api.until(() => g.state().centrifuge.busy, 8000);

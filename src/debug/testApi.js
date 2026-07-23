@@ -62,9 +62,9 @@ export function installTestApi(game) {
       const p = [...game.world.byTag('patients')].find((q) => q.id === id);
       if (p) game.bedPatient(p, game.map.beds[bedIdx]);
     },
-    orderLabs(id) {
+    orderLabs(id, panels = ['CBC', 'CHEM', 'INFECT']) {
       const p = [...game.world.byTag('patients')].find((q) => q.id === id);
-      if (p) game.orderLabs(p);
+      if (p) game.orderLabs(p, panels);
     },
     orderImaging(id, modality) {
       const p = [...game.world.byTag('patients')].find((q) => q.id === id);

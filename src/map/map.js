@@ -170,15 +170,71 @@ export function buildMap(scene, physics) {
     statics.add(c);
     seats.push({ x, z, taken: null });
   }
-  [[-25.5, 8, 0.5], [-24.2, 9.2, 0.15], [-23.8, 10.8, -0.2]].forEach(([x, z, rot]) => {
-    const seg = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.0, 2.0), mat(0xd9c6a8));
-    seg.position.set(x, 0.5, z);
-    seg.rotation.y = rot;
-    seg.castShadow = true;
-    statics.add(seg);
-    physics.staticBox(x, 0.5, z, 0.55, 0.5, 1.0);
-  });
-  const knockSpots = [[-25.4, 7.4], [-25, 8.4], [-24.3, 9.6], [-23.9, 10.4], [-23.7, 11.3], [-24.6, 8.9]];
+  // ---- reception: a REAL front desk — counter run + side return, stone top
+  // with an overhang, accent kick, work surface with monitor/keyboard/papers,
+  // and a receptionist parked behind it (rig added by the Game).
+  const counterBase = mat(0x8fa8bd), counterTop = mat(0xe8e4da), kick = mat(0x51677c);
+  const counterSeg = (x, z, hx, hz) => {
+    const base = new THREE.Mesh(new THREE.BoxGeometry(hx * 2, 1.02, hz * 2), counterBase);
+    base.position.set(x, 0.51, z); base.castShadow = true;
+    const band = new THREE.Mesh(new THREE.BoxGeometry(hx * 2 + 0.02, 0.16, hz * 2 + 0.02), kick);
+    band.position.set(x, 0.10, z);
+    const top = new THREE.Mesh(new THREE.BoxGeometry(hx * 2 + 0.24, 0.07, hz * 2 + 0.24), counterTop);
+    top.position.set(x, 1.06, z); top.castShadow = true;
+    statics.add(base, band, top);
+    physics.staticBox(x, 0.55, z, hx + 0.12, 0.55, hz + 0.12);
+  };
+  counterSeg(-24.2, 9.9, 1.9, 0.35);   // front run (faces the entrance)
+  counterSeg(-26.35, 8.9, 0.35, 1.35); // side return
+  // inner work surface + the receptionist's clutter
+  const work = new THREE.Mesh(new THREE.BoxGeometry(3.0, 0.72, 0.8), mat(0xb9c6d2));
+  work.position.set(-24.2, 0.36, 9.05); statics.add(work);
+  const monB = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.32, 0.06), mat(0x2b3442));
+  monB.position.set(-24.7, 0.95, 9.1); monB.rotation.y = 0.25; monB.castShadow = true;
+  const monScr = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.26), emat(0x9fd8ff, 0.7));
+  monScr.position.set(-24.72, 0.95, 9.14); monScr.rotation.y = 0.25 + Math.PI;
+  const kbd = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.03, 0.16), mat(0x3a4454));
+  kbd.position.set(-24.6, 0.74, 9.35); kbd.rotation.y = 0.2;
+  const papers = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.05, 0.26), mat(0xf6f2e6));
+  papers.position.set(-23.6, 0.76, 9.2); papers.rotation.y = -0.3;
+  const penCup = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.12, 8), mat(0xc0392b));
+  penCup.position.set(-23.2, 0.79, 9.05);
+  statics.add(monB, monScr, kbd, papers, penCup);
+  const receptionSeat = { x: -24.2, z: 8.35 }; // the Game parks a seated rig here
+
+  // ---- waiting-area dressing (depth!) ----
+  // rug under the chairs + a kids' corner mat — big top-down readability wins
+  const rug = new THREE.Mesh(new THREE.PlaneGeometry(9.4, 5.6), mat(0x9fb3c8));
+  rug.rotation.x = -Math.PI / 2; rug.position.set(-20.4, 0.022, 14.6);
+  const rugTrim = new THREE.Mesh(new THREE.PlaneGeometry(9.8, 6.0), mat(0x51677c));
+  rugTrim.rotation.x = -Math.PI / 2; rugTrim.position.set(-20.4, 0.018, 14.6);
+  const kidsMat = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 2.6), mat(0xf2c14e));
+  kidsMat.rotation.x = -Math.PI / 2; kidsMat.position.set(-27.3, 0.024, 16.6);
+  statics.add(rugTrim, rug, kidsMat);
+  // vending machine (glowing front), water cooler, coffee table, wall TV
+  const vend = new THREE.Mesh(new THREE.BoxGeometry(1.1, 2.0, 0.8), mat(0xc0392b));
+  vend.position.set(-16.9, 1.0, 12.4); vend.castShadow = true;
+  const vendGlass = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 1.5), emat(0xbfe8ff, 0.55));
+  vendGlass.position.set(-17.46, 1.05, 12.4); vendGlass.rotation.y = -Math.PI / 2;
+  physics.staticBox(-16.9, 1.0, 12.4, 0.55, 1.0, 0.4);
+  const coolerBase = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.0, 0.5), mat(0xdfe5ea));
+  coolerBase.position.set(-26.6, 0.5, 12.2); coolerBase.castShadow = true;
+  physics.staticBox(-26.6, 0.6, 12.2, 0.3, 0.6, 0.3);
+  const table = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.4, 0.9), mat(0xd9c6a8));
+  table.position.set(-20.4, 0.2, 14.7); table.castShadow = true;
+  physics.staticBox(-20.4, 0.2, 14.7, 0.85, 0.2, 0.45);
+  const tvFrame = new THREE.Mesh(new THREE.BoxGeometry(1.7, 1.0, 0.1), mat(0x232a36));
+  tvFrame.position.set(-20.5, 2.1, 17.0);
+  const tvScr = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.82), emat(0x6fa8d8, 0.5));
+  tvScr.position.set(-20.5, 2.1, 16.94); tvScr.rotation.y = Math.PI;
+  statics.add(vend, vendGlass, coolerBase, table, tvFrame, tvScr);
+
+  // rampage waypoints: the WHOLE waiting area — angry patients storm between
+  // these and shove whatever physics props are in reach
+  const knockSpots = [
+    [-25.8, 11.2], [-23.2, 11.4], [-20.4, 13.2], [-18.2, 12.8], [-17.4, 14.8],
+    [-20.4, 16.2], [-23.5, 15.6], [-26.3, 14.4], [-27.0, 16.5], [-21.8, 14.7],
+  ];
   const triageDesk = { x: -24.4, z: 9.4 };
 
   // plants + posters (depth dressing)
@@ -281,7 +337,7 @@ export function buildMap(scene, physics) {
 
   return {
     beds, seats, centrifuge, imagingPad, diagnostics, shelfUnits, rings, dropRing,
-    roomDesks, roomLights, knockSpots, triageDesk,
+    roomDesks, roomLights, knockSpots, triageDesk, receptionSeat,
     discharge, gateOut, firePit, fire,
     floorYAt: () => 0,
     zoneOf, zoneDoors: ZONE_DOORS,

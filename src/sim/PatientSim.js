@@ -205,11 +205,15 @@ export class PatientSim {
       const cp = this.ent.escortedBy.pos;
       target = { x: cp.x, z: cp.z };
     } else if (this.state === 'angry') {
-      const nurse = g.nurse.pos;
-      // only chase the nurse on the same floor; otherwise fume by the entrance
-      target = Math.abs(nurse.y - body.translation().y) < 1.5
-        ? { x: nurse.x, z: nurse.z }
-        : { x: g.map.insideWaypoint.x, z: g.map.insideWaypoint.z };
+      // rampage the WAITING AREA — storm between the furniture and shove
+      // whatever isn't bolted down. They do NOT stalk the staff around.
+      this.wanderTimerReal = (this.wanderTimerReal ?? 0) - dtReal;
+      if (this.wanderTimerReal <= 0 || !this.walkTarget) {
+        this.wanderTimerReal = 1.1 + g.rng.next() * 0.9;
+        const s = g.rng.pick(g.map.knockSpots);
+        this.walkTarget = { x: s[0] + g.rng.range(-0.8, 0.8), z: s[1] + g.rng.range(-0.8, 0.8) };
+      }
+      target = this.walkTarget;
     } else if (this.state === 'agitated') {
       this.wanderTimerReal -= dtReal;
       if (this.wanderTimerReal <= 0) {
@@ -228,7 +232,7 @@ export class PatientSim {
     const p = body.translation();
     const dx = target.x - p.x, dz = target.z - p.z;
     const d = Math.hypot(dx, dz);
-    const stopAt = this.ent.escortedBy ? 1.5 : (this.state === 'angry' ? 1.1 : 0.3);
+    const stopAt = this.ent.escortedBy ? 1.5 : (this.state === 'angry' ? 0.45 : 0.3);
     if (d < stopAt) {
       body.setLinvel({ x: 0, y: body.linvel().y, z: 0 }, true);
       if (this.route?.length) { this.walkTarget = this.route.shift(); return; } // next waypoint

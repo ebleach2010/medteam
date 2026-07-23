@@ -57,6 +57,7 @@ const ROLE_RIGS = {
   porter: { suit: 0x5a8fd0, shade: 0x4674ac, head: HEAD_BASE, cap: 0x3a5a8a },
   tech: { suit: 0x4a6a78, shade: 0x3a545f, head: HEAD_BASE, collar: 0x8fd0c9 },
   surgeon: { suit: 0x9e4a56, shade: 0x7c3944, head: HEAD_BASE, cap: 0x6e3a42 },
+  receptionist: { suit: 0x8f7fc9, shade: 0x7465a8, head: HEAD_BASE, collar: 0xe8e4da },
 };
 export function makeCharacterMesh(role) {
   return buildRig(ROLE_RIGS[role] ?? ROLE_RIGS.nurse);
@@ -166,9 +167,14 @@ const itemGeo = new THREE.BoxGeometry(0.2, 0.2, 0.2);
 const vialGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.24, 8);
 const paperGeo = new THREE.BoxGeometry(0.26, 0.02, 0.34);
 
-export function makeItemMesh(kind, color) {
+export function makeItemMesh(kind, color, size) {
   if (kind === 'vial') return new THREE.Mesh(vialGeo, mat(0xb02030));
   if (kind === 'paper') return new THREE.Mesh(paperGeo, mat(0xf6f2e6));
+  if (kind === 'prop' && size) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(size.hx * 2, size.hy * 2, size.hz * 2), mat(color ?? 0xcccccc));
+    m.castShadow = true;
+    return m;
+  }
   const m = new THREE.Mesh(itemGeo, mat(color ?? 0xcccccc));
   m.castShadow = true;
   return m;

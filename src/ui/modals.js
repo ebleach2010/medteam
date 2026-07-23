@@ -1,6 +1,9 @@
 import { generateScan } from '../render/xray.js';
 import { askPatient, talkDown, orderTreatment, judgeDx, llmEnabled, getKey, setKey, getModel, setModel, MODELS } from '../sim/llm.js';
 import { MEDS, SHELVES } from '../data/meds.js';
+import { PANELS, filterLabs } from '../data/labs.js';
+import { spawnCarryable } from '../entities/Carryable.js';
+import { ekgPath } from './monitor.js';
 
 // fuzzy pick from a {id,label} menu by typed text: score by how much of the
 // text the label covers and vice versa ("ct with contrast" → CT + contrast)
@@ -42,19 +45,83 @@ export class Modals {
 
   get open() { return !!this.current; }
 
+  // results show ONLY the panels that were ordered — a test never sent never
+  // comes back. The printout says what you skipped.
   labResults(patient) {
-    const c = patient.sim.case;
-    const rows = Object.entries(c.labs ?? {})
-      .map(([k, v]) => `${k.padEnd(14)} ${/[A-Z]{3}/.test(v) ? `<b>${v}</b>` : v}`)
-      .join('\n');
+    const sim = patient.sim, c = sim.case;
+    const ordered = sim.orderedPanels ?? PANELS.map((p) => p.id);
+    const { rows } = filterLabs(c.labs, ordered);
+    const lines = [];
+    for (const p of PANELS) {
+      if (!ordered.includes(p.id)) continue;
+      const mine = rows.filter((r) => r.panel === p.id);
+      lines.push(`── ${p.label.toUpperCase()} ──`);
+      if (mine.length) for (const r of mine) lines.push(`${r.key.padEnd(15)} ${/[A-Z]{3}/.test(r.value) ? `<b>${r.value}</b>` : r.value}`);
+      else lines.push('  no acute findings');
+    }
+    const skipped = PANELS.filter((p) => !ordered.includes(p.id)).map((p) => p.id).join(', ');
+    if (skipped) lines.push('', `NOT ORDERED: ${skipped}`);
     this._show({
       type: 'labs', patient, options: [],
-      html: `<h3>🧪 Lab results — ${patient.sim.displayName}</h3>
-             <div class="paper">MEDTEAM GENERAL LABORATORY\n------------------------\n${rows || 'No labs on file.'}</div>`,
+      html: `<h3>🧪 Lab results — ${sim.displayName}</h3>
+             <div class="paper">MEDTEAM GENERAL LABORATORY\n------------------------\n${c.labs === null ? 'No labs indicated for this presentation.' : lines.join('\n')}</div>`,
       closable: true,
     });
-    patient.sim.labState = 'read';
+    sim.labState = 'read';
     this.game.addScore(20, 'Labs reviewed');
+  }
+
+  // 🧪 the phlebotomist's order board: toggle panels, then SEND. Used both at
+  // the bedside DRAW BLOOD and when the aide waits for your order.
+  labPick(ctx) {
+    this.current = { type: 'labs_order', patient: ctx.patient, options: [], task: ctx.task ?? null };
+    let body = `<h3>🧪 Order labs — ${ctx.patient.sim.displayName}</h3>
+      <p style="color:#8a7a55;font-size:11px;margin:2px 0 6px">Tap the panels you want, then SEND. Anything you don't order never comes back.</p>`;
+    for (const p of PANELS) {
+      body += `<button class="opt ptoggle" data-p="${p.id}"><span class="tick">☐</span> ${p.label}</button>`;
+    }
+    body += `<button class="opt" id="sendlabs" style="font-weight:800">🩸 SEND ORDER</button>
+      <button class="close">Not yet</button>`;
+    this.box.innerHTML = body;
+    this.veil.style.display = 'flex';
+    this.box.querySelectorAll('.ptoggle').forEach((b) =>
+      b.addEventListener('pointerdown', () => {
+        b.classList.toggle('on');
+        b.querySelector('.tick').textContent = b.classList.contains('on') ? '☑' : '☐';
+      }));
+    this.box.querySelector('#sendlabs').addEventListener('pointerdown', () => {
+      const panels = [...this.box.querySelectorAll('.ptoggle.on')].map((b) => b.dataset.p);
+      this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'labs_order', choice: panels } });
+    });
+    this.box.querySelector('.close').addEventListener('pointerdown', () => this.close());
+  }
+
+  // 📟 fullscreen vitals — opened by tapping a room's wall monitor card
+  vitalsFull(pt) {
+    this.current = { type: 'vitalsfull', patient: pt, options: [] };
+    const render = () => {
+      const sim = pt.sim, v = sim.vitals();
+      const dead = sim.state === 'dead';
+      this.box.innerHTML = `<h3>📟 ${sim.displayName} — ${dead ? 'DECEASED' : sim.case.name}</h3>
+        <div class="monfull${sim.alarming() ? ' alarm' : ''}">
+          <div class="vrow"><span>HR</span><b>${v.hr}</b><span>SpO₂</span><b>${v.spo2}%</b></div>
+          <div class="vrow"><span>BP</span><b>${v.sbp}/${v.dbp}</b><span>RR</span><b>${v.rr}</b></div>
+          <div class="vrow"><span>TEMP</span><b>${v.temp}°C</b><span></span><b></b></div>
+          ${sim.case.ekg ? `<div class="ekgnote">${sim.case.ekg}</div>` : ''}
+          <svg class="bigekg" viewBox="0 0 100 20" preserveAspectRatio="none">
+            <path d="${ekgPath(dead ? 0 : v.hr)}" fill="none" stroke="#38e08f" stroke-width="0.9"/></svg>
+        </div>
+        <div class="paper">COMPLAINT: "${sim.case.complaint[0]}"\nSTATE: ${sim.state}${sim.treated ? ' · treated' : ''}${sim.critical ? ' · <b>CRITICAL</b>' : ''}</div>
+        <button class="close">Close</button>`;
+      this.box.querySelector('.close').addEventListener('pointerdown', () => this.close());
+    };
+    render();
+    this.veil.style.display = 'flex';
+    clearInterval(this._vfT);
+    this._vfT = setInterval(() => {
+      if (this.current?.type === 'vitalsfull') render();
+      else clearInterval(this._vfT);
+    }, 800);
   }
 
   imaging(patient) {
@@ -337,6 +404,28 @@ Your key stays in this browser only.</div>
       this.workup(cur.patient); // re-render with the new finding
       return;
     }
+    if (cur.type === 'labs_order') {
+      const panels = Array.isArray(choice) ? choice : [];
+      if (!panels.length) { g.ui.toast('Pick at least one panel first', 'bad'); return; }
+      const sim = cur.patient.sim;
+      sim.orderedPanels = panels;
+      if (cur.task) {
+        if (cur.task.phase === 'awaitChoice' || cur.task.phase === 'toPatient') g.beginLabs(cur.task, panels);
+      } else {
+        // bedside draw: the vial goes straight into the actor's sticky hand
+        const who = actor ?? g.active;
+        sim.labState = 'drawn';
+        const a = who.handAnchor();
+        const vial = spawnCarryable(g, 'vial', a.x, 0.8, a.z,
+          { patientId: cur.patient.id, label: `Blood: ${sim.displayName}` });
+        who.carrying = vial; vial.heldBy = who;
+        who.grabHeld = true;
+        if (sim.orders?.has('labs')) g.addScore(10, 'Ordered labs drawn');
+        g.ui.toast(`Blood drawn (${panels.length} panels) — to the centrifuge!`);
+      }
+      this.close();
+      return;
+    }
     if (cur.type === 'study' || cur.type === 'surgery') {
       const list = cur.type === 'study' ? g.constructor.MODALITIES : g.constructor.SURGERIES;
       const picked = choice !== undefined
@@ -412,5 +501,5 @@ Your key stays in this browser only.</div>
     this.close();
   }
 
-  close() { this.current = null; this.veil.style.display = 'none'; }
+  close() { clearInterval(this._vfT); this.current = null; this.veil.style.display = 'none'; }
 }

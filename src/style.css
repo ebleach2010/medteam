@@ -109,6 +109,19 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0e1420; t
 .mon.alarm { border-color: #ff5d5d; animation: monblink .6s infinite; }
 @keyframes monblink { 50% { background: rgba(90,10,16,.9); } }
 .mon .ekg { display: block; width: 100%; height: 18px; }
+.mon { cursor: pointer; }
+.mon .tapme { color: #6f86b0; font-size: 9px; margin-top: 2px; text-align: right; }
+
+/* fullscreen vitals (tap a wall monitor card) */
+#modal .monfull { background: #0a1220; border: 1px solid #2c4166; border-radius: 10px;
+  padding: 14px; color: #b9ffd0; font-family: 'Courier New', monospace; margin-bottom: 10px; }
+#modal .monfull.alarm { animation: monblink .6s infinite; }
+#modal .monfull .vrow { display: grid; grid-template-columns: 3.2em 1fr 4em 1fr; gap: 4px;
+  font-size: 14px; align-items: baseline; }
+#modal .monfull .vrow b { font-size: 30px; color: #7dffb0; }
+#modal .monfull .ekgnote { color: #ffd23c; font-size: 12px; margin: 6px 0; }
+#modal .bigekg { width: 100%; height: 72px; display: block; }
+#modal .opt.ptoggle.on { background: #efe6cd; font-weight: 700; }
 
 /* ---------- Modals: everything opens as a clipboard that rises up ---------- */
 #modal-veil { position: absolute; inset: 0; background: rgba(4,8,16,.45); display: none;

@@ -22,6 +22,7 @@ export function generateScan(type, seed) {
   if (type.startsWith('cxr')) drawCXR(g, rng, soft, type);
   else if (type.startsWith('ct_head')) drawCTHead(g, rng, soft, type);
   else if (type === 'ct_appy' || type === 'ct_freefluid') drawCTAbdomen(g, rng, soft, type);
+  else if (type.startsWith('mri')) drawMRISpine(g, rng, soft, type);
   else drawAnkle(g, rng, soft, type);
 
   // film grain + label
@@ -167,5 +168,24 @@ function drawAnkle(g, rng, soft, type) {
     // lucent fracture line through distal fibula
     g.strokeStyle = 'rgba(0,0,0,.95)'; g.lineWidth = 4;
     g.beginPath(); g.moveTo(284, 250); g.lineTo(308, 268); g.stroke();
+  }
+}
+
+// sagittal spine MRI: stacked vertebral bodies, dark discs, CSF stripe —
+// abscess types get a bright epidural collection pressing the cord
+function drawMRISpine(g, rng, soft, type) {
+  for (let i = 0; i < 9; i++) {
+    const y = 55 + i * 47 + rng.next() * 3;
+    g.fillStyle = 'rgba(255,255,255,0.32)';
+    g.fillRect(200, y - 17, 56, 34);            // vertebral body
+    g.fillStyle = 'rgba(255,255,255,0.10)';
+    g.fillRect(200, y + 17, 56, 9);             // disc space
+  }
+  g.fillStyle = 'rgba(255,255,255,0.16)';
+  g.fillRect(268, 35, 16, 445);                 // thecal sac / cord
+  if (type === 'mri_spine') {                   // epidural collection
+    soft(282, 290, 26, 0.55);
+    soft(282, 330, 22, 0.5);
+    soft(280, 310, 30, 0.35);
   }
 }

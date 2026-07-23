@@ -9,6 +9,8 @@ import { Renderer } from './render/renderer.js';
 import { buildMap } from './map/map.js';
 import { Character } from './entities/Character.js';
 import { syncPatientMesh } from './entities/Patient.js';
+import { makeCharacterMesh } from './render/meshes.js';
+import { animateRig } from './render/rig.js';
 import { spawnCarryable } from './entities/Carryable.js';
 import { Spawner } from './sim/spawner.js';
 import { giveMed, applyTreatment } from './sim/treatment.js';
@@ -41,6 +43,10 @@ export class Game {
     this.porter = this.world.add(new Character(this, 'porter', this.map.porterSpawn.x, this.map.porterSpawn.z), 'chars');
     this.tech = this.world.add(new Character(this, 'tech', this.map.diagnostics.tech.x, this.map.diagnostics.tech.z), 'chars');
     this.surgeon = this.world.add(new Character(this, 'surgeon', this.map.doctorSpawn.x - 1.5, this.map.doctorSpawn.z - 1), 'chars');
+    // the receptionist: cosmetic rig parked in the chair behind the front desk
+    this.receptionist = makeCharacterMesh('receptionist');
+    this.receptionist.position.set(this.map.receptionSeat.x, 0.28, this.map.receptionSeat.z);
+    this.renderer.scene.add(this.receptionist);
     this.tasks = new Map();      // staff char → current task
     this.activeIdx = 0;
 
@@ -92,8 +98,33 @@ export class Game {
     this.dayStats = this._freshStats();
     this.mode = 'playing';
     this.clock.running = true;
+    this._spawnLobbyProps();
     this.ui.screens.fade(false);
     this.ui.toast(`Day ${this.clock.day} — 12:00 AM. Here they come.`);
+  }
+
+  // waiting-room physics props, reset fresh each day — angry patients shove
+  // them, players can grab and juggle them, comedy ensues
+  _spawnLobbyProps() {
+    for (const it of [...this.world.byTag('items')]) if (it.itemKind === 'prop') this.world.remove(it, this);
+    const P = [
+      // x, z, y, color, label, hx, hy, hz, mass
+      [-20.2, 14.5, 0.5, 0xf6f2e6, 'Magazines', 0.17, 0.03, 0.13, 0.4],
+      [-20.6, 14.9, 0.5, 0xffd23c, 'Magazines', 0.17, 0.03, 0.13, 0.4],
+      [-26.6, 12.2, 1.35, 0x9fd8ff, 'Water jug', 0.15, 0.2, 0.15, 1.2],
+      [-25.6, 11.0, 0.6, 0x51677c, 'WAIT HERE sign', 0.32, 0.55, 0.05, 1.5],
+      [-17.6, 14.2, 0.4, 0x8a94a4, 'Trash can', 0.16, 0.3, 0.16, 0.8],
+      [-23.0, 12.6, 0.4, 0x8a94a4, 'Trash can', 0.16, 0.3, 0.16, 0.8],
+      [-19.2, 16.0, 0.5, 0x3f8a4f, 'Potted plant', 0.15, 0.32, 0.15, 1.4],
+      [-27.4, 16.4, 0.2, 0xff5d5d, 'Toy block', 0.09, 0.09, 0.09, 0.2],
+      [-27.0, 16.8, 0.2, 0x2f80ff, 'Toy block', 0.09, 0.09, 0.09, 0.2],
+      [-27.6, 16.9, 0.2, 0x21b573, 'Toy block', 0.09, 0.09, 0.09, 0.2],
+      [-21.2, 14.5, 0.5, 0xe8e4da, 'Coffee cup', 0.06, 0.08, 0.06, 0.15],
+      [-24.8, 12.0, 0.3, 0xd9c6a8, 'Tissue box', 0.13, 0.09, 0.09, 0.2],
+    ];
+    for (const [x, z, y, color, label, hx, hy, hz, mass] of P) {
+      spawnCarryable(this, 'prop', x, y, z, { color, label, size: { hx, hy, hz, mass } });
+    }
   }
 
   // pull a med out of the cabinet UI straight into the character's hands
@@ -239,14 +270,25 @@ export class Game {
     return r;
   }
 
-  orderLabs(patient) {
+  // panels is optional: without one the phlebotomist still walks to the room,
+  // then WAITS for you to come and pick which panels to send (like imaging)
+  orderLabs(patient, panels = null) {
     const sim = patient.sim;
     if (sim.state !== 'inbed') { this.ui.toast('Get them into a room bed first'); return; }
     if (sim.labState !== 'none') { this.ui.toast('Labs already in motion'); return; }
-    if (!this.dispatch(this.aide, { type: 'labs', phase: 'toPatient', patient,
+    if (!this.dispatch(this.aide, { type: 'labs', phase: 'toPatient', patient, panels,
       route: this._routeToRoomBed(this.aide.pos, sim.bed) })) return;
     sim.orders.add('labs');
-    this.ui.bubbles.say(this.aide, '🩸 On it!', { hold: 3 });
+    this.ui.bubbles.say(this.aide, '🩸 On my way!', { hold: 3 });
+  }
+
+  beginLabs(t, panels) {
+    t.panels = panels;
+    t.patient.sim.orderedPanels = panels;
+    const entry = [...this.tasks.entries()].find(([, task]) => task === t);
+    if (!entry) return;
+    this.ui.toast(`🧪 ${panels.length} panel${panels.length > 1 ? 's' : ''} sent — drawing now`);
+    this._labsGrab(entry[0], t);
   }
 
   // modality is optional: without one the porter still hauls the patient to
@@ -283,6 +325,21 @@ export class Game {
 
   _staffTick(dt) {
     for (const [ch, t] of [...this.tasks]) {
+      // wall-snag failsafe: if the towed patient jams on a corner for over a
+      // second, the staffer yanks the gurney free (snap them in behind)
+      if (ch.dragging) {
+        const dp = ch.dragging.body.translation();
+        const cp = ch.pos;
+        const dv = ch.dragging.body.linvel();
+        const far = Math.hypot(dp.x - cp.x, dp.z - cp.z) > 2.3;
+        if (far && Math.hypot(dv.x, dv.z) < 0.3) t.towStuck = (t.towStuck ?? 0) + dt;
+        else t.towStuck = 0;
+        if (t.towStuck > 1.1) {
+          ch.dragging.body.setTranslation({ x: cp.x - Math.sin(ch.yaw) * 0.9, y: cp.y, z: cp.z - Math.cos(ch.yaw) * 0.9 }, true);
+          ch.dragging.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+          t.towStuck = 0;
+        }
+      }
       const wp = t.route?.[0];
       if (wp) {
         const p = ch.pos;
@@ -308,24 +365,21 @@ export class Game {
     }
     if (t.phase === 'toPatient') {
       if (sim.state !== 'inbed' || sim.labState !== 'none') { this._done(ch); return; }
-      sim.lastRoomNo = sim.bed?.roomNo;
-      t.bed = sim.bed; t.bed.occupant = t.patient; // hold their room
-      sim.onGrabbed();
-      sim.state = 'transport';
-      sim.bed = t.bed;
-      ch.dragging = t.patient; t.patient.draggedBy = ch;
-      t.phase = 'toLab';
-      const rd = this.map.roomDoor(t.bed.index);
-      t.route = [
-        { x: rd.x, z: -6 },                                       // out the room door
-        ...this._routeTo({ x: rd.x, z: -5.6 }, { x: -2, z: -5.2 }), // corridor (zone doors included)
-        { x: -2, z: -2.6 },                                       // in the lab door
-        { x: -0.9, z: -1.8 },                                     // beside the centrifuge
-      ];
+      if (t.panels) { this._labsGrab(ch, t); return; }
+      // no panels chosen — the phlebotomist waits for YOU at the bedside
+      t.phase = 'awaitChoice';
+      this.ui.bubbles.say(ch, '🧪 Which panels am I sending? Come tell me.', { hold: 4.5 });
+      return;
+    }
+    if (t.phase === 'awaitChoice') {
+      if (sim.state !== 'inbed') { this._done(ch); return; }
+      const a = this.active.pos, s = ch.pos;
+      if (Math.hypot(a.x - s.x, a.z - s.z) > 3.2) { t.asked = false; return; }
+      if (!t.asked && !this.ui.modals.open) { t.asked = true; this.ui.modals.labPick({ patient: t.patient, task: t }); }
       return;
     }
     if (t.phase === 'toLab') {
-      // park them by the machine and get the needle in
+      // park them by the machine and get the needle in (fallthrough below)
       ch.dragging = null; t.patient.draggedBy = null;
       t.patient.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
       t.patient.body.setTranslation({ x: -0.9, y: 0.95, z: -1.8 }, true);
@@ -503,6 +557,26 @@ export class Game {
     this._done(ch);
   }
 
+  // scoop the patient up and haul them to the lab (panels already chosen)
+  _labsGrab(ch, t) {
+    const sim = t.patient.sim;
+    if (sim.state !== 'inbed') { this._done(ch); return; }
+    sim.lastRoomNo = sim.bed?.roomNo;
+    t.bed = sim.bed; t.bed.occupant = t.patient; // hold their room
+    sim.onGrabbed();
+    sim.state = 'transport';
+    sim.bed = t.bed;
+    ch.dragging = t.patient; t.patient.draggedBy = ch;
+    t.phase = 'toLab';
+    const rd = this.map.roomDoor(t.bed.index);
+    t.route = [
+      { x: rd.x, z: -6 },                                         // out the room door
+      ...this._routeTo({ x: rd.x, z: -5.6 }, { x: -2, z: -5.2 }), // corridor (zone doors included)
+      { x: -2, z: -2.6 },                                         // in the lab door
+      { x: -0.9, z: -1.8 },                                       // beside the centrifuge
+    ];
+  }
+
   beginScan(t, M) {
     const sim = t.patient.sim;
     t.modality = M;
@@ -635,6 +709,28 @@ export class Game {
       }
     }
 
+    // angry patients trash the lobby: shove any loose prop within arm's reach
+    for (const p of this.world.byTag('patients')) {
+      const sim0 = p.sim;
+      if (sim0.state !== 'angry') continue;
+      sim0._shoveT = (sim0._shoveT ?? 0) - dt;
+      if (sim0._shoveT > 0) continue;
+      const pp = p.body.translation();
+      for (const it of this.world.byTag('items')) {
+        if (it.heldBy || it.itemKind !== 'prop') continue;
+        const ip = it.body.translation();
+        const dx = ip.x - pp.x, dz = ip.z - pp.z, d = Math.hypot(dx, dz);
+        if (d > 1.35) continue;
+        it.body.applyImpulse({
+          x: (dx / (d || 1)) * (2.2 + this.rng.next() * 2.4),
+          y: 1.4 + this.rng.next() * 1.4,
+          z: (dz / (d || 1)) * (2.2 + this.rng.next() * 2.4),
+        }, true);
+        sim0._shoveT = 0.45;
+        break;
+      }
+    }
+
     // tackle connects: a lunging character near an agitated runner pins them
     for (const c of this.world.byTag('chars')) {
       if (c.tackleTimer <= 0) continue;
@@ -750,6 +846,8 @@ export class Game {
       }
       L.mat.color.setHex(c); L.mat.emissive.setHex(c); L.mat.emissiveIntensity = inten;
     });
+
+    animateRig(this.receptionist, dt, now, 0, { sitting: true }); // typing away forever
 
     // FX fades: skids over 5s (oldest first), dust puffs fast
     for (const f of this.fx.skids) {
@@ -925,23 +1023,18 @@ export class Game {
       if (t2.phase !== 'awaitChoice') continue;
       const sp = ch2.pos;
       if (Math.hypot(sp.x - cp.x, sp.z - cp.z) > 3.2) continue;
-      return t2.type === 'imaging'
-        ? { ico: '📷', label: 'ORDER STUDY', color: '#4a6a78', run: () => this.ui.modals.studyPick(t2) }
-        : { ico: '🔪', label: 'CHOOSE SURGERY', color: '#9e4a56', run: () => this.ui.modals.surgeryPick(t2) };
+      if (t2.type === 'imaging') return { ico: '📷', label: 'ORDER STUDY', color: '#4a6a78', run: () => this.ui.modals.studyPick(t2) };
+      if (t2.type === 'labs') return { ico: '🧪', label: 'ORDER PANELS', color: '#36b5c9', run: () => this.ui.modals.labPick({ patient: t2.patient, task: t2 }) };
+      return { ico: '🔪', label: 'CHOOSE SURGERY', color: '#9e4a56', run: () => this.ui.modals.surgeryPick(t2) };
     }
 
     // med cabinet: any pharmacy shelf is a face of the same tabbed cabinet
     const nearShelf = this.map.shelfUnits.some((u) => Math.hypot(u.x - cp.x, u.z - cp.z) < 2.3);
     if (nearShelf) return { ico: '💊', label: 'OPEN MED CABINET', color: '#d05a9e', run: () => this.ui.modals.cabinet() };
 
-    const angryPt = this.nearestPatient(char, 2.2, (s) => s.state === 'angry');
-    if (angryPt) {
-      return { ico: '🗣️', label: 'TALK THEM DOWN', color: '#e0952f', run: () => this.ui.modals.talk(angryPt) };
-    }
     const pt = this.nearestPatient(char, 1.9, (s) => s.state !== 'dead');
-    if (!pt) return null;
-    const sim = pt.sim;
-    if (sim.state === 'inbed') {
+    if (pt && pt.sim.state === 'inbed') {
+      const sim = pt.sim;
       if (!held && !sim.chartSeen) {
         return {
           ico: '📋', label: 'WORKUP', color: '#2f80ff',
@@ -949,21 +1042,20 @@ export class Game {
         };
       }
       if (!held && sim.labState === 'none' && sim.case.labs) {
+        // bedside draw — but you still CHOOSE the panels first
         return {
           ico: '🩸', label: 'DRAW BLOOD', color: '#d05450',
-          run: () => {
-            sim.labState = 'drawn';
-            const a = char.handAnchor();
-            const vial = spawnCarryable(this, 'vial', a.x, 0.8, a.z,
-              { patientId: pt.id, label: `Blood: ${sim.displayName}` });
-            char.carrying = vial; vial.heldBy = char;
-            char.grabHeld = true; // the vial is in your sticky hand now
-            if (sim.orders.has('labs')) this.addScore(10, 'Ordered labs drawn');
-            this.ui.toast('Blood drawn — to the centrifuge!');
-          },
+          run: () => this.ui.modals.labPick({ patient: pt }),
         };
       }
       return { ico: '📋', label: 'WORKUP', color: '#2f80ff', run: () => this.ui.modals.workup(pt) };
+    }
+
+    // de-escalation comes AFTER bedside medicine — an angry patient raging two
+    // rooms over must never bury the workup button
+    const angryPt = this.nearestPatient(char, 2.2, (s) => s.state === 'angry');
+    if (angryPt) {
+      return { ico: '🗣️', label: 'TALK THEM DOWN', color: '#e0952f', run: () => this.ui.modals.talk(angryPt) };
     }
     return null;
   }
