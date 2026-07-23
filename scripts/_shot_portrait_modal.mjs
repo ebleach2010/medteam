@@ -1,0 +1,22 @@
+import { chromium } from 'playwright';
+const browser = await chromium.launch({ executablePath: process.env.PW_CHROMIUM_PATH || '/opt/pw-browsers/chromium' });
+const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true });
+page.on('pageerror', (e) => console.log('PAGEERROR:', e.message));
+await page.goto('http://localhost:5199/?seed=7');
+await page.waitForFunction(() => window.__game?.ready, null, { timeout: 20000 });
+await page.evaluate(() => window.__game.start());
+await page.waitForTimeout(400);
+await page.evaluate(async () => {
+  const g = window.__game;
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const id = g.spawnCase('strep', -24, 6);
+  await sleep(300);
+  g.bedPatientTo(id, 2);
+  const bed = g.game.map.beds[2];
+  g.teleport('nurse', bed.x + 1.0, bed.z + 1.1);
+  await sleep(500);
+  g.inject({ type: 'ACTION', actorId: g.game.nurse.id });
+});
+await page.waitForTimeout(900);
+await page.screenshot({ path: 'test-results/shots/portrait-workup.png' });
+await browser.close();

@@ -18,7 +18,7 @@ export default defineConfig({
         short_name: 'MedTeam',
         description: 'Silly physics ED triage co-op: triage, treat, and try not to kill anyone.',
         display: 'fullscreen',
-        orientation: 'landscape',
+        orientation: 'any',
         background_color: '#0e1420',
         theme_color: '#0e1420',
         icons: [

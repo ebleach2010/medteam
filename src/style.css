@@ -8,10 +8,16 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0e1420; t
    button on touch devices. (Learned the hard way.) */
 #ui { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
 
-#rotate-splash { position: fixed; inset: 0; background: #0e1420; color: #e8eefc; z-index: 200;
-  display: none; align-items: center; justify-content: center; text-align: center; font-size: 28px; }
-#rotate-splash small { font-size: 15px; color: #8fa3c8; }
-@media (orientation: portrait) { #rotate-splash { display: flex; } }
+/* Portrait plays too: the HUD strip wraps onto two lines and shrinks a
+   notch so it clears the SWAP button on a ~390px-wide screen. */
+@media (orientation: portrait) {
+  #hud { flex-wrap: wrap; height: auto; min-height: 40px; row-gap: 2px;
+    padding: 4px 78px 4px 10px; gap: 9px; font-size: 12px; }
+  #hud .quota { margin-right: 0; }
+  #hud .cap i { width: 8px; height: 12px; }
+  #btn-swap { top: 62px; }
+  #toast { top: 78px; max-width: 92vw; white-space: normal; text-align: center; }
+}
 
 /* ---------- Speech bubbles ---------- */
 .bubble { position: absolute; left: 0; top: 0; max-width: 190px; padding: 7px 11px;

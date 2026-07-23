@@ -40,6 +40,15 @@ export class Renderer {
     const w = window.innerWidth, h = window.innerHeight;
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
+    // portrait: the landscape 40° vertical FOV would leave a hallway slit —
+    // widen the lens and pull back so you still see a room and a half across
+    if (this.camera.aspect < 1) {
+      this.camera.fov = 70;
+      this.camOffset.set(0, 7.2, 6.2); // steeper than landscape — less horizon, more floor
+    } else {
+      this.camera.fov = 40;
+      this.camOffset.set(0, 4.9, 6.0);
+    }
     this.camera.updateProjectionMatrix();
   }
 
