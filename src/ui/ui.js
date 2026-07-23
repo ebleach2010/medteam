@@ -39,6 +39,15 @@ export class UI {
       root.appendChild(el);
       return { el, x, z };
     });
+    // triage urgency dots hovering over patients (green → amber → red)
+    this.urgency = [];
+    for (let i = 0; i < 10; i++) {
+      const el = document.createElement('div');
+      el.className = 'urgency';
+      el.style.display = 'none';
+      root.appendChild(el);
+      this.urgency.push(el);
+    }
     // edge-of-screen pointers to patients who need you
     this.arrows = [];
     for (let i = 0; i < 3; i++) {
@@ -61,6 +70,35 @@ export class UI {
     this._itemLabels();
     this._roomLabels();
     this._edgeArrows();
+    this._urgencyDots();
+  }
+
+  // triage-at-a-glance: a dot over every unresolved patient, colored by how
+  // close they are to disaster (deterioration timeline / patience / critical)
+  _urgencyDots() {
+    const g = this.game;
+    let i = 0;
+    for (const p of g.world.byTag('patients')) {
+      if (i >= this.urgency.length) break;
+      const s = p.sim;
+      if (s.resolved || s.state === 'dead' || s.treated) continue;
+      const t = p.body.translation();
+      const sc = g.renderer.project({ x: t.x, y: t.y + 1.35, z: t.z });
+      if (!sc || sc.x < 0 || sc.x > innerWidth || sc.y < 0) continue;
+      const el = this.urgency[i++];
+      // urgency: fraction of the way to the case's first crisis (or patience)
+      const death = s.case.timeline.find((k) => k.event === 'death');
+      let f;
+      if (s.critical) f = 1;
+      else if (death) f = Math.min(1, s.elapsed / death.t);
+      else f = Math.min(1, (g.clock.minutes - s.tArrive) / (s.case.patienceMin * 1.4));
+      const hue = (1 - f) * 120; // green → red
+      el.style.display = 'block';
+      el.style.background = `hsl(${hue | 0} 80% 52%)`;
+      el.classList.toggle('crit', s.critical);
+      el.style.transform = `translate(${sc.x | 0}px, ${sc.y | 0}px) translate(-50%,-50%)`;
+    }
+    for (; i < this.urgency.length; i++) this.urgency[i].style.display = 'none';
   }
 
   _roomLabels() {

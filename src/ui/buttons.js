@@ -17,9 +17,21 @@ export class Buttons {
     this.tackle = mk('btn-tackle', '💥', 'TACKLE');
     this.swap = mk('btn-swap', '🔄', 'SWAP');
 
+    // HFF grab: HOLD the button to keep your hands sticky, release to let go
     this.grab.addEventListener('pointerdown', (e) => {
       e.preventDefault();
+      this.grab.setPointerCapture(e.pointerId);
       game.enqueue(make(INTENT.GRAB, game.active.id));
+    });
+    const grabUp = (e) => { e.preventDefault(); game.enqueue(make(INTENT.RELEASE, game.active.id)); };
+    this.grab.addEventListener('pointerup', grabUp);
+    this.grab.addEventListener('pointercancel', grabUp);
+    // desktop: hold Space to grab
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' && !e.repeat) game.enqueue(make(INTENT.GRAB, game.active.id));
+    });
+    window.addEventListener('keyup', (e) => {
+      if (e.code === 'Space') game.enqueue(make(INTENT.RELEASE, game.active.id));
     });
     this.swap.addEventListener('pointerdown', (e) => {
       e.preventDefault();
@@ -60,7 +72,8 @@ export class Buttons {
     this.action.querySelector('.lbl').textContent = ctx?.label ?? '…';
     this.action.classList.toggle('disabled', !ctx);
     const gl = this.grab.querySelector('.lbl');
-    gl.textContent = (g.active.carrying || g.active.dragging) ? 'DROP' : 'GRAB';
+    gl.textContent = (g.active.carrying || g.active.dragging) ? 'HOLDING'
+      : g.active.grabHeld ? 'STICKY…' : 'HOLD TO GRAB';
     // tackle only surfaces when someone's rampaging nearby
     const near = g.nearestPatient(g.active, 3.2, (s) => s.state === 'agitated');
     this.tackle.style.display = near ? 'flex' : 'none';

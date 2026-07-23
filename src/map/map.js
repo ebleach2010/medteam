@@ -224,8 +224,16 @@ export function buildMap(scene, physics) {
   floorRing(23.2, 2, 0xff5db0, 1.6);        // pharmacy cabinet row 1
   floorRing(23.2, 9.6, 0xff5db0, 1.6);      // pharmacy cabinet row 2
 
+  // drop-target ring: hops to the nearest free bed while you're hauling someone
+  const dropRing = new THREE.Mesh(new THREE.RingGeometry(1.0, 1.3, 36),
+    new THREE.MeshBasicMaterial({ color: 0x4dd07a, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }));
+  dropRing.rotation.x = -Math.PI / 2;
+  dropRing.position.y = 0.045;
+  dropRing.material.fog = false;
+  statics.add(dropRing);
+
   return {
-    beds, seats, centrifuge, imagingPad, shelfUnits, rings,
+    beds, seats, centrifuge, imagingPad, shelfUnits, rings, dropRing,
     entrance: { x: -5, z: 15.2 },
     spawnOutside: { x: -5, z: 16.6 },
     nurseSpawn: { x: 10, z: 3 },

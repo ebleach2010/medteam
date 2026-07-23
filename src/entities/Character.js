@@ -33,6 +33,8 @@ export class Character {
     this.yaw = 0;
     this.carrying = null;       // item entity
     this.dragging = null;       // patient entity
+    this.grabHeld = false;      // HFF sticky hands: true while the button is down
+    this.medDwell = 0;          // time spent holding a med against a patient
     this.tackleTimer = 0;       // >0 while lunging
     this.sprawlTimer = 0;       // >0 while upright spring weakened (faceplant)
     this.uprightK = 1300;
@@ -52,7 +54,7 @@ export class Character {
     // movement: joystick magnitude → walk/jog/sprint target, chased by impulses
     const mag = Math.min(1, Math.hypot(this.move.x, this.move.z));
     let cap = targetSpeed(mag);
-    if (this.dragging) cap *= 0.55;
+    if (this.dragging) cap *= 0.8; // the reaction impulse provides the real resistance
     if (this.carrying) cap *= 0.94;
     const dirX = mag > 0.01 ? this.move.x / mag : 0;
     const dirZ = mag > 0.01 ? this.move.z / mag : 0;
@@ -73,6 +75,10 @@ export class Character {
 
     this.tackleTimer = Math.max(0, this.tackleTimer - dt);
 
+    // sticky hands: while the grab button is held and hands are empty, keep
+    // trying to latch onto whatever drifts into reach (HFF-style)
+    if (this.grabHeld && !this.carrying && !this.dragging) this.tryGrab();
+
     // carry springs
     if (this.carrying) {
       const a = this.handAnchor();
@@ -81,7 +87,9 @@ export class Character {
     if (this.dragging) {
       const a = this.handAnchor();
       const t = { x: a.x, y: 0.55, z: a.z };
-      springToward(this.dragging.body, t, { k: 2600, c: 620, maxForce: 1500, dt });
+      const imp = springToward(this.dragging.body, t, { k: 2600, c: 620, maxForce: 1500, dt });
+      // equal-and-opposite reaction: a heavy patient visibly yanks you around
+      this.body.applyImpulse({ x: -imp.x * 0.55, y: 0, z: -imp.z * 0.55 }, true);
     }
   }
 
@@ -101,7 +109,7 @@ export class Character {
 
   tryGrab() {
     const game = this.game;
-    if (this.carrying || this.dragging) { this.release(); return; }
+    if (this.carrying || this.dragging) return;
     const a = this.handAnchor();
     // nearest item first
     let best = null, bestD = 1.5;

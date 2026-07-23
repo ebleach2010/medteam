@@ -47,7 +47,9 @@ export class Physics {
 
 // Spring pulling a body toward a target point — the grab/carry/drag mechanic.
 // Applied as impulses each fixed tick; items dangle, patients flop. Clamped so
-// nothing explodes when yanked through a doorway.
+// nothing explodes when yanked through a doorway. Returns the applied impulse
+// so the holder can receive the equal-and-opposite reaction (HFF does this —
+// it's where the tug-of-war comedy comes from).
 export function springToward(body, target, { k, c, maxForce, dt }) {
   const p = body.translation(), v = body.linvel();
   let fx = k * (target.x - p.x) - c * v.x;
@@ -55,7 +57,9 @@ export function springToward(body, target, { k, c, maxForce, dt }) {
   let fz = k * (target.z - p.z) - c * v.z;
   const mag = Math.hypot(fx, fy, fz);
   if (mag > maxForce) { const s = maxForce / mag; fx *= s; fy *= s; fz *= s; }
-  body.applyImpulse({ x: fx * dt, y: fy * dt, z: fz * dt }, true);
+  const ix = fx * dt, iy = fy * dt, iz = fz * dt;
+  body.applyImpulse({ x: ix, y: iy, z: iz }, true);
+  return { x: ix, y: iy, z: iz };
 }
 
 // Soft upright spring: torque impulse that rights a tilting capsule but lets it

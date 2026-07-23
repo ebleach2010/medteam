@@ -24,6 +24,7 @@ const helpers = `
     sleep(ms) { return new Promise((r) => setTimeout(r, ms)); },
     act(role) { g.inject({ type: 'ACTION', actorId: role === 'doctor' ? g.game.doctor.id : g.game.nurse.id }); },
     grab(role) { g.inject({ type: 'GRAB', actorId: role === 'doctor' ? g.game.doctor.id : g.game.nurse.id }); },
+    release(role) { g.inject({ type: 'RELEASE', actorId: role === 'doctor' ? g.game.doctor.id : g.game.nurse.id }); },
     patient(id) { return g.state().patients.find((p) => p.id === id); },
     // drag a grabbed patient by walking the character (spring does the towing)
     async dragTo(role, x, z) {
@@ -45,20 +46,19 @@ test('full lab loop: bed → labs → centrifuge → results → dx → meds →
     const g = window.__game, api = window.__api;
     const id = g.spawnCase('strep', -15, 3.2);
     g.teleport('nurse', -15, 2.4);
-    api.grab('nurse');                        // grab the patient
+    api.grab('nurse');                        // HOLD grab — sticky hands latch on
     await api.until(() => g.game.nurse.dragging);
     await api.dragTo('nurse', -15, 1.6);      // tow them to bed 1
-    api.grab('nurse');                        // release → auto-bed
+    api.release('nurse');                     // let go → auto-bed
     await api.until(() => api.patient(id).state === 'inbed');
 
-    api.act('nurse');                         // hook monitor
-    await api.until(() => api.patient(id).hooked);
-    api.act('nurse');                         // draw blood
+    // monitor hooks itself up shortly after bedding
+    await api.until(() => api.patient(id).hooked, 8000);
+    api.act('nurse');                         // draw blood (deliberate act)
     await api.until(() => g.state().chars[0].carrying?.startsWith('Blood'));
 
-    g.teleport('nurse', -23.2, 5.9);          // sprint to the lab
-    api.act('nurse');                         // spin sample
-    await api.until(() => g.state().centrifuge.busy);
+    g.teleport('nurse', -23.2, 5.9);          // carry the vial to the centrifuge
+    await api.until(() => g.state().centrifuge.busy, 8000); // it feeds itself
     g.centrifugeFastForward();
     await api.until(() => g.state().items.some((i) => i.kind === 'paper'));
 
@@ -68,7 +68,7 @@ test('full lab loop: bed → labs → centrifuge → results → dx → meds →
     api.act('nurse');                         // read it
     await api.until(() => g.state().modal === 'labs');
     g.game.ui.modals.close();
-    api.grab('nurse');                        // put the paper down
+    api.release('nurse');                     // put the paper down
 
     g.inject({ type: 'SWAP_ROLE', actorId: 0 });
     g.teleport('doctor', -15, 1.9);
@@ -84,9 +84,8 @@ test('full lab loop: bed → labs → centrifuge → results → dx → meds →
     g.inject({ type: 'SELECT', actorId: g.game.doctor.id, payload: { modal: 'cabinet', choice: 'amoxicillin' } });
     await api.until(() => g.state().chars[1].carrying === 'Amoxicillin');
 
-    g.teleport('doctor', -15, 1.9);
-    api.act('doctor');                        // give the med → treated
-    await api.until(() => api.patient(id).treated);
+    g.teleport('doctor', -15, 1.9);           // hold the med at the bedside...
+    await api.until(() => api.patient(id).treated, 10000); // ...it administers itself
     g.skipMinutes(35);
     await api.until(() => !api.patient(id) || api.patient(id).state === 'leaving', 20000);
     return { score: g.state().score, stats: g.state().stats };
@@ -103,10 +102,8 @@ test('imaging: scan on the pad opens interpretation modal; SAH read correctly', 
   const res = await page.evaluate(async () => {
     const g = window.__game, api = window.__api;
     const id = g.spawnCase('stroke_sah', 21, -10);
-    g.teleportPatient(id, 21, -10.2);         // onto the imaging pad
-    g.teleport('nurse', 21.6, -9.4);
-    api.act('nurse');                         // SCAN
-    await api.until(() => g.state().modal === 'imaging', 10000);
+    g.teleportPatient(id, 21, -10.2);         // park them on the pad — it scans
+    await api.until(() => g.state().modal === 'imaging', 15000);
     g.inject({ type: 'SELECT', actorId: g.game.nurse.id, payload: { modal: 'imaging', choice: 0 } });
     await api.until(() => api.patient(id).imagingDone);
     return { done: true };
@@ -125,17 +122,17 @@ test('agitation: naloxone wakes the OD furious; tackle, sedate, re-bed', async (
     api.grab('nurse');
     await api.until(() => g.game.nurse.dragging);
     await api.dragTo('nurse', -11, 1.6);
-    api.grab('nurse');                        // release → auto-bed
+    api.release('nurse');                     // let go → auto-bed
     await api.until(() => api.patient(id).state === 'inbed');
 
-    // hand the nurse naloxone directly (the pharmacy run is covered above)
+    // hand the nurse naloxone directly (the pharmacy run is covered above);
+    // holding it at the bedside administers it → treated → FURY
     const { spawnCarryable } = await import('/src/entities/Carryable.js');
     const c = g.game.nurse.pos;
     const item = spawnCarryable(g.game, 'med', c.x, 1, c.z,
       { medId: 'naloxone', color: 0x5da8ff, label: 'Naloxone' });
     g.game.nurse.carrying = item; item.heldBy = g.game.nurse;
-    api.act('nurse');                         // give naloxone → treated → FURY
-    await api.until(() => api.patient(id).state === 'agitated', 12000);
+    await api.until(() => api.patient(id).state === 'agitated', 15000);
 
     // chase the runner: hop next to them and dive
     for (let i = 0; i < 40; i++) {
@@ -151,14 +148,14 @@ test('agitation: naloxone wakes the OD furious; tackle, sedate, re-bed', async (
     const sed = spawnCarryable(g.game, 'med', c2.x, 1, c2.z,
       { medId: 'sedative', color: 0x7a5cff, label: 'Sedative (IM)' });
     g.game.nurse.carrying = sed; sed.heldBy = g.game.nurse;
-    api.act('nurse');                         // SEDATE
-    await api.until(() => api.patient(id).state === 'sedated');
+    // holding the sedative against the pinned runner puts them under
+    await api.until(() => api.patient(id).state === 'sedated', 10000);
 
     // drag the sleeper back to bed
     api.grab('nurse');
     await api.until(() => g.game.nurse.dragging);
     await api.dragTo('nurse', -11, 1.6);
-    api.grab('nurse');
+    api.release('nurse');
     await api.until(() => api.patient(id).state === 'inbed', 10000);
     return { ok: true };
   });

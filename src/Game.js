@@ -166,14 +166,64 @@ export class Game {
       const pt = this.nearestPatient(c, 1.15, (s) => s.state === 'agitated');
       if (pt) { pt.sim.pin(); c.tackleTimer = 0; this.addScore(30, 'Takedown!'); }
     }
-    // escorted walking patients auto-bed next to a free ED bed
+    // ---- stations react to what you physically bring them (no verb menus) ----
+    // bed: monitor leads hook themselves up a moment after a patient is bedded
     for (const p of this.world.byTag('patients')) {
-      if (!p.escortedBy || !['escorted'].includes(p.sim.state)) continue;
-      const bed = this._nearestFreeBed(p, 2.0);
-      if (bed) { p.escortedBy = null; this.bedPatient(p, bed); }
+      const sim = p.sim;
+      if (sim.state === 'inbed' && !sim.hooked) {
+        sim.hookT = (sim.hookT ?? 0) + dt;
+        if (sim.hookT > 1.6) { sim.hooked = true; this.addScore(10, 'On the monitor'); this.audio.tap(); }
+      } else sim.hookT = 0;
     }
-    // centrifuge
+    // holding a med against a patient administers it (short dwell)
+    for (const ch of this.world.byTag('chars')) {
+      if (ch.carrying?.itemKind !== 'med') { ch.medDwell = 0; continue; }
+      const pt = this.nearestPatient(ch, 1.7, (s) => s.canReceiveMeds());
+      if (!pt) { ch.medDwell = 0; continue; }
+      if (ch.medDwell === 0) this.ui.bubbles.say(pt, '💉…', { cls: 'order', hold: 1.4 });
+      ch.medDwell += dt;
+      if (ch.medDwell > 1.2) {
+        const medId = ch.carrying.data.medId;
+        this._consumeHeld(ch);
+        ch.medDwell = 0;
+        giveMed(this, pt, medId);
+      }
+    }
+    // centrifuge: feed it a vial — held into the zone or dropped into it
     const c = this.map.centrifuge;
+    if (!c.busy) {
+      for (const it of [...this.world.byTag('items')]) {
+        if (it.itemKind !== 'vial') continue;
+        const p = it.body.translation();
+        if (Math.hypot(p.x - c.x, p.z - c.z) > 1.5) continue;
+        const pid = it.data.patientId;
+        if (it.heldBy) { it.heldBy.carrying = null; }
+        this.world.remove(it, this);
+        c.busy = { patientId: pid };
+        c.timer = 20;
+        const pt = [...this.world.byTag('patients')].find((q) => q.id === pid);
+        if (pt) pt.sim.labState = 'spinning';
+        this.ui.toast('🌀 Centrifuge spinning (20s)...');
+        break;
+      }
+    }
+    // scanner: park a patient on the pad and it scans them
+    if (!this._scanJob && !this.ui.modals.open) {
+      const pad = this.map.imagingPad;
+      for (const p of this.world.byTag('patients')) {
+        const sim = p.sim;
+        if (!sim.case.imaging || sim.imagingDone || ['dead', 'agitated'].includes(sim.state)) { sim.padT = 0; continue; }
+        const t = p.body.translation();
+        if (Math.hypot(t.x - pad.x, t.z - pad.z) < 1.9) {
+          sim.padT = (sim.padT ?? 0) + dt;
+          if (sim.padT > 1.0) {
+            this._scanJob = { patient: p, t: 3 };
+            this.ui.toast(`📷 Scanning ${sim.displayName}... hold still...`);
+            this.audio.tap();
+          }
+        } else sim.padT = 0;
+      }
+    }
     if (c.busy) {
       c.timer -= dt;
       c.mesh.userData.drum.rotation.y += dt * 24;
@@ -209,6 +259,15 @@ export class Game {
       const target = near ? 0.55 + Math.sin(now * 5) * 0.2 : 0.18;
       r.mesh.material.opacity += (target - r.mesh.material.opacity) * 0.15;
     }
+    // drop-target ring glows on the nearest free bed while hauling a patient
+    const dr = this.map.dropRing;
+    if (this.active.dragging) {
+      const bed = this._nearestFreeBed(this.active.dragging, 7);
+      if (bed) {
+        dr.position.x = bed.x; dr.position.z = bed.z;
+        dr.material.opacity += (0.65 + Math.sin(now * 6) * 0.2 - dr.material.opacity) * 0.25;
+      } else dr.material.opacity *= 0.85;
+    } else dr.material.opacity *= 0.85;
     for (const it of this.world.byTag('items')) {
       const t = it.body.translation(), r = it.body.rotation();
       it.mesh.position.set(t.x, t.y, t.z);
@@ -227,7 +286,8 @@ export class Game {
     const char = [...this.world.byTag('chars')].find((c) => c.id === i.actorId) ?? this.active;
     switch (i.type) {
       case INTENT.MOVE: char.applyMove(i.payload.x, i.payload.z); break;
-      case INTENT.GRAB: char.tryGrab(); break;
+      case INTENT.GRAB: char.grabHeld = true; char.tryGrab(); break;
+      case INTENT.RELEASE: char.grabHeld = false; char.release(); break;
       case INTENT.ACTION: this.actionContext(char)?.run(); break;
       case INTENT.TACKLE: char.tackle(); break;
       case INTENT.SWAP_ROLE:
@@ -266,38 +326,11 @@ export class Game {
   }
 
   // ---------------- context action ----------------
+  // Deliberately small: physical outcomes (bedding, meds, centrifuge, scans)
+  // happen by bringing things places. ACTION covers only the deliberate
+  // medical acts: reading results, drawing blood, the cabinet, diagnosing.
   actionContext(char) {
     const held = char.carrying;
-    if (held?.itemKind === 'med') {
-      const pt = this.nearestPatient(char, 1.9, (s) => s.canReceiveMeds());
-      if (pt) {
-        const med = medById(held.data.medId);
-        const sedating = held.data.medId === 'sedative' && ['agitated', 'pinned'].includes(pt.sim.state);
-        return {
-          ico: sedating ? '💉' : '💊', label: sedating ? 'SEDATE' : `GIVE ${med.name.split(' ')[0].toUpperCase()}`,
-          run: () => { this._consumeHeld(char); giveMed(this, pt, held.data.medId); },
-        };
-      }
-      return null;
-    }
-    if (held?.itemKind === 'vial') {
-      const c = this.map.centrifuge, p = char.pos;
-      if (Math.hypot(p.x - c.x, p.z - c.z) < 2.1 && !c.busy) {
-        return {
-          ico: '🌀', label: 'SPIN SAMPLE',
-          run: () => {
-            const pid = held.data.patientId;
-            this._consumeHeld(char);
-            c.busy = { patientId: pid };
-            c.timer = 20; // real seconds — centrifuges don't care about your day
-            const pt = [...this.world.byTag('patients')].find((q) => q.id === pid);
-            if (pt) pt.sim.labState = 'spinning';
-            this.ui.toast('Centrifuge spinning (20s)...');
-          },
-        };
-      }
-      return null;
-    }
     if (held?.itemKind === 'paper') {
       const pt = [...this.world.byTag('patients')].find((p) => p.id === held.data.patientId);
       return {
@@ -306,22 +339,6 @@ export class Game {
           if (!pt) { this.ui.toast('Patient is gone...'); return; }
           if (char.role === 'doctor' && pt.sim.labState !== 'read') this.addScore(15, 'Results to the doctor');
           this.ui.modals.labResults(pt);
-        },
-      };
-    }
-
-    // empty-handed
-    const pad = this.map.imagingPad;
-    const onPad = this.nearestPatient(char, 2.2, (s) =>
-      !['dead', 'agitated'].includes(s.state) && s.case.imaging && !s.imagingDone &&
-      Math.hypot(s.ent.body.translation().x - pad.x, s.ent.body.translation().z - pad.z) < 2.0);
-    if (onPad && !this._scanJob) {
-      return {
-        ico: '📷', label: 'SCAN',
-        run: () => {
-          this._scanJob = { patient: onPad, t: 3 };
-          this.ui.toast('Scanning... hold still...');
-          this.audio.tap();
         },
       };
     }
@@ -335,8 +352,7 @@ export class Game {
     if (!pt) return null;
     const sim = pt.sim;
     if (sim.state === 'inbed') {
-      if (!sim.hooked) return { ico: '📈', label: 'HOOK MONITOR', run: () => { sim.hooked = true; this.addScore(10, 'On the monitor'); this.audio.tap(); } };
-      if (sim.labState === 'none' && sim.case.labs) {
+      if (!held && sim.labState === 'none' && sim.case.labs) {
         return {
           ico: '🩸', label: 'DRAW BLOOD',
           run: () => {
@@ -345,23 +361,13 @@ export class Game {
             const vial = spawnCarryable(this, 'vial', a.x, 0.8, a.z,
               { patientId: pt.id, label: `Blood: ${sim.displayName}` });
             char.carrying = vial; vial.heldBy = char;
+            char.grabHeld = true; // the vial is in your sticky hand now
             if (sim.orders.has('labs')) this.addScore(10, 'Ordered labs drawn');
             this.ui.toast('Blood drawn — to the centrifuge!');
           },
         };
       }
       if (char.role === 'doctor') return { ico: '✅', label: 'DIAGNOSE', run: () => this.ui.modals.diagnose(pt) };
-      return null;
-    }
-    if (['waiting', 'angry', 'arriving', 'escorted'].includes(sim.state) && sim.case.ambulatory) {
-      const on = pt.escortedBy === char;
-      return {
-        ico: '🚶', label: on ? 'STOP ESCORT' : 'ESCORT',
-        run: () => {
-          pt.escortedBy = on ? null : char;
-          if (!on) { sim.onGrabbed(); sim.state = 'escorted'; this.ui.toast(`${sim.displayName} is following you`); }
-        },
-      };
     }
     return null;
   }
