@@ -27,17 +27,25 @@ export class UI {
       root.appendChild(el);
       this.labels.push(el);
     }
-    // persistent room names on the floor — you should always know where you are
+    // sign plates over each area, like the reference cutaway (navy; ER red)
     this.roomLabels = [
-      ['ICU', -21, -11], ['MED-SURGE', -7, -11], ['BIRTHPLACE', 7, -11], ['IMAGING', 21, -11],
-      ['LAB', -23, 7], ['ED BAYS', -5, 4.5], ['WAITING ROOM', -5, 12],
-      ['NURSE STN', 12, 8.5], ['PHARMACY', 22, 12],
-    ].map(([text, x, z]) => {
+      ['RECEPTION', -24.5, 8.8, 1.6, '#3a4a5e'],
+      ['WAITING', -21, 14.6, 1.4, '#3a4a5e'],
+      ['EMERGENCY ROOM', -6, 7.4, 1.7, '#c0392b'],
+      ['PHARMACY', -4.2, 16.2, 1.6, '#7d5ba6'],
+      ['WARDS 2A', -21, -9.5, 3.9, '#3a4a5e'],
+      ['BIRTHPLACE', -9.2, -9.5, 3.9, '#a85b96'],
+      ['NURSE STN', -18, -3.4, 3.7, '#3a4a5e'],
+      ['LAB 3B', -1.5, -8.6, 6.2, '#2f7f78'],
+      ['ICU', 7.3, -9.5, 6.2, '#b06040'],
+      ['IMAGING', 10, -19, 8.5, '#4a5ba6'],
+    ].map(([text, x, z, y, bg]) => {
       const el = document.createElement('div');
       el.className = 'room-label';
       el.textContent = text;
+      el.style.background = bg;
       root.appendChild(el);
-      return { el, x, z };
+      return { el, x, z, y };
     });
     // triage urgency dots hovering over patients (green → amber → red)
     this.urgency = [];
@@ -104,7 +112,7 @@ export class UI {
   _roomLabels() {
     const g = this.game;
     for (const r of this.roomLabels) {
-      const s = g.renderer.project({ x: r.x, y: 0.05, z: r.z });
+      const s = g.renderer.project({ x: r.x, y: r.y, z: r.z });
       if (!s || s.x < -60 || s.x > innerWidth + 60 || s.y < 30 || s.y > innerHeight + 40) {
         r.el.style.display = 'none';
         continue;

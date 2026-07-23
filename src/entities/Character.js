@@ -3,16 +3,16 @@ import { makeCharacterMesh } from '../render/meshes.js';
 import { animateRig } from '../render/rig.js';
 import { springToward, uprightSpring } from '../physics/physics.js';
 
-const SPRINT = 4.6;
+const SPRINT = 5.4;
 const ACCEL = 0.16;
 const TAU = Math.PI * 2;
 
-// rec-room locomotion: joystick magnitude maps to walk / jog / sprint bands
+// locomotion tuned hot: even a half-push is a jog. You are always in a rush.
 function targetSpeed(mag) {
-  if (mag < 0.15) return 0;
-  if (mag < 0.55) return 1.4 + ((mag - 0.15) / 0.4) * 1.2;   // walk
-  if (mag < 0.85) return 2.6 + ((mag - 0.55) / 0.3) * 1.3;   // jog
-  return 3.9 + ((mag - 0.85) / 0.15) * (SPRINT - 3.9);       // sprint
+  if (mag < 0.12) return 0;
+  if (mag < 0.5) return 2.2 + ((mag - 0.12) / 0.38) * 1.2;   // brisk walk
+  if (mag < 0.85) return 3.4 + ((mag - 0.5) / 0.35) * 1.2;   // jog
+  return 4.6 + ((mag - 0.85) / 0.15) * (SPRINT - 4.6);       // sprint
 }
 function smoothAngle(cur, tgt, l, dt) {
   const d = ((tgt - cur + Math.PI) % TAU + TAU) % TAU - Math.PI;
@@ -43,8 +43,8 @@ export class Character {
   get pos() { return this.body.translation(); }
 
   handAnchor() {
-    const p = this.pos;
-    return { x: p.x + Math.sin(this.yaw) * 0.55, y: 0.75, z: p.z + Math.cos(this.yaw) * 0.55 };
+    const p = this.pos; // body-relative height — works on every floor
+    return { x: p.x + Math.sin(this.yaw) * 0.55, y: p.y - 0.05, z: p.z + Math.cos(this.yaw) * 0.55 };
   }
 
   applyMove(x, z) { this.move.x = x; this.move.z = z; }
@@ -86,7 +86,7 @@ export class Character {
     }
     if (this.dragging) {
       const a = this.handAnchor();
-      const t = { x: a.x, y: 0.55, z: a.z };
+      const t = { x: a.x, y: this.body.translation().y - 0.3, z: a.z };
       const imp = springToward(this.dragging.body, t, { k: 2600, c: 620, maxForce: 1500, dt });
       // equal-and-opposite reaction: a heavy patient visibly yanks you around
       this.body.applyImpulse({ x: -imp.x * 0.55, y: 0, z: -imp.z * 0.55 }, true);

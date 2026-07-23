@@ -36,10 +36,14 @@ export class Spawner {
       if (s.done || g.clock.minutes < s.at) continue;
       s.done = true;
       const p = spawnPatient(g, s.caseData, g.map.spawnOutside.x, g.map.spawnOutside.z);
-      // head for a free waiting seat (or mill about the entrance, furious later)
+      // route THROUGH the entrance first (straight-lining clips wall corners),
+      // then to a free waiting chair
       const seat = g.map.seats.find((st) => !st.taken);
-      if (seat) { seat.taken = p; p.sim.seat = seat; p.sim.walkTarget = { x: seat.x, z: seat.z - 0.8 }; }
-      else p.sim.walkTarget = { x: g.map.entrance.x + g.rng.range(-2, 2), z: g.map.entrance.z - 2 };
+      const route = [{ ...g.map.entrance }, { ...g.map.insideWaypoint }];
+      if (seat) { seat.taken = p; p.sim.seat = seat; route.push({ x: seat.x, z: seat.z - 0.8 }); }
+      else route.push({ x: g.map.insideWaypoint.x + g.rng.range(-1, 3), z: g.map.insideWaypoint.z + g.rng.range(1, 3) });
+      p.sim.route = route;
+      p.sim.walkTarget = p.sim.route.shift();
       g.ui.toast(`🚑 New patient: ${p.sim.displayName}`);
     }
   }

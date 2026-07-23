@@ -19,6 +19,17 @@ export class Physics {
     return body;
   }
 
+  // inclined static box — staircase ramps. axis 'x' pitches around X (run along z),
+  // axis 'z' rolls around Z (run along x). High friction so bodies can climb.
+  staticRamp(x, y, z, hx, hy, hz, axis, angle) {
+    const h = Math.sin(angle / 2), w = Math.cos(angle / 2);
+    const q = axis === 'x' ? { x: h, y: 0, z: 0, w } : { x: 0, y: 0, z: h, w };
+    const body = this.world.createRigidBody(
+      RAPIER.RigidBodyDesc.fixed().setTranslation(x, y, z).setRotation(q));
+    this.world.createCollider(RAPIER.ColliderDesc.cuboid(hx, hy, hz).setFriction(1.4), body);
+    return body;
+  }
+
   // Character/patient capsule. tiltWobble=true leaves X/Z rotation free (yaw locked)
   // so an upright-spring can produce the drunken Human-Fall-Flat stagger.
   capsuleBody(x, z, { radius = 0.3, halfHeight = 0.5, mass = 70, tiltWobble = false,

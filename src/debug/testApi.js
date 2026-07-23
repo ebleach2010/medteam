@@ -39,12 +39,15 @@ export function installTestApi(game) {
     },
     teleport(role, x, z) {
       const ch = role === 'nurse' ? game.nurse : game.doctor;
-      ch.body.setTranslation({ x, y: 1.0, z }, true);
+      ch.body.setTranslation({ x, y: game.map.floorYAt(x, z) + 1.0, z }, true);
       ch.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
     },
     teleportPatient(id, x, z) {
       const p = [...game.world.byTag('patients')].find((q) => q.id === id);
-      if (p) { game.setPatientDynamic(p); p.body.setTranslation({ x, y: 1.0, z }, true); }
+      if (p) {
+        game.setPatientDynamic(p);
+        p.body.setTranslation({ x, y: game.map.floorYAt(x, z) + 1.0, z }, true);
+      }
     },
     skipMinutes(m) { game.clock.minutes += m; },
     setTimeScale(s) { game.clock.timeScale = s; },

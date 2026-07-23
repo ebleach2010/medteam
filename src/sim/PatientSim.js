@@ -191,7 +191,10 @@ export class PatientSim {
       target = { x: cp.x, z: cp.z };
     } else if (this.state === 'angry') {
       const nurse = g.nurse.pos;
-      target = { x: nurse.x, z: nurse.z };
+      // only chase the nurse on the same floor; otherwise fume by the entrance
+      target = Math.abs(nurse.y - body.translation().y) < 1.5
+        ? { x: nurse.x, z: nurse.z }
+        : { x: g.map.insideWaypoint.x, z: g.map.insideWaypoint.z };
     } else if (this.state === 'agitated') {
       this.wanderTimerReal -= dtReal;
       if (this.wanderTimerReal <= 0) {
@@ -214,6 +217,7 @@ export class PatientSim {
     if (d < stopAt) {
       body.setLinvel({ x: 0, y: body.linvel().y, z: 0 }, true);
       if (this.state === 'arriving') {
+        if (this.route?.length) { this.walkTarget = this.route.shift(); return; } // next waypoint
         if (this.seat) g.seatPatient(this);      // plop down in the chair
         else this.state = 'waiting';
       }

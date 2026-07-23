@@ -264,7 +264,7 @@ export class Game {
     if (this.active.dragging) {
       const bed = this._nearestFreeBed(this.active.dragging, 7);
       if (bed) {
-        dr.position.x = bed.x; dr.position.z = bed.z;
+        dr.position.set(bed.x, (bed.y ?? 0) + 0.05, bed.z);
         dr.material.opacity += (0.65 + Math.sin(now * 6) * 0.2 - dr.material.opacity) * 0.25;
       } else dr.material.opacity *= 0.85;
     } else dr.material.opacity *= 0.85;
@@ -274,7 +274,7 @@ export class Game {
       it.mesh.quaternion.set(r.x, r.y, r.z, r.w);
     }
     const ap = this.active.pos;
-    this.renderer.follow(_v3.set(ap.x, 0, ap.z), dt);
+    this.renderer.follow(_v3.set(ap.x, ap.y - 0.9, ap.z), dt);
     this.ui.update(dt, this.timeReal);
     this.renderer.render();
   }
@@ -424,7 +424,7 @@ export class Game {
     const sim = pt.sim;
     bed.occupant = pt; sim.bed = bed;
     pt.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
-    pt.body.setTranslation({ x: bed.x, y: 1.05, z: bed.z + 0.15 }, true);
+    pt.body.setTranslation({ x: bed.x, y: (bed.y ?? 0) + 1.05, z: bed.z + 0.15 }, true);
     pt.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
     sim.state = 'inbed';
     sim.yaw = 0;

@@ -16,9 +16,9 @@ export class Renderer {
     this.scene.background = new THREE.Color(0xaec6de);
     this.scene.fog = new THREE.FogExp2(0xaec6de, 0.005);
 
-    // close chase-ish tilt — the blob should be BIG on screen
-    this.camera = new THREE.PerspectiveCamera(55, 1, 0.1, 160);
-    this.camOffset = new THREE.Vector3(0, 7.5, 10);
+    // narrow, in-the-action chase view — you should always feel in a rush
+    this.camera = new THREE.PerspectiveCamera(46, 1, 0.1, 160);
+    this.camOffset = new THREE.Vector3(0, 6.2, 7.6);
     this.camTarget = new THREE.Vector3();
 
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0xb2bccc, 1.35));
@@ -46,7 +46,7 @@ export class Renderer {
   follow(pos, dt) {
     this.camTarget.lerp(pos, Math.min(1, dt * 7));
     this.camera.position.copy(this.camTarget).add(this.camOffset);
-    this.camera.lookAt(this.camTarget.x, 1.0, this.camTarget.z);
+    this.camera.lookAt(this.camTarget.x, this.camTarget.y + 1.0, this.camTarget.z);
   }
 
   render() { this.renderer.render(this.scene, this.camera); }

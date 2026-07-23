@@ -46,8 +46,8 @@ export function glowSprite(color, size, opacity) {
 // ---------- characters (articulated rigs, see rig.js) ----------
 import { buildRig, setRigFace } from './rig.js';
 
-// HFF-bright blob palettes: faceless near-white heads, soft-toned bodies
-const GOWNS = [0xaec5e8, 0xb5dcc9, 0xe8d4ae, 0xd8b8e2, 0xe8b8b8, 0xc5cee0];
+// HFF blob palettes: patients read as the reference's white/pale figures
+const GOWNS = [0xe9ebee, 0xe2e6ec, 0xe8e3d9, 0xe4dce8, 0xdfe8e2, 0xd9dee8];
 const HEAD_BASE = 0xf1f1f4;
 
 export function makeCharacterMesh(role) {
