@@ -89,8 +89,18 @@ export class Character {
       const t = { x: a.x, y: this.body.translation().y - 0.3, z: a.z };
       const imp = springToward(this.dragging.body, t, { k: 3200, c: 700, maxForce: 2400, dt });
       // equal-and-opposite reaction: a heavy patient visibly yanks you around
-      // (scaled down so hauling uphill is arduous, not futile)
       this.body.applyImpulse({ x: -imp.x * 0.3, y: 0, z: -imp.z * 0.3 }, true);
+      // unstick yank: if the tow jams on a corner, give it a hop over the snag
+      const db = this.dragging.body;
+      const dv = db.linvel();
+      const dp = db.translation();
+      const far = Math.hypot(dp.x - a.x, dp.z - a.z) > 1.3;
+      if (far && Math.hypot(dv.x, dv.z) < 0.2) this._stuckT = (this._stuckT ?? 0) + dt;
+      else this._stuckT = 0;
+      if (this._stuckT > 0.45) {
+        db.applyImpulse({ x: (a.x - dp.x) * 14, y: 190, z: (a.z - dp.z) * 14 }, true);
+        this._stuckT = 0;
+      }
     }
   }
 

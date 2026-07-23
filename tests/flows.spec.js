@@ -69,11 +69,9 @@ test('full lab loop: bed → labs → centrifuge → results → dx → meds →
     g.teleport('nurse', -13, 7.9);
     api.grab('nurse');                        // HOLD grab — sticky hands
     await api.until(() => g.game.nurse.dragging);
-    await api.dragTo('nurse', -14.5, 3.2);    // to the triage doorway
-    await api.dragTo('nurse', -14.5, -2);     // into the corridor
-    await api.dragTo('nurse', -12, -5.6);     // line up with Room 5's door
-    await api.dragTo('nurse', -12.4, -8.4, 0.9); // up to the bed
-    api.release('nurse');                     // release → exam bed
+    await api.drive('nurse', [[-14.5, 3.4], [-13.2, -0.5], [-12, -5.8], [-12.4, -9.2], [-13.2, -8.6]]);
+    await api.sleep(1200);                    // let the tow swing fully into the room
+    api.release('nurse');                     // release → room bed
     await api.until(() => api.patient(id).state === 'inbed');
     await api.until(() => api.patient(id).hooked, 8000);  // monitor self-hooks
 
@@ -149,8 +147,7 @@ test('agitation: naloxone wakes the OD furious; tackle, sedate, re-bed', async (
     g.teleport('nurse', -24, -3.4);
     api.grab('nurse');
     await api.until(() => g.game.nurse.dragging);
-    await api.dragTo('nurse', -24, -5.8);
-    await api.dragTo('nurse', -24.4, -8.4, 0.9);
+    await api.drive('nurse', [[-24, -3.8], [-24, -5.8], [-24.5, -9.2]]);
     api.release('nurse');                     // let go → auto-bed
     await api.until(() => api.patient(id).state === 'inbed');
 
@@ -183,7 +180,7 @@ test('agitation: naloxone wakes the OD furious; tackle, sedate, re-bed', async (
     // drag the sleeper back to bed
     api.grab('nurse');
     await api.until(() => g.game.nurse.dragging);
-    await api.dragTo('nurse', -24.4, -8.4, 0.9);
+    await api.drive('nurse', [[-24, -5.8], [-24.5, -9.2]]);
     api.release('nurse');
     await api.until(() => api.patient(id).state === 'inbed', 10000);
     return { ok: true };
