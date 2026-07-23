@@ -3,15 +3,21 @@ import { readFileSync, writeFileSync, readdirSync } from 'fs';
 
 const dist = 'dist';
 let html = readFileSync(`${dist}/index.html`, 'utf8');
-const assets = readdirSync(`${dist}/assets`);
-const js = assets.find((f) => f.endsWith('.js'));
-const css = assets.find((f) => f.endsWith('.css'));
 
-let jsSrc = readFileSync(`${dist}/assets/${js}`, 'utf8').replaceAll('</script', '<\\/script');
-const cssSrc = readFileSync(`${dist}/assets/${css}`, 'utf8');
+// inline the ENTRY script/stylesheet referenced by index.html (the build may
+// emit extra chunks — trust the tags, not directory order)
+const jsMatch = html.match(/<script[^>]*type="module"[^>]*src="\.?\/?(assets\/[^"]+\.js)"[^>]*><\/script>/);
+const cssMatch = html.match(/<link[^>]*rel="stylesheet"[^>]*href="\.?\/?(assets\/[^"]+\.css)"[^>]*>/);
+if (!jsMatch || !cssMatch) throw new Error('entry script/stylesheet not found in dist/index.html');
 
-html = html.replace(/<script[^>]*type="module"[^>]*><\/script>/, () => `<script type="module">${jsSrc}</script>`);
-html = html.replace(/<link[^>]*rel="stylesheet"[^>]*>/, () => `<style>${cssSrc}</style>`);
+const jsSrc = readFileSync(`${dist}/${jsMatch[1]}`, 'utf8').replaceAll('</script', '<\\/script');
+const cssSrc = readFileSync(`${dist}/${cssMatch[1]}`, 'utf8');
+
+html = html.replace(jsMatch[0], () => `<script type="module">${jsSrc}</script>`);
+html = html.replace(cssMatch[0], () => `<style>${cssSrc}</style>`);
+html = html.replace(/<link[^>]*rel="modulepreload"[^>]*>/g, '');
+html = html.replace(/<script[^>]*src="\.?\/?registerSW\.js"[^>]*><\/script>/g, ''); // no SW in a single file
+if (/src="\.?\/?assets\//.test(html)) throw new Error('unresolved asset reference remains — add chunk inlining');
 html = html.replace(/<link[^>]*rel="(manifest|icon|apple-touch-icon)"[^>]*>/g, '');
 html = html.replace(/<script[^>]*id="vite-plugin-pwa:register-sw"[^>]*><\/script>/g, '');
 

@@ -3,7 +3,9 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
   base: './',
-  build: { target: 'es2022' },
+  // single-chunk output: the artifact build inlines everything into one HTML,
+  // so dynamic-import chunks (the Anthropic SDK splits some) must be merged
+  build: { target: 'es2022', rollupOptions: { output: { inlineDynamicImports: true } } },
   esbuild: { target: 'es2022' },
   optimizeDeps: { esbuildOptions: { target: 'es2022' } },
   plugins: [

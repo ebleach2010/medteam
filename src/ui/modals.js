@@ -1,5 +1,5 @@
 import { generateScan } from '../render/xray.js';
-import { answerQuestion, deescalate, matchTreatment, judgeDiagnosis } from '../sim/talk.js';
+import { askPatient, talkDown, orderTreatment, judgeDx, llmEnabled, getKey, setKey, getModel, setModel, MODELS } from '../sim/llm.js';
 import { MEDS, SHELVES } from '../data/meds.js';
 
 // fuzzy pick from a {id,label} menu by typed text: score by how much of the
@@ -256,6 +256,44 @@ export class Modals {
     this.box.querySelector('.close')?.addEventListener('pointerdown', () => this.close());
   }
 
+  // 🔑 connect the player's own Anthropic API key (stored in localStorage,
+  // sent only to api.anthropic.com). Reachable from the title screen.
+  apiSettings() {
+    this.current = { type: 'api', patient: null, options: [] };
+    const on = llmEnabled();
+    let body = `<h3>🔑 Live Claude — patient AI</h3>
+      <div class="paper">With an Anthropic API key connected, the ASK / TREAT /
+TALK-DOWN / DIAGNOSE text bars run through the real Claude API.
+Without one, a built-in offline matcher answers instead.
+
+STATUS: ${on ? '<b>CONNECTED</b> — model: ' + getModel() : 'offline matcher'}
+
+NOTE: the claude.ai artifact sandbox blocks all network,
+so live Claude only works on the hosted / local build.
+Your key stays in this browser only.</div>
+      <div class="txrow"><input id="keybar" type="password" placeholder="sk-ant-..." value="${on ? getKey() : ''}" /><button class="opt go-mini" id="keygo">✅</button></div>`;
+    for (const m of MODELS) {
+      body += `<button class="opt" data-model="${m.id}">${getModel() === m.id ? '●' : '○'} ${m.label}</button>`;
+    }
+    if (on) body += '<button class="opt" id="keyoff">🗑 Disconnect (forget key)</button>';
+    body += '<button class="close">Close</button>';
+    this.box.innerHTML = body;
+    this.veil.style.display = 'flex';
+    this._wireTyped('#keybar', '#keygo', (key) => {
+      setKey(key.trim());
+      this.game.ui.toast(key.trim() ? '🔑 Claude connected' : 'Key cleared', 'good');
+      this.apiSettings();
+    });
+    this.box.querySelectorAll('[data-model]').forEach((b) =>
+      b.addEventListener('pointerdown', () => { setModel(b.dataset.model); this.apiSettings(); }));
+    this.box.querySelector('#keyoff')?.addEventListener('pointerdown', () => {
+      setKey('');
+      this.game.ui.toast('Key forgotten');
+      this.apiSettings();
+    });
+    this.box.querySelector('.close').addEventListener('pointerdown', () => this.close());
+  }
+
   // called by Game when a SELECT intent lands
   resolve(choice, actor, text) {
     const cur = this.current;
@@ -270,16 +308,24 @@ export class Modals {
       const sim2 = cur.patient.sim;
       if (choice === 'dx') { this.diagnose(cur.patient); return; }
       if (choice === 'ask') {
-        const a = answerQuestion(sim2, text ?? '');
-        (sim2.chatLog ??= []).push({ q: text, a });
-        g.ui.bubbles.say(cur.patient, a.length > 90 ? a.slice(0, 88) + '…' : a, { hold: 4.5 });
+        // show the question immediately with a pending answer; the reply fills
+        // in when Claude (or the local matcher) comes back
+        const entry = { q: text, a: '…' };
+        (sim2.chatLog ??= []).push(entry);
         this.workup(cur.patient);
+        askPatient(sim2, text ?? '').then((a) => {
+          entry.a = a;
+          g.ui.bubbles.say(cur.patient, a.length > 90 ? a.slice(0, 88) + '…' : a, { hold: 4.5 });
+          if (this.current?.type === 'workup' && this.current.patient === cur.patient) this.workup(cur.patient);
+        });
         return;
       }
       if (choice === 'treat') {
-        const medId = matchTreatment(text ?? '');
-        if (medId) g.orderMedFetch(cur.patient, medId);
-        else g.ui.toast('Pharmacy: “we don’t recognize that order.”', 'bad');
+        g.ui.toast('💊 Pharmacy processing the order...');
+        orderTreatment(sim2, text ?? '').then(({ medId }) => {
+          if (medId) g.orderMedFetch(cur.patient, medId);
+          else g.ui.toast('Pharmacy: “we don’t recognize that order.”', 'bad');
+        });
         this.workup(cur.patient);
         return;
       }
@@ -311,21 +357,27 @@ export class Modals {
     }
     if (cur.type === 'talk') {
       const sim3 = cur.patient.sim;
-      const cool = deescalate(sim3, text ?? '');
-      sim3.calm = (sim3.calm ?? 0) + cool;
-      if (cool > 0.15) g.ui.bubbles.say(cur.patient, '...fine. FINE. I’ll wait.', { hold: 3.5 });
-      else g.ui.bubbles.say(cur.patient, 'Oh NOW you’re a therapist?!', { cls: 'angry', hold: 3.5 });
-      if (sim3.calm >= 1) {
-        sim3.state = 'waiting';
-        sim3.calm = 0;
-        sim3.tArrive = g.clock.minutes; // patience reset
-        cur.patient.setFace('normal');
-        g.ui.toast(`${sim3.displayName} talked down. Nicely done.`, 'good');
-        g.addScore(40, 'De-escalation');
-        this.close();
-      } else {
-        this.talk(cur.patient);
-      }
+      (sim3.talkLog ??= []).push(`You: ${text}`);
+      this.talk(cur.patient); // show your line while the reply is pending
+      talkDown(sim3, text ?? '').then(({ cool, reply }) => {
+        if (sim3.state !== 'angry') return; // they left / were resolved meanwhile
+        sim3.calm = (sim3.calm ?? 0) + cool;
+        const line = reply ?? (cool > 0.15 ? '...fine. FINE. I’ll wait.' : 'Oh NOW you’re a therapist?!');
+        sim3.talkLog.push(`${sim3.displayName}: ${line}`);
+        g.ui.bubbles.say(cur.patient, line.length > 90 ? line.slice(0, 88) + '…' : line,
+          { cls: cool > 0.15 ? undefined : 'angry', hold: 3.5 });
+        if (sim3.calm >= 1) {
+          sim3.state = 'waiting';
+          sim3.calm = 0;
+          sim3.tArrive = g.clock.minutes; // patience reset
+          cur.patient.setFace('normal');
+          g.ui.toast(`${sim3.displayName} talked down. Nicely done.`, 'good');
+          g.addScore(40, 'De-escalation');
+          if (this.current?.type === 'talk') this.close();
+        } else if (this.current?.type === 'talk' && this.current.patient === cur.patient) {
+          this.talk(cur.patient);
+        }
+      });
       return;
     }
     const sim = cur.patient.sim;
@@ -338,11 +390,18 @@ export class Modals {
     }
     if (cur.type === 'dx') {
       if (text !== undefined && choice === undefined) {
-        const ok = judgeDiagnosis(sim, text);
-        sim.dxPicked = ok ? 0 : -1;
-        if (ok) { g.ui.toast(`✓ Dx accepted: “${text}”`, 'good'); g.addScore(100, 'Typed diagnosis'); }
-        else { g.ui.toast(`“${text}” doesn’t fit the picture (-20)`, 'bad'); g.addScore(-20, 'Wrong dx attempt'); return; }
-        this.close();
+        g.ui.toast('🤔 Considering that diagnosis...');
+        judgeDx(sim, text).then(({ ok }) => {
+          sim.dxPicked = ok ? 0 : -1;
+          if (ok) {
+            g.ui.toast(`✓ Dx accepted: “${text}”`, 'good');
+            g.addScore(100, 'Typed diagnosis');
+            if (this.current?.type === 'dx') this.close();
+          } else {
+            g.ui.toast(`“${text}” doesn’t fit the picture (-20)`, 'bad');
+            g.addScore(-20, 'Wrong dx attempt'); // board stays up — try again
+          }
+        });
         return;
       }
       sim.dxPicked = choice;

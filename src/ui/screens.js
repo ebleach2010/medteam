@@ -19,8 +19,10 @@ export class Screens {
       drag patients to beds, spin bloods, read scans, raid the pharmacy,
       and tackle anyone who rips out their IV.</p>
       <p style="font-size:12px">🕹️ left thumb: move · ✋ grab/drop · ⚡ tap: act, hold: order wheel · 🔄 swap roles</p>
-      <button class="go">START SHIFT</button>`;
+      <button class="go">START SHIFT</button>
+      <button class="ai" style="padding:9px 24px;font-size:13px;font-weight:800;color:#fff;border:none;border-radius:999px;background:linear-gradient(#3a4a6b,#26355a)">🔑 LIVE CLAUDE (API key)</button>`;
     this.el.querySelector('.go').addEventListener('pointerdown', () => { this.hide(); onStart(); });
+    this.el.querySelector('.ai').addEventListener('pointerdown', () => this.game.ui.modals.apiSettings());
   }
 
   daySummary(stats, day, quota, onNext) {

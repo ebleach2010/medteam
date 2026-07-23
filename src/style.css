@@ -112,7 +112,8 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0e1420; t
 
 /* ---------- Modals: everything opens as a clipboard that rises up ---------- */
 #modal-veil { position: absolute; inset: 0; background: rgba(4,8,16,.45); display: none;
-  align-items: flex-end; justify-content: center; pointer-events: auto; touch-action: none; z-index: 80; }
+  align-items: flex-end; justify-content: center; pointer-events: auto; touch-action: none;
+  z-index: 96; /* above #screen (95) so the API-key board opens over the title */ }
 #modal { touch-action: pan-y; position: relative;
   width: min(520px, 94vw); max-height: 92vh; overflow-y: auto;
   background: #f8f4e8; color: #243044;

@@ -8,7 +8,10 @@ const norm = (s) => s.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, 
 
 // ---------- ASK: the patient answers your typed question ----------
 const INTENTS = [
-  [/when|start|onset|how long|begin/, (c) => `It started ${c.tier <= 2 ? 'recently — hours to a couple of days ago' : 'and it has been getting worse fast'}. ${c.history}`],
+  [/when|start|onset|how long|begin/, (c) => {
+    const timey = /hour|day|week|month|since|ago|yesterday|last night/i.test(c.history ?? '');
+    return `It started ${c.tier <= 2 ? 'recently — hours to a couple of days ago' : 'a while ago and it is getting worse fast'}.${timey ? ` ${c.history}` : ''}`;
+  }],
   [/history|condition|medical|diagnos|before|prior/, (c) => c.history || 'Nothing much before this, honestly.'],
   [/med(s|ication)|pill|taking|prescri/, (c) => /on |stopped|missed|started .*(med|pill|insulin|dialysis|prednisone|ssri|levothyroxine|digoxin|carbamazepine)/i.test(c.history) ? c.history : 'No regular medications that I remember.'],
   [/allerg/, () => 'No allergies that I know of. Well... one way to find out?'],
@@ -24,12 +27,21 @@ export function answerQuestion(sim, text) {
   const q = norm(text);
   if (!q) return '...';
   const c = sim.case;
+  // laterality: each patient's problem lives on one consistent (seeded) side
+  const side = ['left', 'right'][(sim.scanSeed ?? 0) % 2];
+  if (/(which|what) (side|one|ankle|leg|arm|knee|wrist|hand|foot|elbow|shoulder|hip|eye|ear)\b/.test(q)
+    || /left or right/.test(q)) {
+    return `The ${side}. ${c.physical ?? c.complaint[0]}`;
+  }
   for (const [re, fn] of INTENTS) if (re.test(q)) return fn(c);
-  // symptom keyword probe: does the question mention something in their data?
+  // topic probe: a question word that appears in their story — answer about
+  // THAT topic (complaint words get the complaint, never a history dump)
   for (const word of q.split(' ')) {
-    if (word.length > 3 && (norm(c.history).includes(word) || norm(c.complaint[0]).includes(word))) {
-      return `${c.history} ...why do you ask?`;
+    if (word.length <= 3) continue;
+    if (norm(c.complaint[0]).includes(word)) {
+      return `${c.complaint[0]}${c.physical ? ` And look — ${c.physical.toLowerCase()}.` : ''}`;
     }
+    if (norm(c.history).includes(word)) return c.history;
   }
   return sim.game.rng.pick([
     `Uh... I just know that ${c.complaint[0].toLowerCase()}`,
