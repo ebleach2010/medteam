@@ -122,20 +122,25 @@ test('full lab loop: bed → labs → centrifuge → results → dx → meds →
   await page.screenshot({ path: 'test-results/shots/lab-loop-done.png' });
 });
 
-test('imaging: scan on the pad opens interpretation modal; SAH read correctly', async ({ page }) => {
+test('radiology pipeline: order CT, porter round-trip, clipboard on the desk', async ({ page }) => {
   await boot(page);
   await page.evaluate(helpers);
   const res = await page.evaluate(async () => {
     const g = window.__game, api = window.__api;
     const id = g.spawnCase('stroke_sah', -20, 8);
-    g.teleportPatient(id, 8.6, -1.2);         // park them on the diagnostics dock — it scans
-    await api.until(() => g.state().modal === 'imaging', 15000);
-    g.inject({ type: 'SELECT', actorId: g.game.nurse.id, payload: { modal: 'imaging', choice: 0 } });
+    await api.sleep(300);
+    g.bedPatientTo(id, 7);                    // Room 8
+    g.orderImaging(id, 'CT');
+    // porter hauls them to diagnostics, scan runs, hauls them back
+    await api.until(() => [...g.game.tasks.values()].some((t) => t.phase === 'scanning'), 40000);
+    g.fastForwardImaging();
+    await api.until(() => api.patient(id)?.state === 'inbed' &&
+      g.state().items.some((i) => i.label.startsWith('Imaging:')), 40000);
     await api.until(() => api.patient(id).imagingDone);
     return { done: true };
   });
   expect(res.done).toBe(true);
-  await page.screenshot({ path: 'test-results/shots/imaging.png' });
+  await page.screenshot({ path: 'test-results/shots/radiology.png' });
 });
 
 test('agitation: naloxone wakes the OD furious; tackle, sedate, re-bed', async ({ page }) => {
@@ -169,7 +174,10 @@ test('agitation: naloxone wakes the OD furious; tackle, sedate, re-bed', async (
       await api.sleep(300);
     }
     await api.until(() => api.patient(id).state === 'pinned', 12000);
-
+    // the dive slides you past them — step back to the pile before injecting
+    const pp = api.patient(id).pos;
+    g.teleport('nurse', pp.x - 0.6, pp.z);
+    await api.sleep(150);
     const c2 = g.game.nurse.pos;
     const sed = spawnCarryable(g.game, 'med', c2.x, 1, c2.z,
       { medId: 'sedative', color: 0x7a5cff, label: 'Sedative (IM)' });
@@ -177,10 +185,14 @@ test('agitation: naloxone wakes the OD furious; tackle, sedate, re-bed', async (
     // holding the sedative against the pinned runner puts them under
     await api.until(() => api.patient(id).state === 'sedated', 10000);
 
-    // drag the sleeper back to bed
+    // drag the sleeper back to bed (chase ends anywhere — reset to the door)
+    g.teleport('nurse', -24, -5.4);
+    g.teleportPatient(id, -24, -4.9);
+    await api.sleep(200);
     api.grab('nurse');
     await api.until(() => g.game.nurse.dragging);
-    await api.drive('nurse', [[-24, -5.8], [-24.5, -9.2]]);
+    await api.drive('nurse', [[-24.4, -9.0]]);
+    await api.sleep(900);
     api.release('nurse');
     await api.until(() => api.patient(id).state === 'inbed', 10000);
     return { ok: true };

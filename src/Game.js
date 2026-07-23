@@ -16,6 +16,8 @@ import { INTENT, make } from './intents/intents.js';
 import { UI } from './ui/ui.js';
 import { medById } from './data/meds.js';
 import { dayConfig, QUOTA } from './data/days.js';
+import { generateScan } from './render/xray.js';
+import { matchTreatment } from './sim/talk.js';
 
 const FIXED_DT = 1 / 60;
 
@@ -33,6 +35,11 @@ export class Game {
 
     this.nurse = this.world.add(new Character(this, 'nurse', this.map.nurseSpawn.x, this.map.nurseSpawn.z), 'chars');
     this.doctor = this.world.add(new Character(this, 'doctor', this.map.doctorSpawn.x, this.map.doctorSpawn.z), 'chars');
+    // autonomous staff you dispatch from the ORDERS wheel
+    this.aide = this.world.add(new Character(this, 'aide', this.map.nurseSpawn.x - 2, this.map.nurseSpawn.z + 1), 'chars');
+    this.porter = this.world.add(new Character(this, 'porter', this.map.porterSpawn.x, this.map.porterSpawn.z), 'chars');
+    this.tech = this.world.add(new Character(this, 'tech', this.map.diagnostics.tech.x, this.map.diagnostics.tech.z), 'chars');
+    this.tasks = new Map();      // staff char → current task
     this.activeIdx = 0;
 
     this.ui = new UI(this);
@@ -84,7 +91,7 @@ export class Game {
   endDay() {
     this.mode = 'summary';
     this.clock.running = false;
-    this.aiTask = null;
+    this.tasks.clear();
     this.ui.screens.fade(true);
     const passed = this.dayStats.treated >= QUOTA;
     if (passed) {
@@ -163,9 +170,8 @@ export class Game {
       return;
     }
 
-    // the AI nurse runs labs while you play doctor; otherwise the idle char stands
-    if (this.aiTask && this.aiTask.char !== this.active) this._aiTick(dt);
-    else { this.idle.applyMove(0, 0); if (this.aiTask) this.aiTask = null; }
+    this.idle.applyMove(0, 0);
+    this._staffTick(dt);
     for (const c of this.world.byTag('chars')) c.fixedUpdate(dt);
     for (const p of [...this.world.byTag('patients')]) p.sim.tick(dt);
     this.physics.step();
@@ -181,7 +187,7 @@ export class Game {
     if (this.clock.dayDone) this.endDay();
   }
 
-  // ---------------- AI nurse: "call a nurse to do labs" ----------------
+  // ---------------- autonomous staff ----------------
   _routeTo(from, to) {
     const za = this.map.zoneOf(from.x, from.z), zb = this.map.zoneOf(to.x, to.z);
     const route = [];
@@ -193,54 +199,231 @@ export class Game {
     return route;
   }
 
-  startLabsTask(patient) {
-    const nurse = this.nurse;
-    if (this.active === nurse) return; // you ARE the nurse — draw it yourself
-    const pt = patient.body.translation();
-    const route = this._routeTo(nurse.pos, pt);
-    // exam rooms are entered through their door
-    if (patient.sim.bed?.room === 'room') route.splice(route.length - 1, 0, { ...this.map.roomDoor(patient.sim.bed.index) });
-    this.aiTask = { char: nurse, phase: 'toPatient', patient, route, wait: 0 };
-    this.ui.bubbles.say(nurse, '🩸 On it!', { hold: 3 });
+  _deskFor(sim) {
+    const no = sim.bed?.roomNo ?? sim.lastRoomNo;
+    return no ? this.map.roomDesks[no - 1] : null;
   }
 
-  _aiTick(dt) {
-    const t = this.aiTask, ch = t.char;
-    const pos = ch.pos;
-    const wp = t.route[0];
-    if (wp) {
-      const dx = wp.x - pos.x, dz = wp.z - pos.z, d = Math.hypot(dx, dz);
-      if (d < 0.8) { t.route.shift(); return; }
-      ch.applyMove((dx / d) * 0.75, (dz / d) * 0.75);
-      return;
+  dispatch(char, task) {
+    if (this.tasks.has(char)) { this.ui.toast('That staff member is already on a job'); return false; }
+    task.wait = 0;
+    this.tasks.set(char, task);
+    return true;
+  }
+
+  _routeToRoomBed(from, bed) {
+    const door = this.map.roomDoor(bed.index);
+    const r = this._routeTo(from, { x: door.x, z: door.z });
+    r.push({ x: bed.x + 0.9, z: bed.z + 1.1 });
+    return r;
+  }
+
+  orderLabs(patient) {
+    const sim = patient.sim;
+    if (sim.state !== 'inbed') { this.ui.toast('Get them into a room bed first'); return; }
+    if (sim.labState !== 'none') { this.ui.toast('Labs already in motion'); return; }
+    if (!this.dispatch(this.aide, { type: 'labs', phase: 'toPatient', patient,
+      route: this._routeToRoomBed(this.aide.pos, sim.bed) })) return;
+    sim.orders.add('labs');
+    this.ui.bubbles.say(this.aide, '🩸 On it!', { hold: 3 });
+  }
+
+  orderImaging(patient, modality) {
+    const sim = patient.sim;
+    const M = Game.MODALITIES.find((m) => m.id === modality);
+    if (!M || sim.state !== 'inbed') { this.ui.toast('They need to be in a room bed'); return; }
+    if (sim.imagingOrder) { this.ui.toast('Imaging already ordered'); return; }
+    if (!this.dispatch(this.porter, { type: 'imaging', phase: 'toRoom', patient, modality: M,
+      bed: sim.bed, route: this._routeToRoomBed(this.porter.pos, sim.bed) })) return;
+    sim.imagingOrder = { modality: M.id, phase: 'transport' };
+    this.ui.bubbles.say(this.porter, '🛏️ Transport rolling!', { hold: 3 });
+  }
+
+  orderMedFetch(patient, medId) {
+    const med = medById(medId);
+    if (!med) return false;
+    if (!this.dispatch(this.aide, { type: 'fetch', phase: 'toPharmacy', patient, medId,
+      route: this._routeTo(this.aide.pos, { x: -9.5, z: 17.4 }) })) return false;
+    this.ui.toast(`💊 Nurse fetching ${med.name}...`);
+    return true;
+  }
+
+  _staffTick(dt) {
+    for (const [ch, t] of [...this.tasks]) {
+      const wp = t.route?.[0];
+      if (wp) {
+        const p = ch.pos;
+        const dx = wp.x - p.x, dz = wp.z - p.z, d = Math.hypot(dx, dz);
+        if (d < 0.9) { t.route.shift(); continue; }
+        ch.applyMove((dx / d) * 0.72, (dz / d) * 0.72);
+        continue;
+      }
+      ch.applyMove(0, 0);
+      this['_task_' + t.type]?.(ch, t, dt);
     }
-    ch.applyMove(0, 0);
+  }
+
+  _done(ch) { this.tasks.delete(ch); }
+
+  _task_labs(ch, t, dt) {
     const sim = t.patient?.sim;
     if (t.phase === 'toPatient') {
-      if (!sim || sim.state !== 'inbed' || sim.labState !== 'none') { this.aiTask = null; return; }
+      if (!sim || sim.state !== 'inbed' || sim.labState !== 'none') { this._done(ch); return; }
       t.wait += dt;
       if (t.wait > 1.5) {
         sim.labState = 'drawn';
+        sim.lastRoomNo = sim.bed?.roomNo;
         const a = ch.handAnchor();
         const vial = spawnCarryable(this, 'vial', a.x, a.y, a.z,
           { patientId: t.patient.id, label: `Blood: ${sim.displayName}` });
         ch.carrying = vial; vial.heldBy = ch;
         t.phase = 'toLab'; t.wait = 0;
         t.route = this._routeTo(ch.pos, this.map.centrifuge);
-        t.route.splice(t.route.length - 1, 0, { ...this.map.labDoor }, { x: this.map.labDoor.x, z: this.map.labDoor.z - 2.2 });
       }
       return;
     }
     if (t.phase === 'toLab') {
-      // centrifuge auto-feed does the loading; then walk home
-      if (!ch.carrying) {
-        t.phase = 'home';
-        t.route = this._routeTo(ch.pos, this.map.nurseSpawn);
-        t.route.splice(0, 0, { ...this.map.labDoor });
+      if (!ch.carrying) { t.phase = 'waitSpin'; }
+      return;
+    }
+    if (t.phase === 'waitSpin') {
+      const paper = [...this.world.byTag('items')].find((i) =>
+        i.itemKind === 'paper' && !i.heldBy && i.data.patientId === t.patient.id);
+      if (paper) {
+        ch.carrying = paper; paper.heldBy = ch;
+        t.phase = 'toDesk';
+        const desk = this._deskFor(t.patient.sim);
+        t.route = desk ? this._routeTo(ch.pos, { x: desk.x, z: desk.z + 1 }) : this._routeTo(ch.pos, this.map.nurseSpawn);
+        t.desk = desk;
       }
       return;
     }
-    this.aiTask = null; // home
+    if (t.phase === 'toDesk') {
+      const item = ch.carrying;
+      if (item && t.desk) {
+        ch.carrying = null; item.heldBy = null;
+        item.data.clip = 'labs';
+        item.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
+        item.body.setTranslation({ x: t.desk.x, y: t.desk.y + 0.04, z: t.desk.z }, true);
+        this.ui.toast(`📋 Lab results on the desk — Room ${t.desk.roomNo}`, 'good');
+        this.audio.good();
+      }
+      t.phase = 'home';
+      t.route = this._routeTo(ch.pos, this.map.nurseSpawn);
+      return;
+    }
+    this._done(ch);
+  }
+
+  static MODALITIES = [
+    { id: 'XRAY', label: 'X-ray — 12s', t: 12, match: ['cxr', 'ankle'] },
+    { id: 'US', label: 'Ultrasound — 16s', t: 16, match: ['ct_freefluid'] },
+    { id: 'CT', label: 'CT — 22s', t: 22, match: ['ct'] },
+    { id: 'MRI', label: 'MRI — 45s', t: 45, match: ['mri'] },
+    { id: 'MRIC', label: 'MRI + contrast — 70s', t: 70, match: ['mri'] },
+  ];
+
+  _task_imaging(ch, t, dt) {
+    const sim = t.patient?.sim;
+    if (!sim || sim.state === 'dead') {
+      if (ch.dragging) { ch.dragging.draggedBy = null; ch.dragging = null; }
+      if (sim) sim.imagingOrder = null;
+      this._done(ch); return;
+    }
+    if (t.phase === 'toRoom') {
+      if (sim.state !== 'inbed') { sim.imagingOrder = null; this._done(ch); return; }
+      sim.lastRoomNo = sim.bed?.roomNo;
+      sim.onGrabbed();
+      sim.state = 'transport';
+      sim.bed = t.bed; t.bed.occupant = t.patient; // reserve the room
+      ch.dragging = t.patient; t.patient.draggedBy = ch;
+      t.phase = 'toDock';
+      const rd = this.map.roomDoor(t.bed.index);
+      t.route = [
+        { x: rd.x, z: -6 },                                              // out the room door
+        { x: this.map.diagnostics.door.x, z: this.map.diagnostics.door.z - 1 },
+        { x: this.map.diagnostics.dock.x, z: this.map.diagnostics.dock.z },
+      ];
+      return;
+    }
+    if (t.phase === 'toDock') {
+      ch.dragging = null; t.patient.draggedBy = null;
+      t.patient.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
+      t.patient.body.setTranslation({ x: this.map.diagnostics.dock.x, y: 0.95, z: this.map.diagnostics.dock.z }, true);
+      sim.state = 'transport';
+      t.phase = 'scanning';
+      t.wait = t.modality.t;
+      this.ui.toast(`📷 ${t.modality.id} running on ${sim.displayName} (${t.modality.t}s)...`);
+      return;
+    }
+    if (t.phase === 'scanning') {
+      t.wait -= dt;
+      if (t.wait > 0) return;
+      const img = sim.case.imaging;
+      const matches = img && t.modality.match.some((pre) => img.type.startsWith(pre));
+      t.report = matches
+        ? { text: `${t.modality.id} RESULT: ${img.options[img.correct]}`, img: generateScan(img.type, sim.scanSeed) }
+        : { text: `${t.modality.id} RESULT: no acute findings on this study.`, img: null };
+      if (matches) sim.imagingDone = true;
+      sim.imagingOrder = null;
+      sim.onGrabbed();
+      sim.state = 'transport';
+      sim.bed = t.bed; t.bed.occupant = t.patient;
+      ch.dragging = t.patient; t.patient.draggedBy = ch;
+      t.phase = 'toRoomBack';
+      const rd2 = this.map.roomDoor(t.bed.index);
+      t.route = [
+        { x: this.map.diagnostics.door.x, z: this.map.diagnostics.door.z + 1 }, // inside the door
+        { x: this.map.diagnostics.door.x, z: -5.4 },                            // out to the corridor
+        { x: rd2.x, z: -6 },
+        { x: t.bed.x + 0.9, z: t.bed.z + 1.1 },
+      ];
+      return;
+    }
+    if (t.phase === 'toRoomBack') {
+      ch.dragging = null; t.patient.draggedBy = null;
+      this.bedPatient(t.patient, t.bed);
+      const desk = this.map.roomDesks[t.bed.roomNo - 1];
+      const clip = spawnCarryable(this, 'paper', desk.x, desk.y + 0.04, desk.z,
+        { patientId: t.patient.id, label: `Imaging: ${sim.displayName}`, clip: 'imaging', report: t.report });
+      clip.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
+      clip.body.setTranslation({ x: desk.x, y: desk.y + 0.04, z: desk.z }, true);
+      this.ui.toast(`📋 Imaging report on the desk — Room ${t.bed.roomNo}`, 'good');
+      this.audio.good();
+      t.phase = 'home';
+      t.route = this._routeTo(ch.pos, this.map.porterSpawn);
+      return;
+    }
+    this._done(ch);
+  }
+
+  _task_fetch(ch, t, dt) {
+    const sim = t.patient?.sim;
+    if (t.phase === 'toPharmacy') {
+      t.wait += dt;
+      if (t.wait > 1.2) {
+        const med = medById(t.medId);
+        const a = ch.handAnchor();
+        const item = spawnCarryable(this, 'med', a.x, a.y, a.z, { medId: med.id, color: med.color, label: med.name });
+        ch.carrying = item; item.heldBy = ch;
+        t.phase = 'toPatient'; t.wait = 0;
+        t.route = sim?.bed ? this._routeToRoomBed(ch.pos, sim.bed) : this._routeTo(ch.pos, t.patient.body.translation());
+      }
+      return;
+    }
+    if (t.phase === 'toPatient') {
+      if (sim && sim.canReceiveMeds() && ch.carrying) {
+        const id = ch.carrying.data.medId;
+        this._consumeHeld(ch);
+        giveMed(this, t.patient, id);
+      } else if (ch.carrying) {
+        this._consumeHeld(ch); // patient gone — return the med
+      }
+      t.phase = 'home';
+      t.route = this._routeTo(ch.pos, this.map.nurseSpawn);
+      return;
+    }
+    this._done(ch);
   }
 
   _postPhysics(dt) {
@@ -259,10 +442,13 @@ export class Game {
         if (sim.hookT > 1.6) { sim.hooked = true; this.addScore(10, 'On the monitor'); this.audio.tap(); }
       } else sim.hookT = 0;
     }
-    // holding a med against a patient administers it (short dwell)
+    // holding a med against a patient administers it (short dwell).
+    // Bedded/pinned/agitated patients take priority over random bystanders —
+    // no more sedating the waiting room by accident.
     for (const ch of this.world.byTag('chars')) {
       if (ch.carrying?.itemKind !== 'med') { ch.medDwell = 0; continue; }
-      const pt = this.nearestPatient(ch, 1.7, (s) => s.canReceiveMeds());
+      const pt = this.nearestPatient(ch, 1.7, (s) => ['inbed', 'pinned', 'sedated', 'agitated'].includes(s.state))
+        ?? this.nearestPatient(ch, 1.4, (s) => s.canReceiveMeds());
       if (!pt) { ch.medDwell = 0; continue; }
       if (ch.medDwell === 0) this.ui.bubbles.say(pt, '💉…', { cls: 'order', hold: 1.4 });
       ch.medDwell += dt;
@@ -315,23 +501,6 @@ export class Game {
       }
     }
 
-    // scanner: park a patient on the pad and it scans them
-    if (!this._scanJob && !this.ui.modals.open) {
-      const pad = this.map.imagingPad;
-      for (const p of this.world.byTag('patients')) {
-        const sim = p.sim;
-        if (!sim.case.imaging || sim.imagingDone || ['dead', 'agitated'].includes(sim.state)) { sim.padT = 0; continue; }
-        const t = p.body.translation();
-        if (Math.hypot(t.x - pad.x, t.z - pad.z) < 1.9) {
-          sim.padT = (sim.padT ?? 0) + dt;
-          if (sim.padT > 1.0) {
-            this._scanJob = { patient: p, t: 3 };
-            this.ui.toast(`📷 Scanning ${sim.displayName}... hold still...`);
-            this.audio.tap();
-          }
-        } else sim.padT = 0;
-      }
-    }
     if (c.busy) {
       c.timer -= dt;
       c.mesh.userData.drum.rotation.y += dt * 24;
@@ -343,15 +512,6 @@ export class Game {
         this.ui.toast('🧪 Centrifuge done — results printed!', 'good');
         this.audio.good();
         c.busy = null;
-      }
-    }
-    // imaging scan completes
-    if (this._scanJob) {
-      this._scanJob.t -= dt;
-      if (this._scanJob.t <= 0) {
-        const pt = this._scanJob.patient;
-        this._scanJob = null;
-        if (pt.mesh.parent) this.ui.modals.imaging(pt);
       }
     }
   }
@@ -367,6 +527,22 @@ export class Game {
         p.mesh.position.y -= (1 - f) * 0.9;
       }
     }
+    // room status lights: green stable · yellow waiting on results · red crashing
+    this.map.beds.forEach((bed, i) => {
+      const L = this.map.roomLights[i];
+      if (!L) return;
+      const sim2 = bed.occupant?.sim;
+      let c = 0x8a94a4, inten = 0.25;
+      if (sim2) {
+        if (sim2.state === 'dead') { c = 0x60646e; inten = 0.4; }
+        else if (sim2.critical) { c = 0xff2e2e; inten = 1.4 + Math.sin(now * 10) * 1.2; }
+        else if (sim2.stabilized) { c = 0x35e06a; inten = 1.3; }
+        else if (sim2.labsPending || sim2.imagingOrder) { c = 0xffc23c; inten = 1.0; }
+        else { c = 0x6fa8ff; inten = 0.55; }
+      }
+      L.mat.color.setHex(c); L.mat.emissive.setHex(c); L.mat.emissiveIntensity = inten;
+    });
+
     // the pit flickers; flares when fed
     const fire = this.map.fire;
     fire.flare = Math.max(0, fire.flare - dt * 1.2);
@@ -418,36 +594,22 @@ export class Game {
         this.ui.toast(`You are now the ${this.active.role.toUpperCase()}`);
         break;
       case INTENT.ORDER: this._handleOrder(char, i.payload); break;
-      case INTENT.SELECT: this.ui.modals.resolve(i.payload.choice, char); break;
+      case INTENT.SELECT: this.ui.modals.resolve(i.payload.choice, char, i.payload.text); break;
     }
   }
 
   _handleOrder(char, { order, patientId }) {
     const pt = [...this.world.byTag('patients')].find((p) => p.id === patientId);
-    const ICONS = { labs: '🩸', imaging: '📷', meds: '💊', sedate: '💉', doctor: '❗' };
-    if (char.role === 'nurse') {
-      if (!pt) { this.ui.toast('No patient nearby to flag'); return; }
-      pt.sim.orders.add(order);
-      this.ui.bubbles.say(pt, ICONS[order] ?? '❔', { cls: 'order', hold: 4 });
-      this.addScore(5, 'Order flagged');
-      if (order === 'doctor') this.ui.bubbles.say(this.doctor, '❗', { cls: 'order', hold: 4 });
+    if (!pt) { this.ui.toast('No patient nearby'); return; }
+    if (order === 'labs') { this.orderLabs(pt); return; }
+    if (order === 'imaging') {
+      if (pt.sim.state !== 'inbed') { this.ui.toast('Get them into a room bed first'); return; }
+      this.ui.modals.modalityPick(pt);
       return;
     }
-    // doctor wheel
-    if (order === 'labs') {
-      // "call a nurse" — the AI nurse walks over, draws, and runs the sample
-      if (!pt) { this.ui.toast('Get closer to a patient'); return; }
-      if (pt.sim.state !== 'inbed') { this.ui.toast('Get them into a bed first'); return; }
-      if (pt.sim.labState !== 'none') { this.ui.toast('Labs already in motion'); return; }
-      pt.sim.orders.add('labs');
-      this.startLabsTask(pt);
-      return;
-    }
-    if (order === 'dx') { if (pt) this.ui.modals.diagnose(pt); else this.ui.toast('Get closer to a patient'); return; }
+    if (order === 'dx') { this.ui.modals.diagnose(pt); return; }
     if (order === 'discharge') {
-      if (!pt) return;
-      if (pt.sim.treated && !pt.sim.critical) {
-        // stable: they can walk themselves to the discharge room and home
+      if (pt.sim.stabilized) {
         const sim = pt.sim;
         sim.resolved = true;
         this.dayStats.treated += 1;
@@ -459,16 +621,8 @@ export class Game {
         sim.route = this._routeTo(pt.body.translation(), this.map.discharge).concat([{ ...this.map.gateOut }]);
         sim.walkTarget = sim.route.shift();
       } else {
-        this.ui.toast('They are NOT stable — discharging now would kill them.', 'bad');
+        this.ui.toast('They are NOT stable yet — monitor them longer.', 'bad');
       }
-      return;
-    }
-    if (order?.startsWith('admit_')) {
-      if (!pt) return;
-      const ward = order.slice(6);
-      pt.sim.orders.add(order);
-      this.ui.bubbles.say(pt, ward === 'icu' ? '🫀' : ward === 'ob' ? '👶' : '🛏️', { cls: 'order', hold: 4 });
-      this.ui.toast(`Admit order: take ${pt.sim.displayName} to ${ward.toUpperCase()}`);
     }
   }
 
@@ -509,18 +663,24 @@ export class Game {
         };
       }
     }
-    const pad = this.map.imagingPad;
-    if (!this._scanJob && !this.ui.modals.open) {
-      const onPad = this.nearestPatient(char, 3.0, (s) =>
-        s.case.imaging && !s.imagingDone && !['dead', 'agitated'].includes(s.state) &&
-        Math.hypot(s.ent.body.translation().x - pad.x, s.ent.body.translation().z - pad.z) < 2.0);
-      if (onPad) {
+    // clipboards on room desks
+    if (!held) {
+      const cp0 = char.pos;
+      let clip = null, cd = 1.8;
+      for (const it of this.world.byTag('items')) {
+        if (it.itemKind !== 'paper' || !it.data.clip || it.heldBy) continue;
+        const ip = it.body.translation();
+        const d = Math.hypot(ip.x - cp0.x, ip.z - cp0.z);
+        if (d < cd) { clip = it; cd = d; }
+      }
+      if (clip) {
         return {
-          ico: '📷', label: 'START SCAN', color: '#8f6fd8',
+          ico: '📋', label: clip.data.clip === 'imaging' ? 'READ IMAGING' : 'READ LABS', color: '#c9a83c',
           run: () => {
-            this._scanJob = { patient: onPad, t: 3 };
-            this.ui.toast(`📷 Scanning ${onPad.sim.displayName}... hold still...`);
-            this.audio.tap();
+            const pt2 = [...this.world.byTag('patients')].find((p) => p.id === clip.data.patientId);
+            if (clip.data.clip === 'imaging') this.ui.modals.report(clip);
+            else if (pt2) this.ui.modals.labResults(pt2);
+            else this.ui.toast('Patient is gone...');
           },
         };
       }
@@ -542,6 +702,10 @@ export class Game {
     const nearShelf = this.map.shelfUnits.some((u) => Math.hypot(u.x - cp.x, u.z - cp.z) < 2.3);
     if (nearShelf) return { ico: '💊', label: 'OPEN MED CABINET', color: '#d05a9e', run: () => this.ui.modals.cabinet() };
 
+    const angryPt = this.nearestPatient(char, 2.2, (s) => s.state === 'angry');
+    if (angryPt) {
+      return { ico: '🗣️', label: 'TALK THEM DOWN', color: '#e0952f', run: () => this.ui.modals.talk(angryPt) };
+    }
     const pt = this.nearestPatient(char, 1.9, (s) => s.state !== 'dead');
     if (!pt) return null;
     const sim = pt.sim;
@@ -629,7 +793,7 @@ export class Game {
   // stabilized + treated → they walk out the gate home. Otherwise... flop.
   _dischargeAttempt(pt) {
     const sim = pt.sim;
-    if (sim.treated && !sim.critical) {
+    if (sim.stabilized) {
       sim.resolved = true;
       const dxRight = sim.dxPicked === sim.case.correctDx;
       this.dayStats.treated += 1;

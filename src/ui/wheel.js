@@ -3,21 +3,12 @@ import { INTENT, make } from '../intents/intents.js';
 // The silent-communication radial wheel. Nurse and doctor get different
 // sectors; picking one emits an ORDER intent aimed at the nearest patient.
 const NURSE = [
-  { id: 'labs', ico: '🩸', txt: 'LABS' },
-  { id: 'imaging', ico: '📷', txt: 'IMAGING' },
-  { id: 'meds', ico: '💊', txt: 'NEED MEDS' },
-  { id: 'sedate', ico: '💉', txt: 'SEDATE' },
-  { id: 'doctor', ico: '🧑‍⚕️', txt: 'DOCTOR!' },
-];
-const DOCTOR = [
-  { id: 'dx', ico: '✅', txt: 'DIAGNOSE' },
   { id: 'labs', ico: '🩸', txt: 'CALL LABS' },
+  { id: 'imaging', ico: '📷', txt: 'CALL IMAGING' },
+  { id: 'dx', ico: '✅', txt: 'DIAGNOSE' },
   { id: 'discharge', ico: '🏠', txt: 'DISCHARGE' },
-  { id: 'admit_icu', ico: '🫀', txt: 'ICU' },
-  { id: 'admit_medsurge', ico: '🛏️', txt: 'MED-SURG' },
-  { id: 'admit_ob', ico: '👶', txt: 'BIRTHPLACE' },
 ];
-
+const DOCTOR = NURSE;
 export class Wheel {
   constructor(root, game) {
     this.game = game;

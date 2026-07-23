@@ -24,6 +24,8 @@ export class PatientSim {
     this.leaveHappy = false; this.resolved = false;
     this.sedatedUntil = 0; this.pinnedUntilReal = 0;
     this.sitting = false;
+    this.temperament = game.rng.next();
+    this.imagingOrder = null;   // {modality, phase} while radiology has them
     this.walkTarget = null;
     this.yaw = 0;
     this.nextBubbleAt = game.clock.minutes + game.rng.range(30, 70);
@@ -40,10 +42,19 @@ export class PatientSim {
   }
 
   get elapsed() { return (this.game.clock.minutes - this.tArrive) * this.accel; }
-  isLying() { return ['inbed', 'sedated', 'dead', 'pinned'].includes(this.state); }
+  isLying() { return ['inbed', 'sedated', 'dead', 'pinned', 'transport'].includes(this.state); }
+
+  // discharge-safe? simple cases immediately; serious dispos need monitored
+  // recovery time after treatment
+  get stabilized() {
+    if (!this.treated || this.critical || this.state === 'dead') return false;
+    const MON = { discharge: 0, medsurge: 45, ob: 70, icu: 100 };
+    return (this.game.clock.minutes - this.tTreated) >= (MON[this.case.treatment.dispo] ?? 0);
+  }
+  get labsPending() { return ['drawn', 'spinning', 'ready'].includes(this.labState); }
   isGrabbable() {
     // dead bodies are ABSOLUTELY grabbable — someone has to haul them to the pit
-    return ['waiting', 'sedated', 'inbed', 'pinned', 'angry', 'dead', 'arriving'].includes(this.state);
+    return ['waiting', 'sedated', 'inbed', 'pinned', 'angry', 'dead', 'arriving', 'readyHome'].includes(this.state);
   }
   canReceiveMeds() { return ['inbed', 'pinned', 'sedated', 'agitated', 'waiting'].includes(this.state); }
 
@@ -161,7 +172,17 @@ export class PatientSim {
       else this._say('stable');
     }
 
-    // (no self-discharge: patients leave through the DISCHARGE ROOM now)
+    // stabilized patients get up and wait by the bed (green light — take them
+    // to discharge)
+    if (this.state === 'inbed' && this.stabilized && !this.resolved) {
+      const bed = this.bed;
+      this.state = 'readyHome';
+      this.game.setPatientDynamic(this.ent);
+      if (bed) this.ent.body.setTranslation({ x: bed.x + 1.0, y: 0.9, z: bed.z + 0.9 }, true);
+      this.ent.setFace('normal');
+      this._say('better');
+      this.game.ui.toast(`🟢 ${this.displayName} is STABLE — walk them to discharge!`, 'good');
+    }
     this._steer(dtReal);
   }
 
@@ -177,7 +198,7 @@ export class PatientSim {
       body.setLinvel({ x: 0, y: body.linvel().y, z: 0 }, true);
       return;
     }
-    if (this.state === 'sedated') return;              // floppy
+    if (this.state === 'sedated' || this.state === 'readyHome') return; // floppy / standing by
 
     let target = this.walkTarget;
     if (this.ent.escortedBy) {
@@ -258,7 +279,7 @@ export class PatientSim {
 
   pin() {
     this.state = 'pinned';
-    this.pinnedUntilReal = this.game.timeReal + 5;
+    this.pinnedUntilReal = this.game.timeReal + 6.5;
     this._sayRaw('oof—');
   }
 

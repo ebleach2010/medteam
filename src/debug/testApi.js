@@ -57,5 +57,18 @@ export function installTestApi(game) {
     skipMinutes(m) { game.clock.minutes += m; },
     setTimeScale(s) { game.clock.timeScale = s; },
     centrifugeFastForward() { if (game.map.centrifuge.busy) game.map.centrifuge.timer = 0.05; },
+    bedPatientTo(id, bedIdx) {
+      const p = [...game.world.byTag('patients')].find((q) => q.id === id);
+      if (p) game.bedPatient(p, game.map.beds[bedIdx]);
+    },
+    orderLabs(id) {
+      const p = [...game.world.byTag('patients')].find((q) => q.id === id);
+      if (p) game.orderLabs(p);
+    },
+    orderImaging(id, modality) {
+      const p = [...game.world.byTag('patients')].find((q) => q.id === id);
+      if (p) game.orderImaging(p, modality);
+    },
+    fastForwardImaging() { for (const t of game.tasks.values()) if (t.type === 'imaging' && t.phase === 'scanning') t.wait = 0.05; },
   };
 }

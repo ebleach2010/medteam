@@ -135,6 +135,7 @@ export function buildMap(scene, physics) {
   // ---- the ten patient rooms: bed + desk each, numbered ----
   const beds = [];
   const roomDesks = [];
+  const roomLights = [];
   const ROOM_X = [-28, -24, -20, -16, -12, -8, -3.5, 1.5, 6.5, 11.5];
   ROOM_X.forEach((cx, i) => {
     const g = makeBed(0x9fc4e8);
@@ -152,6 +153,12 @@ export function buildMap(scene, physics) {
     const mon = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.32, 0.06), emat(0x6effe6, 0.35));
     mon.position.set(cx - 0.7, 0.95, -11.7);
     statics.add(mon);
+    // status light over the door (unique material — per-room color control)
+    const lightMat = new THREE.MeshStandardMaterial({ color: 0x8a94a4, emissive: 0x8a94a4, emissiveIntensity: 0.25, roughness: 0.4 });
+    const light = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), lightMat);
+    light.position.set(cx, 1.5, -7.35);
+    statics.add(light);
+    roomLights.push({ mesh: light, mat: lightMat });
   });
 
   // ---- triage: reception + waiting + KNOCKABLE props ----
@@ -274,7 +281,7 @@ export function buildMap(scene, physics) {
 
   return {
     beds, seats, centrifuge, imagingPad, diagnostics, shelfUnits, rings, dropRing,
-    roomDesks, knockSpots, triageDesk,
+    roomDesks, roomLights, knockSpots, triageDesk,
     discharge, gateOut, firePit, fire,
     floorYAt: () => 0,
     zoneOf, zoneDoors: ZONE_DOORS,

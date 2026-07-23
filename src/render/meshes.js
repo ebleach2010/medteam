@@ -50,11 +50,15 @@ import { buildRig, setRigFace } from './rig.js';
 const GOWNS = [0xe9ebee, 0xe2e6ec, 0xe8e3d9, 0xe4dce8, 0xdfe8e2, 0xd9dee8];
 const HEAD_BASE = 0xf1f1f4;
 
+const ROLE_RIGS = {
+  nurse: { suit: 0x5ec4b2, shade: 0x48a795, head: HEAD_BASE, cap: 0xffffff },
+  doctor: { suit: 0xf4f4f7, shade: 0xd4dae4, head: HEAD_BASE, collar: 0x3a4a6b },
+  aide: { suit: 0x7fae5f, shade: 0x648a4a, head: HEAD_BASE, cap: 0xe8f0dc },
+  porter: { suit: 0x5a8fd0, shade: 0x4674ac, head: HEAD_BASE, cap: 0x3a5a8a },
+  tech: { suit: 0x4a6a78, shade: 0x3a545f, head: HEAD_BASE, collar: 0x8fd0c9 },
+};
 export function makeCharacterMesh(role) {
-  const g = role === 'nurse'
-    ? buildRig({ suit: 0x5ec4b2, shade: 0x48a795, head: HEAD_BASE, cap: 0xffffff })
-    : buildRig({ suit: 0xf4f4f7, shade: 0xd4dae4, head: HEAD_BASE, collar: 0x3a4a6b });
-  return g;
+  return buildRig(ROLE_RIGS[role] ?? ROLE_RIGS.nurse);
 }
 
 export function makePatientMesh(rng) {
