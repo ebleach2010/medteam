@@ -46,36 +46,56 @@ export function glowSprite(color, size, opacity) {
 // ---------- characters (articulated rigs, see rig.js) ----------
 import { buildRig, setRigFace } from './rig.js';
 
-// HFF blob palettes: patients read as the reference's white/pale figures
-const GOWNS = [0xe9ebee, 0xe2e6ec, 0xe8e3d9, 0xe4dce8, 0xdfe8e2, 0xd9dee8];
-const HEAD_BASE = 0xf1f1f4;
+// Palettes lifted from the low-poly reference minis: staff in scrub sets with
+// their kit (stethoscope / nurse cap / gloves / badge), patients as everyday
+// people — skin tones, hair, casual clothes.
+const WHITE_SNEAKER = 0xe9ecf1;
+const GLOVE = 0x9fc9ec;
 
 const ROLE_RIGS = {
-  nurse: { suit: 0x5ec4b2, shade: 0x48a795, head: HEAD_BASE, cap: 0xffffff },
-  doctor: { suit: 0xf4f4f7, shade: 0xd4dae4, head: HEAD_BASE, collar: 0x3a4a6b },
-  aide: { suit: 0x7fae5f, shade: 0x648a4a, head: HEAD_BASE, cap: 0xe8f0dc },
-  porter: { suit: 0x5a8fd0, shade: 0x4674ac, head: HEAD_BASE, cap: 0x3a5a8a },
-  tech: { suit: 0x4a6a78, shade: 0x3a545f, head: HEAD_BASE, collar: 0x8fd0c9 },
-  surgeon: { suit: 0x9e4a56, shade: 0x7c3944, head: HEAD_BASE, cap: 0x6e3a42 },
-  receptionist: { suit: 0x8f7fc9, shade: 0x7465a8, head: HEAD_BASE, collar: 0xe8e4da },
+  doctor: { top: 0x3fa79b, bottom: 0x2f8a80, skin: 0xe8c39e, hairColor: 0x6b4a2f, hairStyle: 'short',
+    stethoscope: true, gloves: GLOVE, shoes: WHITE_SNEAKER },
+  nurse: { top: 0xe89aa4, bottom: 0xdd8894, skin: 0xf0cfae, hairColor: 0x9a4f2e, hairStyle: 'long',
+    nurseCap: true, shoes: 0xffffff },
+  tech: { top: 0x5fbf7a, bottom: 0x4aa565, skin: 0x8a5a3c, hairColor: 0x50565e, hairStyle: 'short',
+    badge: true, shoes: WHITE_SNEAKER },
+  aide: { top: 0x8fc3e8, bottom: 0x76abd4, skin: 0xf0cfae, hairColor: 0x9ec464, hairStyle: 'short',
+    gloves: GLOVE, shoes: WHITE_SNEAKER },
+  porter: { top: 0x5a8fd0, bottom: 0x466fa8, skin: 0xd8a87c, hairColor: 0x3a2e24, hairStyle: 'short',
+    shoes: WHITE_SNEAKER },
+  surgeon: { top: 0x9e4a56, bottom: 0x7c3944, skin: 0xc98e68, scrubCap: 0x6e3a42,
+    gloves: GLOVE, shoes: WHITE_SNEAKER },
+  receptionist: { top: 0x8f7fc9, bottom: 0x5f5490, skin: 0xf0cfae, hairColor: 0x5a3c28, hairStyle: 'long',
+    shoes: 0x6b5f4c },
 };
 export function makeCharacterMesh(role) {
   return buildRig(ROLE_RIGS[role] ?? ROLE_RIGS.nurse);
 }
 
-export function makePatientMesh(rng) {
-  const gown = rng.pick(GOWNS);
+// patient wardrobe — sampled straight off the reference's bottom rows
+const SKINS = [0xf2d6b8, 0xe8c39e, 0xd8a87c, 0xb07a4e, 0x8a5a3c, 0x6e4428];
+const HAIRS = [0x2e2620, 0x4a3626, 0x6b4a2f, 0x9a4f2e, 0xd8b86a, 0x9aa0a8, 0xdfe2e6];
+const TOPS = [0xb083c9, 0xc96a52, 0x6fbf6f, 0x9a8fc9, 0x8fb3d8, 0xd8cbb0, 0xe0b0b8, 0x7a9c6b, 0x88b6c9];
+const BOTTOMS = [0x4a6a9c, 0x39598c, 0x6e5a44, 0x8a7a5c, 0x3c4658, 0x7a5c88];
+const SHOES = [0x4a4038, 0x2e3440, 0x8a8f98, 0xe8eaee];
+
+export function makePatientMesh(rng, opts = {}) {
+  const skin = rng.pick(SKINS);
+  const r = rng.next();
+  const hairStyle = r < 0.5 ? 'short' : r < 0.82 ? 'long' : 'bald';
   const g = buildRig({
-    suit: gown, shade: new THREE.Color(gown).multiplyScalar(0.78).getHex(),
-    head: HEAD_BASE,
+    top: rng.pick(TOPS), bottom: rng.pick(BOTTOMS), skin,
+    hairColor: rng.pick(HAIRS), hairStyle,
+    shoes: rng.pick(SHOES),
+    bandage: !!opts.bandage,
   });
-  g.userData.skin = HEAD_BASE;
+  g.userData.skin = skin;
   return g;
 }
 
 export function setFace(patientMesh, face) {
   setRigFace(patientMesh, face === 'angry' ? 0xff5348 : face === 'dead' ? 0x9aa3b0 :
-    face === 'crit' ? 0xc4cede : (patientMesh.userData.skin ?? HEAD_BASE));
+    face === 'crit' ? 0xc4cede : (patientMesh.userData.skin ?? 0xe8c39e));
 }
 
 // ---------- props ----------

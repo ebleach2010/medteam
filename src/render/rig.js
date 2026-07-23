@@ -20,7 +20,9 @@ function limb(len, rTop, rBot, material, footMat) {
   return pivot;
 }
 
-// palette: { suit, shade, head, cap?, collar? }
+// palette (matches the low-poly reference minis):
+// { top, bottom, skin, hairColor?, hairStyle?: 'short'|'long'|'bald',
+//   nurseCap?, scrubCap?, gloves?, stethoscope?, badge?, shoes?, bandage? }
 export function buildRig(p) {
   const root = new THREE.Group();
   const inner = new THREE.Group();
@@ -29,45 +31,93 @@ export function buildRig(p) {
   const bob = new THREE.Group();
   inner.add(bob);
 
-  const suit = mat(p.suit), shade = mat(p.shade);
+  const topM = mat(p.top), botM = mat(p.bottom), skinM = mat(p.skin);
 
   const torso = new THREE.Group(); bob.add(torso);
   const chest = new THREE.Group(); torso.add(chest);
 
-  // the blob body: lathe profile from crotch to closed shoulders
-  const profile = [
-    new THREE.Vector2(0.02, 0.30), new THREE.Vector2(0.24, 0.33),
-    new THREE.Vector2(0.38, 0.52), new THREE.Vector2(0.43, 0.74),
-    new THREE.Vector2(0.41, 0.92), new THREE.Vector2(0.33, 1.06),
-    new THREE.Vector2(0.16, 1.14), new THREE.Vector2(0.02, 1.16),
-  ];
-  const body = new THREE.Mesh(new THREE.LatheGeometry(profile, 20), suit);
-  body.castShadow = true;
-  chest.add(body);
-  if (p.collar) {
-    const collar = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.05, 8, 18), mat(p.collar));
-    collar.rotation.x = Math.PI / 2;
-    collar.position.y = 1.06;
-    chest.add(collar);
-  }
+  // two-part body with a waistline: pants/hips below, shirt above
+  const lathe = (pts, m) => {
+    const mesh = new THREE.Mesh(new THREE.LatheGeometry(pts.map(([a, b]) => new THREE.Vector2(a, b)), 18), m);
+    mesh.castShadow = true;
+    return mesh;
+  };
+  const hips = lathe([[0.02, 0.27], [0.26, 0.32], [0.38, 0.52], [0.42, 0.78]], botM);
+  const shirt = lathe([[0.42, 0.74], [0.41, 0.92], [0.33, 1.06], [0.16, 1.14], [0.02, 1.16]], topM);
+  chest.add(hips, shirt);
 
-  // huge faceless egg head, sunk straight into the shoulders
-  const head = new THREE.Group(); head.position.y = 1.38; chest.add(head);
-  const skull = new THREE.Mesh(new THREE.SphereGeometry(0.34, 20, 18), mat(p.head));
-  skull.scale.set(1, 1.12, 1);
+  // faceless skin-toned head set into the shoulders
+  const head = new THREE.Group(); head.position.y = 1.40; chest.add(head);
+  const skull = new THREE.Mesh(new THREE.SphereGeometry(0.28, 18, 14), skinM);
+  skull.scale.set(1, 1.18, 0.96);
   skull.castShadow = true;
   head.add(skull);
-  if (p.cap) { // scrub cap dome
-    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.35, 16, 8, 0, TAU, 0, Math.PI * 0.4), mat(p.cap));
-    cap.position.y = 0.06;
-    cap.scale.set(1, 1.05, 1);
-    head.add(cap);
+
+  // hair, like the minis: a low-poly cap / bob / balding fringe
+  if (p.hairColor != null && p.hairStyle !== 'none') {
+    const hairM = mat(p.hairColor);
+    if (p.hairStyle === 'bald') {
+      const fringe = new THREE.Mesh(new THREE.TorusGeometry(0.215, 0.06, 6, 12, Math.PI * 1.3), hairM);
+      fringe.rotation.x = Math.PI / 2;
+      fringe.rotation.z = Math.PI * 0.85; // gap at the front — shiny up top
+      fringe.position.y = 0.02;
+      head.add(fringe);
+    } else {
+      const capH = new THREE.Mesh(new THREE.SphereGeometry(0.295, 14, 8, 0, TAU, 0, Math.PI * 0.52), hairM);
+      capH.position.set(0, 0.045, -0.02);
+      head.add(capH);
+      if (p.hairStyle === 'long') {
+        const back = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.36, 0.13), hairM);
+        back.position.set(0, -0.10, -0.20);
+        head.add(back);
+      }
+    }
+  }
+  if (p.nurseCap) { // white cap with the little red cross
+    const capN = new THREE.Mesh(new THREE.SphereGeometry(0.20, 12, 6, 0, TAU, 0, Math.PI * 0.45), mat(0xffffff));
+    capN.position.set(0, 0.20, 0.02);
+    capN.scale.set(1.15, 0.9, 1.15);
+    const cr1 = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.03, 0.012), mat(0xd23b3b));
+    const cr2 = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.11, 0.012), mat(0xd23b3b));
+    cr1.position.set(0, 0.28, 0.19); cr2.position.set(0, 0.28, 0.19);
+    head.add(capN, cr1, cr2);
+  }
+  if (p.scrubCap) { // surgeon's dome
+    const capS = new THREE.Mesh(new THREE.SphereGeometry(0.30, 14, 8, 0, TAU, 0, Math.PI * 0.42), mat(p.scrubCap));
+    capS.position.y = 0.06;
+    head.add(capS);
+  }
+  if (p.bandage) { // head-injury wrap
+    const wrap = new THREE.Mesh(new THREE.TorusGeometry(0.25, 0.07, 6, 14), mat(0xf2efe6));
+    wrap.rotation.x = Math.PI / 2;
+    wrap.position.y = 0.08;
+    head.add(wrap);
   }
 
-  const armL = limb(0.52, 0.13, 0.10, suit); armL.position.set(-0.40, 0.98, 0); chest.add(armL);
-  const armR = limb(0.52, 0.13, 0.10, suit); armR.position.set(0.40, 0.98, 0); chest.add(armR);
-  const legL = limb(0.36, 0.16, 0.13, shade); legL.position.set(-0.18, 0.40, 0); chest.add(legL);
-  const legR = limb(0.36, 0.16, 0.13, shade); legR.position.set(0.18, 0.40, 0); chest.add(legR);
+  // accessories on the chest
+  if (p.stethoscope) {
+    const tube = new THREE.Mesh(new THREE.TorusGeometry(0.20, 0.032, 6, 14, Math.PI * 1.3), mat(0x2b3440));
+    tube.rotation.z = Math.PI * 0.85; // drapes around the neck, open at the top
+    tube.position.set(0, 1.10, 0.30);
+    const bell = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.025, 10), mat(0x8a94a4));
+    bell.rotation.x = Math.PI / 2;
+    bell.position.set(0.13, 0.94, 0.36);
+    chest.add(tube, bell);
+  }
+  if (p.badge) {
+    const badge = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.14, 0.02), mat(0xf2efe6));
+    badge.position.set(0.16, 1.0, 0.33);
+    badge.rotation.x = -0.15;
+    chest.add(badge);
+  }
+
+  // arms: sleeve in shirt color, hands in skin (or exam gloves)
+  const handM = mat(p.gloves ?? p.skin);
+  const shoeM = mat(p.shoes ?? 0x4a4038);
+  const armL = limb(0.52, 0.13, 0.10, topM, handM); armL.position.set(-0.40, 0.98, 0); chest.add(armL);
+  const armR = limb(0.52, 0.13, 0.10, topM, handM); armR.position.set(0.40, 0.98, 0); chest.add(armR);
+  const legL = limb(0.36, 0.16, 0.13, botM, shoeM); legL.position.set(-0.18, 0.40, 0); chest.add(legL);
+  const legR = limb(0.36, 0.16, 0.13, botM, shoeM); legR.position.set(0.18, 0.40, 0); chest.add(legR);
 
   const blob = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6),
     new THREE.MeshBasicMaterial({ map: GLOW_TEX, color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false }));

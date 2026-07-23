@@ -5,9 +5,12 @@ import { PatientSim } from '../sim/PatientSim.js';
 const FIRST_NAMES = ['Sam', 'Riley', 'Jo', 'Max', 'Dee', 'Alex', 'Pat', 'Frankie', 'Lou', 'Bobbie',
   'Chris', 'Nat', 'Morgan', 'Casey', 'Jesse', 'Robin', 'Quinn', 'Dana', 'Sky', 'Marge'];
 
+// walking wounded arrive pre-bandaged — a visual tell for trauma complaints
+const BANDAGED = new Set(['ankle', 'armfx', 'concuss', 'dogbite', 'epistaxis', 'backstrain']);
+
 export function spawnPatient(game, caseData, x, z) {
   const body = game.physics.capsuleBody(x, z, { mass: 80, tiltWobble: false, linDamp: 1.2 });
-  const mesh = makePatientMesh(game.rng);
+  const mesh = makePatientMesh(game.rng, { bandage: BANDAGED.has(caseData.id) });
   game.renderer.scene.add(mesh);
   const ent = {
     kind: 'patient', body, mesh,
