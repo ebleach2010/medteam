@@ -41,7 +41,7 @@ export class Game {
     // autonomous staff you dispatch from the ORDERS wheel
     this.aide = this.world.add(new Character(this, 'aide', this.map.nurseSpawn.x - 2, this.map.nurseSpawn.z + 1), 'chars');
     this.porter = this.world.add(new Character(this, 'porter', this.map.porterSpawn.x, this.map.porterSpawn.z), 'chars');
-    this.tech = this.world.add(new Character(this, 'tech', this.map.diagnostics.tech.x, this.map.diagnostics.tech.z), 'chars');
+    this.tech = this.world.add(new Character(this, 'tech', this.map.porterSpawn.x + 1.2, this.map.porterSpawn.z - 1.6), 'chars');
     this.surgeon = this.world.add(new Character(this, 'surgeon', this.map.doctorSpawn.x - 1.5, this.map.doctorSpawn.z - 1), 'chars');
     // the receptionist: cosmetic rig parked in the chair behind the front desk
     this.receptionist = makeCharacterMesh('receptionist');
@@ -54,6 +54,10 @@ export class Game {
     this.porter.home = this.map.staffSeats.porter;
     this.surgeon.home = this.map.staffSeats.surgeon;
     this.tech.home = this.map.staffSeats.tech;
+    this.aide.homeExit = this.map.stationExit.west;
+    this.surgeon.homeExit = this.map.stationExit.west;
+    this.porter.homeExit = this.map.stationExit.east;
+    this.tech.homeExit = this.map.stationExit.east;
 
     this.ui = new UI(this);
     this.intentQueue = [];
@@ -266,6 +270,12 @@ export class Game {
 
   dispatch(char, task) {
     if (this.tasks.has(char)) { this.ui.toast('That staff member is already on a job'); return false; }
+    char._homeRoute = null;
+    if (char.atPost) char.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
+    // rounding the desk only matters when the job lies south of it — a
+    // northbound fetch just walks straight out the top of the station
+    const wp0 = task.route?.[0];
+    if (char.atPost && char.homeExit && wp0 && wp0.z < -0.75) task.route = [...char.homeExit, ...task.route];
     task.wait = 0;
     this.tasks.set(char, task);
     return true;
@@ -331,6 +341,25 @@ export class Game {
     return true;
   }
 
+  // steer toward a point; if we're pushing into furniture and not moving,
+  // sidestep along it (poor man's wall-follow) until the way is clear
+  _steer(ch, tx, tz, mag, dt) {
+    const p = ch.pos;
+    const dx = tx - p.x, dz = tz - p.z, d = Math.hypot(dx, dz);
+    if (d < 1e-4) return;
+    let mx = dx / d, mz = dz / d;
+    const v = ch.body.linvel();
+    if (Math.hypot(v.x, v.z) < 0.3) ch._stuckAcc = (ch._stuckAcc ?? 0) + dt;
+    else if ((ch._dodgeT ?? 0) <= 0) ch._stuckAcc = 0;
+    if (ch._stuckAcc > 0.6) { ch._dodgeDir = -(ch._dodgeDir ?? -1); ch._dodgeT = 0.9; ch._stuckAcc = 0; }
+    if ((ch._dodgeT ?? 0) > 0) {
+      ch._dodgeT -= dt;
+      const sgn = ch._dodgeDir ?? 1;
+      const t0 = mx; mx = mz * sgn; mz = -t0 * sgn;
+    }
+    ch.applyMove(mx * mag, mz * mag);
+  }
+
   _staffTick(dt) {
     // off-duty staff head back to their post and SIT until dispatched
     for (const ch of [this.aide, this.porter, this.tech, this.surgeon]) {
@@ -338,23 +367,32 @@ export class Game {
       const h = ch.home;
       if (!h) continue;
       const p = ch.pos;
-      const dx = h.x - p.x, dz = h.z - p.z, d = Math.hypot(dx, dz);
+      const d = Math.hypot(h.x - p.x, h.z - p.z);
       if (d > 0.45) {
         ch.atPost = false;
-        // furniture dodge: if we're pushing into a desk and not moving,
-        // sidestep along it until the way home is clear
-        let mx = dx / d, mz = dz / d;
-        const v = ch.body.linvel();
-        if (Math.hypot(v.x, v.z) < 0.3) ch._homeStuck = (ch._homeStuck ?? 0) + dt;
-        else if ((ch._dodgeT ?? 0) <= 0) ch._homeStuck = 0;
-        if (ch._homeStuck > 0.6) { ch._dodgeDir = ch._dodgeDir ?? 1; ch._dodgeT = 0.9; ch._homeStuck = 0; }
-        if ((ch._dodgeT ?? 0) > 0) {
-          ch._dodgeT -= dt;
-          const s = ch._dodgeDir ?? 1;
-          const tx = mx; mx = mz * s; mz = -tx * s;
+        if (!ch._homeRoute) {
+          const r = this._routeTo(p, h);
+          r.pop(); // final approach handled below
+          // coming from another zone or from south of the desk: round the
+          // desk via the lane; then ALWAYS slot in from behind the row so
+          // we never plow through seated colleagues
+          if (ch.homeExit && (r.length || p.z < -0.75)) r.push(...[...ch.homeExit].reverse());
+          r.push({ x: h.x, z: 0.95 });
+          ch._homeRoute = r;
         }
-        ch.applyMove(mx * 0.55, mz * 0.55);
-      } else { ch.applyMove(0, 0); ch.atPost = true; ch.yaw = h.yaw; }
+        let wp = ch._homeRoute[0];
+        while (wp && Math.hypot(wp.x - p.x, wp.z - p.z) < 0.9) { ch._homeRoute.shift(); wp = ch._homeRoute[0]; }
+        const tgt = wp ?? h;
+        this._steer(ch, tgt.x, tgt.z, 0.55, dt);
+      } else {
+        if (!ch.atPost) { // plant them squarely ON the chair, rooted
+          ch.body.setTranslation({ x: h.x, y: ch.body.translation().y, z: h.z }, true);
+          ch.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+          ch.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
+        }
+        ch._homeRoute = null;
+        ch.applyMove(0, 0); ch.atPost = true; ch.yaw = h.yaw;
+      }
     }
     for (const [ch, t] of [...this.tasks]) {
       // wall-snag failsafe: if the towed patient jams on a corner for over a
@@ -375,9 +413,9 @@ export class Game {
       const wp = t.route?.[0];
       if (wp) {
         const p = ch.pos;
-        const dx = wp.x - p.x, dz = wp.z - p.z, d = Math.hypot(dx, dz);
+        const d = Math.hypot(wp.x - p.x, wp.z - p.z);
         if (d < 0.9) { t.route.shift(); continue; }
-        ch.applyMove((dx / d) * 0.72, (dz / d) * 0.72);
+        this._steer(ch, wp.x, wp.z, 0.95, dt); // called staff RUN
         continue;
       }
       ch.applyMove(0, 0);

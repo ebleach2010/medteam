@@ -1,65 +1,125 @@
-// Vitals cards. Bedded patients get their card PINNED to the wall monitor at
-// the far side of their room (stable, out of the way); unbedded hooked
-// patients keep a floating card. Tap any card for the fullscreen readout.
-const MAX = 4;
+// In-world vitals: every room's wall monitor is a REAL 3D screen (canvas
+// texture on the wall mount). No floating DOM cards — the numbers live in
+// the room, scale with the camera, and never clutter the screen. Tap a
+// screen for the fullscreen readout.
+import * as THREE from 'three';
+
+const REFRESH = 0.5;
 
 export class Monitors {
   constructor(root, game) {
     this.game = game;
-    this.cards = [];
-    for (let i = 0; i < MAX; i++) {
-      const el = document.createElement('div');
-      el.className = 'mon';
-      el.style.display = 'none';
-      root.appendChild(el);
-      const card = { el, pt: null, nextRefresh: 0 };
-      el.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
-        if (card.pt) game.ui.modals.vitalsFull(card.pt);
-      });
-      this.cards.push(card);
+    this.next = 0;
+    // tap-to-fullscreen: a quick tap (not a joystick drag) raycast at screens
+    const down = { x: 0, y: 0, t: 0 };
+    window.addEventListener('pointerdown', (e) => {
+      down.x = e.clientX; down.y = e.clientY; down.t = performance.now();
+    });
+    window.addEventListener('pointerup', (e) => {
+      if (!(e.target instanceof HTMLCanvasElement)) return; // buttons/modals win
+      if (performance.now() - down.t > 350) return;
+      if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 14) return;
+      const g = this.game;
+      const mons = g.map.roomMonitors ?? [];
+      if (!mons.length || g.ui.modals.open) return;
+      _ndc.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
+      _ray.setFromCamera(_ndc, g.renderer.camera);
+      const hits = _ray.intersectObjects(mons.map((m) => m.screen), false);
+      if (!hits.length) return;
+      const rm = mons.find((m) => m.screen === hits[0].object);
+      const pt = rm && this._occupant(rm);
+      if (pt) g.ui.modals.vitalsFull(pt);
+    });
+  }
+
+  _occupant(rm) {
+    for (const p of this.game.world.byTag('patients')) {
+      if (p.sim.hooked && p.sim.bed?.index === rm.index) return p;
     }
+    return null;
   }
 
   update(t) {
-    const g = this.game;
-    const hooked = [...g.world.byTag('patients')].filter((p) => p.sim.hooked);
-    const ap = g.active.pos;
-    hooked.sort((a, b) => dist(a, ap) - dist(b, ap));
-    for (let i = 0; i < MAX; i++) {
-      const card = this.cards[i], pt = hooked[i] ?? null;
-      if (!pt) { card.el.style.display = 'none'; card.pt = null; continue; }
-      // bedded → anchor on the room's wall monitor; loose → follow the body
-      const bed = pt.sim.bed;
-      const anchor = bed
-        ? { x: bed.x, y: 1.7, z: -11.8 }
-        : (() => { const p = pt.body.translation(); return { x: p.x, y: p.y + 0.6, z: p.z }; })();
-      const s = g.renderer.project(anchor);
-      if (!s) { card.el.style.display = 'none'; continue; }
-      card.el.style.display = 'block';
-      // stays glued to its wall mount / body — when the room scrolls off
-      // screen the card goes with it instead of clamping and tagging along
-      const offscreen = s.x < -70 || s.x > window.innerWidth + 70 || s.y < -30 || s.y > window.innerHeight + 10;
-      if (offscreen) { card.el.style.display = 'none'; continue; }
-      if (bed) {
-        card.el.style.transform = `translate(${s.x | 0}px, ${Math.max(s.y, 6) | 0}px) translate(-50%, 0)`;
-      } else {
-        card.el.style.transform = `translate(${(s.x + 30) | 0}px, ${(s.y - 40) | 0}px)`;
-      }
-      card.el.classList.toggle('alarm', pt.sim.alarming());
-      if (t > card.nextRefresh || card.pt !== pt) {
-        card.nextRefresh = t + 0.5;
-        card.pt = pt;
-        const v = pt.sim.vitals();
-        const ekg = pt.sim.case.ekg ? `<i style="color:#ffd23c">${pt.sim.case.ekg}</i><br>` : '';
-        card.el.innerHTML =
-          `<div class="nm">${pt.sim.displayName} — ${pt.sim.state === 'dead' ? '☠' : pt.sim.case.name}</div>` +
-          `HR ${v.hr}  SpO₂ ${v.spo2}%<br>BP ${v.sbp}/${v.dbp}  RR ${v.rr}<br>T ${v.temp}°C<br>${ekg}` +
-          `<svg class="ekg" viewBox="0 0 100 20" preserveAspectRatio="none"><path d="${ekgPath(v.hr)}" fill="none" stroke="#38e08f" stroke-width="1.4"/></svg>` +
-          '<div class="tapme">▲ tap for full screen</div>';
-      }
+    if (t < this.next) return;
+    this.next = t + REFRESH;
+    for (const rm of this.game.map.roomMonitors ?? []) {
+      const pt = this._occupant(rm);
+      if (!pt && rm.standby) continue; // idle screens don't need repainting
+      rm.standby = !pt;
+      drawScreen(rm, pt, t);
+      rm.tex.needsUpdate = true;
     }
   }
+}
+const _ndc = new THREE.Vector2();
+const _ray = new THREE.Raycaster();
+
+function drawScreen(rm, pt, t) {
+  const g = rm.canvas.getContext('2d');
+  const W = rm.canvas.width, H = rm.canvas.height;
+  g.fillStyle = '#0b1119';
+  g.fillRect(0, 0, W, H);
+  if (!pt) {
+    g.strokeStyle = '#1d2a38'; g.lineWidth = 3; g.strokeRect(3, 3, W - 6, H - 6);
+    g.fillStyle = '#28527a';
+    g.font = 'bold 26px system-ui';
+    g.textAlign = 'center';
+    g.fillText(`ROOM ${rm.roomNo}`, W / 2, H / 2 - 8);
+    g.fillStyle = '#1c3a56';
+    g.font = '15px system-ui';
+    g.fillText('· standby ·', W / 2, H / 2 + 20);
+    g.textAlign = 'left';
+    return;
+  }
+  const sim = pt.sim;
+  const v = sim.vitals();
+  const dead = sim.state === 'dead';
+  const alarm = !dead && sim.alarming();
+  if (alarm && (t % 1) < 0.5) { g.fillStyle = '#3a0f14'; g.fillRect(0, 0, W, H); }
+  g.strokeStyle = alarm ? '#e6483d' : '#1d2a38';
+  g.lineWidth = alarm ? 5 : 3;
+  g.strokeRect(3, 3, W - 6, H - 6);
+  g.fillStyle = '#cfe3f5';
+  g.font = 'bold 17px system-ui';
+  g.fillText(dead ? `${sim.displayName} ☠` : sim.displayName, 12, 26);
+  // big numbers, monitor-style color coding
+  g.font = 'bold 34px system-ui';
+  g.fillStyle = '#38e08f'; g.fillText(String(v.hr), 12, 66);
+  g.fillStyle = '#5ad7ff'; g.fillText(`${v.spo2}`, 96, 66);
+  g.fillStyle = '#ffd23c'; g.fillText(`${v.sbp}/${v.dbp}`, 158, 66);
+  g.font = '12px system-ui';
+  g.fillStyle = '#2f9d68'; g.fillText('HR', 12, 80);
+  g.fillStyle = '#3f93ad'; g.fillText('SpO₂', 96, 80);
+  g.fillStyle = '#ad9440'; g.fillText('BP', 158, 80);
+  g.font = 'bold 18px system-ui';
+  g.fillStyle = '#c9d6e4';
+  g.fillText(`RR ${v.rr}   T ${v.temp}°`, 12, 104);
+  if (sim.case.ekg) {
+    g.fillStyle = '#ffd23c'; g.font = 'italic 13px system-ui';
+    g.fillText(sim.case.ekg.slice(0, 30), 130, 104);
+  }
+  // EKG trace along the bottom
+  g.strokeStyle = dead ? '#5a6570' : '#38e08f';
+  g.lineWidth = 2.5;
+  g.beginPath();
+  const y0 = 134, amp = 16;
+  const hr = dead ? 0 : v.hr;
+  if (hr <= 0) { g.moveTo(10, y0); g.lineTo(W - 10, y0); }
+  else {
+    const beats = Math.max(1, Math.round(hr / 30));
+    const bw = (W - 20) / beats;
+    let x = 10;
+    g.moveTo(x, y0);
+    for (let i = 0; i < beats; i++) {
+      g.lineTo(x + bw * 0.3, y0);
+      g.lineTo(x + bw * 0.4, y0 - amp);
+      g.lineTo(x + bw * 0.5, y0 + amp * 0.8);
+      g.lineTo(x + bw * 0.6, y0);
+      g.lineTo(x + bw, y0);
+      x += bw;
+    }
+  }
+  g.stroke();
 }
 
 export function ekgPath(hr) {
@@ -73,4 +133,3 @@ export function ekgPath(hr) {
   }
   return d;
 }
-function dist(p, a) { const t = p.body.translation(); return Math.hypot(t.x - a.x, t.z - a.z); }

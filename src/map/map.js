@@ -219,6 +219,7 @@ export function buildMap(scene, physics) {
 
   // ---- the ten patient rooms: bed + desk each, numbered ----
   const beds = [];
+  const roomMonitors = [];
   const roomDesks = [];
   const roomLights = [];
   const ROOM_X = [-28, -24, -20, -16, -12, -8, -3.5, 1.5, 6.5, 11.5];
@@ -243,10 +244,21 @@ export function buildMap(scene, physics) {
     statics.add(desk);
     physics.staticBox(cx + 1.05, 0.39, -10.6, 0.5, 0.39, 0.3);
     roomDesks.push({ x: cx + 1.05, z: -10.6, y: 0.82, roomNo: i + 1, clipboard: null });
-    // wall monitor prop
-    const mon = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.32, 0.06), emat(0x6effe6, 0.35));
-    mon.position.set(cx - 0.7, 0.95, -11.7);
-    statics.add(mon);
+    // wall monitor: a REAL screen — canvas texture the Monitors system paints
+    const monCanvas = document.createElement('canvas');
+    monCanvas.width = 256; monCanvas.height = 160;
+    const monTex = new THREE.CanvasTexture(monCanvas);
+    monTex.colorSpace = THREE.SRGBColorSpace;
+    const monG = new THREE.Group();
+    monG.position.set(cx - 0.7, 0.88, -11.72);
+    monG.rotation.x = -0.52; // tilted mount, angled at the top-down camera
+    const monFrame = new THREE.Mesh(new THREE.BoxGeometry(1.26, 0.84, 0.06), mat(0x232d3a));
+    const monScreen = new THREE.Mesh(new THREE.PlaneGeometry(1.14, 0.72),
+      new THREE.MeshBasicMaterial({ map: monTex }));
+    monScreen.position.z = 0.034;
+    monG.add(monFrame, monScreen);
+    statics.add(monG);
+    roomMonitors.push({ index: i, roomNo: i + 1, canvas: monCanvas, tex: monTex, screen: monScreen, standby: false });
     // status light over the door (unique material — per-room color control)
     const lightMat = new THREE.MeshStandardMaterial({ color: 0x8a94a4, emissive: 0x8a94a4, emissiveIntensity: 0.25, roughness: 0.4 });
     const light = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), lightMat);
@@ -367,20 +379,24 @@ export function buildMap(scene, physics) {
   // tucked toward the west end of the desk — clear of the door funnel at
   // (-14.5, 2) so a dragged patient never plows through the seated crew
   const staffSeats = {
-    aide: { x: -18.5, z: -0.3, yaw: Math.PI },
-    porter: { x: -16.1, z: -0.3, yaw: Math.PI },
-    surgeon: { x: -17.3, z: -0.3, yaw: Math.PI },
-    tech: { x: 6.6, z: -0.6, yaw: 0 },
+    aide: { x: -18.6, z: -0.3, yaw: Math.PI },
+    surgeon: { x: -17.4, z: -0.3, yaw: Math.PI },
+    porter: { x: -16.2, z: -0.3, yaw: Math.PI },
+    tech: { x: -15.0, z: -0.3, yaw: Math.PI },
   };
-  for (const key of ['aide', 'porter', 'surgeon']) {
+  for (const key of ['aide', 'surgeon', 'porter', 'tech']) {
     const c = makeChair();
     c.position.set(staffSeats[key].x, 0, staffSeats[key].z + 0.15);
     c.rotation.y = Math.PI;
     statics.add(c);
   }
-  const techStool = makeChair();
-  techStool.position.set(staffSeats.tech.x, 0, staffSeats.tech.z - 0.15);
-  statics.add(techStool);
+  // when dispatched they round the desk via a fixed lane, then sprint
+  // lanes bow NORTH around the seated row first, then round the desk end —
+  // running along the row itself just body-checks your seated colleagues
+  const stationExit = {
+    west: [{ x: -19.4, z: 0.9 }, { x: -19.2, z: -2.7 }],
+    east: [{ x: -13.6, z: 0.9 }, { x: -13.6, z: -2.7 }],
+  };
 
   // ---- LAB (Z3 south-west) ----
   const centMesh = makeCentrifuge();
@@ -458,7 +474,7 @@ export function buildMap(scene, physics) {
 
   return {
     beds, seats, centrifuge, imagingPad, diagnostics, shelfUnits, rings, dropRing,
-    roomDesks, roomLights, knockSpots, triageDesk, receptionSeat, staffSeats,
+    roomDesks, roomLights, roomMonitors, knockSpots, triageDesk, receptionSeat, staffSeats, stationExit,
     discharge, gateOut, firePit, fire,
     floorYAt: () => 0,
     zoneOf, zoneDoors: ZONE_DOORS,
