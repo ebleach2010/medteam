@@ -60,7 +60,12 @@ function drawCXR(g, rng, soft, type) {
   g.strokeStyle = 'rgba(255,255,255,.4)'; g.lineWidth = 9;
   g.beginPath(); g.moveTo(120, 92); g.quadraticCurveTo(256, 60, 392, 92); g.stroke();
 
-  if (type === 'cxr_ptx') {
+  if (type === 'cxr_wide') {
+    // widened mediastinum: broad bright central column swallowing the heart
+    g.fillStyle = 'rgba(255,255,255,.30)';
+    g.fillRect(180, 80, 150, 360);
+    soft(255, 250, 130, 0.4);
+  } else if (type === 'cxr_ptx') {
     // right lung collapsed: bright pleural edge, missing peripheral markings
     g.strokeStyle = 'rgba(255,255,255,.85)'; g.lineWidth = 3;
     g.beginPath(); g.ellipse(352, 250, 62, 150, 0.12, -1.4, 1.5); g.stroke();

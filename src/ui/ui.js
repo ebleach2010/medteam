@@ -126,8 +126,9 @@ export class UI {
   _edgeArrows() {
     const g = this.game, ap = g.active.pos;
     const ICON = { arriving: '🚶', waiting: '🚶', angry: '😡', agitated: '🏃' };
+    const iconFor = (s) => (s.critical && s.state !== 'dead' ? '‼️' : ICON[s.state]);
     const targets = [...g.world.byTag('patients')]
-      .filter((p) => ICON[p.sim.state])
+      .filter((p) => iconFor(p.sim))
       .map((p) => { const t = p.body.translation(); return { p, t, d: Math.hypot(t.x - ap.x, t.z - ap.z) }; })
       .sort((a, b) => a.d - b.d)
       .slice(0, this.arrows.length);
@@ -145,7 +146,7 @@ export class UI {
       const y = Math.min(Math.max(cy + Math.sin(ang) * R * 1.05, pad + 30), innerHeight - pad - 20);
       el.style.display = 'flex';
       el.style.transform = `translate(${x | 0}px, ${y | 0}px) translate(-50%,-50%)`;
-      el.querySelector('.who').textContent = ICON[tgt.p.sim.state];
+      el.querySelector('.who').textContent = iconFor(tgt.p.sim);
       el.querySelector('.dir').style.transform = `rotate(${ang}rad)`;
     }
     for (; i < this.arrows.length; i++) this.arrows[i].style.display = 'none';

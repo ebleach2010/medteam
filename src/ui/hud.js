@@ -6,13 +6,14 @@ export class HUD {
     this.el.id = 'hud';
     this.el.innerHTML = `
       <span class="day"></span><span class="clock"></span><span class="score"></span>
-      <span class="cap"></span><span class="role"></span>`;
+      <span class="cap"></span><span class="role"></span><span class="quota"></span>`;
     root.appendChild(this.el);
     this.day = this.el.querySelector('.day');
     this.clock = this.el.querySelector('.clock');
     this.score = this.el.querySelector('.score');
     this.cap = this.el.querySelector('.cap');
     this.role = this.el.querySelector('.role');
+    this.quota = this.el.querySelector('.quota');
     this.toastEl = document.createElement('div');
     this.toastEl.id = 'toast';
     root.appendChild(this.toastEl);
@@ -32,6 +33,9 @@ export class HUD {
     this.clock.textContent = g.clock.format();
     this.score.textContent = `★ ${g.score}`;
     this.role.textContent = g.active.role === 'nurse' ? '🩺 NURSE' : '🥼 DOCTOR';
+    const tr = Math.round(g.dayStats.treated * 100) / 100;
+    this.quota.textContent = `✅ ${tr}/${g.quota}`;
+    this.quota.style.color = tr >= g.quota ? '#7dffb0' : '#ffb03c';
     const edBeds = g.map.beds.filter((b) => b.room === 'ed');
     const used = edBeds.filter((b) => b.occupant).length;
     const waiting = [...g.world.byTag('patients')]

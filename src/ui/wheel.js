@@ -11,6 +11,7 @@ const NURSE = [
 ];
 const DOCTOR = [
   { id: 'dx', ico: '✅', txt: 'DIAGNOSE' },
+  { id: 'labs', ico: '🩸', txt: 'CALL LABS' },
   { id: 'discharge', ico: '🏠', txt: 'DISCHARGE' },
   { id: 'admit_icu', ico: '🫀', txt: 'ICU' },
   { id: 'admit_medsurge', ico: '🛏️', txt: 'MED-SURG' },

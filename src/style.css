@@ -86,7 +86,8 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0e1420; t
 #hud .cap i { width: 10px; height: 14px; border-radius: 3px; background: #2a3a5c; }
 #hud .cap i.full { background: #ff5d5d; }
 #hud .cap i.used { background: #ffb03c; }
-#hud .role { margin-left: auto; margin-right: 74px; font-weight: 700; color: #9dc1ff; }
+#hud .role { margin-left: auto; font-weight: 700; color: #9dc1ff; }
+#hud .quota { margin-right: 74px; font-weight: 800; font-variant-numeric: tabular-nums; }
 
 /* ---------- Vitals monitor cards ---------- */
 .mon { position: absolute; width: 148px; padding: 5px 8px; border-radius: 8px;

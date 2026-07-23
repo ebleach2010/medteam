@@ -1,20 +1,23 @@
-// Per-day (per-level) difficulty config. tierWeights = relative chance a
-// spawned case comes from each tier [t1,t2,t3,t4].
+// Per-day (per-level) config. Five tiers: easy → near-impossible.
+// The house rule: treat at least QUOTA patients (incinerations count ¼)
+// or the shift is failed and you start over from day 1.
+export const QUOTA = 10;
+
 export function dayConfig(day) {
   const d = Math.max(1, day);
   return {
-    patients: Math.min(4 + Math.round(d * 1.8), 16),
+    patients: Math.min(13 + (d - 1) * 2, 24),
     tierWeights:
-      d === 1 ? [1, 0, 0, 0] :
-      d === 2 ? [2, 1, 0, 0] :
-      d === 3 ? [2, 2, 1, 0] :
-      d === 4 ? [1, 2, 2, 0.5] :
-      d === 5 ? [1, 2, 2, 1] :
-                [0.5, 1.5, 2, 1.5],
-    // game-minutes per real second (day 1-2 shorter real days)
+      d === 1 ? [1, 0.15, 0, 0, 0] :
+      d === 2 ? [1, 0.7, 0.1, 0, 0] :
+      d === 3 ? [0.8, 1, 0.5, 0.1, 0] :
+      d === 4 ? [0.6, 1, 0.8, 0.3, 0.05] :
+      d === 5 ? [0.4, 0.9, 1, 0.5, 0.15] :
+      d === 6 ? [0.3, 0.7, 1, 0.7, 0.3] :
+                [0.2, 0.6, 1, 0.9, 0.5],
     timeScale: d <= 2 ? 2.4 : 2.0,
     edCapacity: 6,
-    // stroke pair guaranteed from day 5: punishes CT skippers
-    forceCases: d >= 5 ? ['stroke_ischemic', 'stroke_sah'] : d === 4 ? ['stroke_ischemic'] : [],
+    // guaranteed lookalike pair from day 4: punishes CT skippers
+    forceCases: d >= 4 ? ['stroke_isch', 'stroke_sah'] : d === 3 ? ['stroke_isch'] : [],
   };
 }

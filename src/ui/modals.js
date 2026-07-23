@@ -66,18 +66,62 @@ export class Modals {
     this.box.querySelector('.close').addEventListener('pointerdown', () => this.close());
   }
 
+  // the clipboard: chart + bedside workups (EKG / physical / neuro) + diagnose
+  workup(patient) {
+    const sim = patient.sim, c = sim.case;
+    sim.chartSeen = true;
+    const w = sim.workups;
+    const lines = [
+      `PATIENT        ${sim.displayName}, ${sim.age}`,
+      `COMPLAINT      "${c.complaint[0]}"`,
+      `HISTORY        ${c.history ?? 'Unremarkable'}`,
+      w.ekg ? `EKG            ${c.ekg ? `<b>${c.ekg}</b>` : 'Normal sinus rhythm'}` : null,
+      w.phys ? `PHYSICAL       ${c.physical ? `<b>${c.physical}</b>` : 'Unremarkable exam'}` : null,
+      w.neuro ? `NEURO          ${c.neuro ? `<b>${c.neuro}</b>` : 'Grossly intact'}` : null,
+      sim.labState === 'read' ? 'LABS           on file (see printout)' : null,
+      sim.imagingDone ? 'IMAGING        done (interpreted)' : null,
+    ].filter(Boolean).join('\n');
+    this.current = { type: 'workup', patient, options: [] };
+    this.box.innerHTML = `<h3>📋 Chart — ${sim.displayName}</h3>
+      <div class="paper">MEDTEAM GENERAL — INTAKE\n------------------------\n${lines}</div>
+      <button class="opt" data-w="ekg">🫀 Run EKG ${w.ekg ? '✓' : ''}</button>
+      <button class="opt" data-w="phys">🩺 Physical exam ${w.phys ? '✓' : ''}</button>
+      <button class="opt" data-w="neuro">🧠 Neuro exam ${w.neuro ? '✓' : ''}</button>
+      <button class="opt" data-w="dx">✅ Diagnose</button>
+      <button class="close">Close</button>`;
+    this.veil.style.display = 'flex';
+    this.box.querySelectorAll('.opt').forEach((b) =>
+      b.addEventListener('pointerdown', () =>
+        this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'workup', choice: b.dataset.w } })));
+    this.box.querySelector('.close').addEventListener('pointerdown', () => this.close());
+  }
+
   diagnose(patient) {
     const c = patient.sim.case;
     const hints = [];
     if (patient.sim.labState === 'read') hints.push('labs seen');
     if (patient.sim.imagingDone) hints.push('imaging done');
-    this._show({
-      type: 'dx', patient, options: c.dxOptions,
-      html: `<h3>✅ Diagnosis — ${patient.sim.displayName}</h3>
-             <p style="color:#a9bce0;font-size:12px;margin-bottom:8px">
-               Complaint: “${c.complaint[0]}” ${hints.length ? `· ${hints.join(' · ')}` : '· no workup yet 😬'}</p>`,
-      closable: true,
-    });
+    // shuffle the display order (seeded per patient) — buttons carry the
+    // ORIGINAL index so correctDx stays 0 for the sim and the tests
+    const order = c.dxOptions.map((_, i) => i);
+    let s = patient.sim.scanSeed;
+    for (let i = order.length - 1; i > 0; i--) {
+      s = (s * 9301 + 49297) % 233280;
+      const j = s % (i + 1);
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+    this.current = { type: 'dx', patient, options: c.dxOptions };
+    let body = `<h3>✅ Diagnosis — ${patient.sim.displayName}</h3>
+      <p style="color:#a9bce0;font-size:12px;margin-bottom:8px">
+        Complaint: “${c.complaint[0]}” ${hints.length ? `· ${hints.join(' · ')}` : '· no workup yet 😬'}</p>`;
+    for (const i of order) body += `<button class="opt" data-i="${i}">${c.dxOptions[i]}</button>`;
+    body += '<button class="close">Close</button>';
+    this.box.innerHTML = body;
+    this.veil.style.display = 'flex';
+    this.box.querySelectorAll('.opt').forEach((b) =>
+      b.addEventListener('pointerdown', () =>
+        this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'dx', choice: +b.dataset.i } })));
+    this.box.querySelector('.close').addEventListener('pointerdown', () => this.close());
   }
 
   _show({ type, patient, options, html, closable }) {
@@ -101,6 +145,17 @@ export class Modals {
     if (cur.type === 'cabinet') {
       g.takeMedFromCabinet(actor ?? g.active, choice);
       this.close();
+      return;
+    }
+    if (cur.type === 'workup') {
+      const sim2 = cur.patient.sim;
+      if (choice === 'dx') { this.diagnose(cur.patient); return; }
+      if (!sim2.workups[choice]) {
+        sim2.workups[choice] = true;
+        g.addScore(10, 'Workup');
+        g.audio.tap();
+      }
+      this.workup(cur.patient); // re-render with the new finding
       return;
     }
     const sim = cur.patient.sim;

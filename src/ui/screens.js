@@ -23,21 +23,38 @@ export class Screens {
     this.el.querySelector('.go').addEventListener('pointerdown', () => { this.hide(); onStart(); });
   }
 
-  daySummary(stats, day, onNext) {
+  daySummary(stats, day, quota, onNext) {
+    const tr = Math.round(stats.treated * 100) / 100;
     this.el.style.display = 'flex';
     this.el.innerHTML = `
-      <h2>END OF DAY ${day}</h2>
+      <h2>END OF DAY ${day} — QUOTA MET</h2>
       <div class="stats">
-        <span><b style="color:#7dffb0">${stats.treated}</b>treated</span>
+        <span><b style="color:#7dffb0">${tr}/${quota}</b>treated</span>
         <span><b style="color:#ff5d5d">${stats.died}</b>died</span>
         <span><b style="color:#ffb03c">${stats.walkedOut}</b>walked out</span>
         <span><b>★ ${stats.score}</b>score</span>
       </div>
       <p>${stats.died === 0 ? 'A zero-mortality shift. Legendary.' :
           stats.died < 3 ? 'Some you can’t save. (Some you maybe could have.)' :
-          'The morgue called. They want a loyalty program.'}</p>
+          'The incinerator sends its regards.'}</p>
       <button class="go">START DAY ${day + 1}</button>`;
     this.el.querySelector('.go').addEventListener('pointerdown', () => { this.hide(); onNext(); });
+  }
+
+  gameOver(stats, day, quota, onRestart) {
+    const tr = Math.round(stats.treated * 100) / 100;
+    this.el.style.display = 'flex';
+    this.el.innerHTML = `
+      <h2 style="color:#ff5d5d">SHIFT FAILED</h2>
+      <div class="stats">
+        <span><b style="color:#ff5d5d">${tr}/${quota}</b>treated</span>
+        <span><b>${stats.died}</b>died</span>
+        <span><b>${stats.walkedOut}</b>walked out</span>
+      </div>
+      <p>The board needed ${quota} treated. You delivered ${tr}. Day ${day} was your last —
+      hand in your badge and start again from Day 1.</p>
+      <button class="go">BACK TO DAY 1</button>`;
+    this.el.querySelector('.go').addEventListener('pointerdown', () => { this.hide(); onRestart(); });
   }
 
   hide() { this.el.style.display = 'none'; }

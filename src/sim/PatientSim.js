@@ -28,8 +28,11 @@ export class PatientSim {
     this.yaw = 0;
     this.nextBubbleAt = game.clock.minutes + game.rng.range(30, 70);
     this.wanderTimerReal = 0;
-    this.removeTimerReal = -1;
     this.scanSeed = game.rng.int(1, 1e9);
+    this.age = game.rng.int(18, 92);
+    this.workups = {};            // ekg/phys/neuro done flags
+    this.chartSeen = false;
+    this.incinerating = 0;        // >0 while burning in the pit
 
     this.displayName = `${ent.name}`;
     // arrival complaint — the core feature
@@ -39,8 +42,8 @@ export class PatientSim {
   get elapsed() { return (this.game.clock.minutes - this.tArrive) * this.accel; }
   isLying() { return ['inbed', 'sedated', 'dead', 'pinned'].includes(this.state); }
   isGrabbable() {
-    return ['waiting', 'sedated', 'inbed', 'pinned', 'angry'].includes(this.state) ||
-      (this.state === 'arriving');
+    // dead bodies are ABSOLUTELY grabbable — someone has to haul them to the pit
+    return ['waiting', 'sedated', 'inbed', 'pinned', 'angry', 'dead', 'arriving'].includes(this.state);
   }
   canReceiveMeds() { return ['inbed', 'pinned', 'sedated', 'agitated', 'waiting'].includes(this.state); }
 
@@ -90,7 +93,7 @@ export class PatientSim {
     const g = this.game, dtMin = dtReal * g.clock.timeScale;
     const now = g.clock.minutes;
 
-    if (this.state === 'dead') { this._deadTick(dtReal); this._steer(dtReal); return; }
+    if (this.state === 'dead') { this._steer(dtReal); return; } // corpses persist until incinerated
 
     // timeline events
     if (!this.treated) {
@@ -158,16 +161,7 @@ export class PatientSim {
       else this._say('stable');
     }
 
-    // treated + discharge-dispo patients self-resolve from bed
-    if (this.treated && !this.resolved && this.case.treatment.dispo === 'discharge' &&
-        this.dxPicked !== null && this.state === 'inbed' &&
-        now - this.tTreated > 30) {
-      g.resolvePatient(this.ent, 'discharged');
-    }
-    if (this.wantsDischarge && !this.resolved && ['inbed', 'waiting', 'sedated'].includes(this.state)) {
-      g.resolvePatient(this.ent, this.treated ? 'discharged' : 'discharged_sick');
-    }
-
+    // (no self-discharge: patients leave through the DISCHARGE ROOM now)
     this._steer(dtReal);
   }
 
@@ -216,8 +210,8 @@ export class PatientSim {
     const stopAt = this.ent.escortedBy ? 1.5 : (this.state === 'angry' ? 1.1 : 0.3);
     if (d < stopAt) {
       body.setLinvel({ x: 0, y: body.linvel().y, z: 0 }, true);
+      if (this.route?.length) { this.walkTarget = this.route.shift(); return; } // next waypoint
       if (this.state === 'arriving') {
-        if (this.route?.length) { this.walkTarget = this.route.shift(); return; } // next waypoint
         if (this.seat) g.seatPatient(this);      // plop down in the chair
         else this.state = 'waiting';
       }
@@ -226,12 +220,6 @@ export class PatientSim {
     }
     this.yaw = Math.atan2(dx, dz);
     body.setLinvel({ x: (dx / d) * speed, y: body.linvel().y, z: (dz / d) * speed }, true);
-  }
-
-  _deadTick(dtReal) {
-    if (this.removeTimerReal < 0) this.removeTimerReal = 25;
-    this.removeTimerReal -= dtReal;
-    if (this.removeTimerReal <= 0) this.game.removePatient(this.ent);
   }
 
   // ---------------- transitions ----------------

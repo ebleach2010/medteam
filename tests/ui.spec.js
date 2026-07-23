@@ -53,7 +53,7 @@ test('HOLD TO GRAB button actually grabs; release lets go', async ({ page }) => 
 test('contextual prompt button opens the med cabinet', async ({ page }) => {
   await boot(page);
   await page.locator('#screen .go').click();
-  await page.evaluate(() => window.__game.teleport('nurse', -4.6, 16.2));
+  await page.evaluate(() => window.__game.teleport('nurse', -6, 17.7));
   await page.waitForSelector('#prompt', { state: 'visible' });
   await page.locator('#prompt').dispatchEvent('pointerdown');
   await page.waitForFunction(() => window.__game.state().modal === 'cabinet');
