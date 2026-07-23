@@ -156,7 +156,7 @@ export class UI {
   _itemLabels() {
     const g = this.game, ap = g.active.pos;
     const near = [...g.world.byTag('items')]
-      .filter((it) => !it.heldBy)
+      .filter((it) => !it.heldBy && it.itemKind !== 'prop')
       .map((it) => { const p = it.body.translation(); return { it, d: Math.hypot(p.x - ap.x, p.z - ap.z), p }; })
       .filter((x) => x.d < 3.2)
       .sort((a, b) => a.d - b.d)

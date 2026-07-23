@@ -115,7 +115,10 @@ export class Character {
     // gait driven by actual velocity
     const v = this.body.linvel();
     const speed01 = Math.min(1, Math.hypot(v.x, v.z) / SPRINT);
-    animateRig(this.mesh, dt, now, speed01, { reach: !!(this.carrying || this.dragging) });
+    animateRig(this.mesh, dt, now, speed01, {
+      reach: !!(this.carrying || this.dragging),
+      sitting: !!this.atPost && !this.carrying && !this.dragging,
+    });
   }
 
   tryGrab() {

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { mat, emat, glowSprite, makeBed, makeChair, makeCentrifuge, makeScanner, makeShelf, makeDesk } from '../render/meshes.js';
+import { mat, emat, glowSprite, GLOW_TEX, makeBed, makeChair, makeCentrifuge, makeScanner, makeShelf, makeDesk } from '../render/meshes.js';
 import { SHELVES } from '../data/meds.js';
 
 // Single-player hospital: compact, sectioned, VERY recognizable.
@@ -58,16 +58,28 @@ export function buildMap(scene, physics) {
     stripe.position.set(-31.6 - i * 0.9, 0.006, 10);
     statics.add(stripe);
   }
-  for (const s of ZONES) {
+  // zone-tinted terrazzo: warm lobby, cool ward, mint lab wing, lilac discharge
+  const FLOOR_TINTS = [0xeadfc2, 0xc6d8e8, 0xc8e0d0, 0xd8cde6];
+  ZONES.forEach((s, zi) => {
     const w = s.x2 - s.x1, d = s.z2 - s.z1;
     const m = new THREE.MeshStandardMaterial({ map: tex.clone(), roughness: 0.85, metalness: 0.08 });
+    m.color.setHex(FLOOR_TINTS[zi]);
     m.map.repeat.set(w / 4, d / 4);
     const top = new THREE.Mesh(new THREE.PlaneGeometry(w, d), m);
     top.rotation.x = -Math.PI / 2;
     top.position.set((s.x1 + s.x2) / 2, 0.006, (s.z1 + s.z2) / 2);
     top.receiveShadow = true;
     statics.add(top);
-  }
+  });
+
+  // soft contact shadow under furniture — fake AO, huge depth win from above
+  const shadowBlob = (x, z, w, d, o = 0.30) => {
+    const sMesh = new THREE.Mesh(new THREE.PlaneGeometry(w, d),
+      new THREE.MeshBasicMaterial({ map: GLOW_TEX, color: 0x000000, transparent: true, opacity: o, depthWrite: false }));
+    sMesh.rotation.x = -Math.PI / 2;
+    sMesh.position.set(x, 0.016, z);
+    statics.add(sMesh);
+  };
 
   // ---- walls ----
   const wallSegs = [];
@@ -113,23 +125,96 @@ export function buildMap(scene, physics) {
   vwall(14, -24, -12);
 
   const wallMat = mat(0xf2f1ee);
-  const bandMat = mat(0x9fb9c6);
+  const bandMat = mat(0x5d99b0);
+  const wainsMat = mat(0xc2d0da);
   const wallGeo = new THREE.BoxGeometry(1, 1, 1);
   for (const w of wallSegs) {
     const len = w.e - w.s, mid = (w.s + w.e) / 2;
     const m = new THREE.Mesh(wallGeo, wallMat);
     const band = new THREE.Mesh(wallGeo, bandMat);
+    const wains = new THREE.Mesh(wallGeo, wainsMat); // lower wainscot panel
     if (w.horiz) {
       m.scale.set(len, WALL_H, 0.3); m.position.set(mid, WALL_H / 2, w.at);
       band.scale.set(len, 0.1, 0.34); band.position.set(mid, 0.64, w.at);
+      wains.scale.set(len, 0.46, 0.35); wains.position.set(mid, 0.24, w.at);
       physics.staticBox(mid, WALL_H / 2, w.at, len / 2, WALL_H / 2, 0.15);
     } else {
       m.scale.set(0.3, WALL_H, len); m.position.set(w.at, WALL_H / 2, mid);
       band.scale.set(0.34, 0.1, len); band.position.set(w.at, 0.64, mid);
+      wains.scale.set(0.35, 0.46, len); wains.position.set(w.at, 0.24, mid);
       physics.staticBox(w.at, WALL_H / 2, mid, 0.15, WALL_H / 2, len / 2);
     }
     m.castShadow = true;
-    statics.add(m, band);
+    statics.add(m, band, wains);
+  }
+
+  // baseboard + wall-base contact shading — ONE merged mesh each, so the
+  // whole hospital gets grounded for two draw calls
+  {
+    const aoC = document.createElement('canvas');
+    aoC.width = 64; aoC.height = 64;
+    const ag = aoC.getContext('2d');
+    const grad = ag.createLinearGradient(0, 0, 0, 64);
+    grad.addColorStop(0, 'rgba(0,0,0,0.42)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ag.fillStyle = grad; ag.fillRect(0, 0, 64, 64);
+    const aoTex = new THREE.CanvasTexture(aoC);
+    const pos = [], uv = [], idx = [];
+    const AO_W = 0.62, EPS = 0.011;
+    const quad = (ax, az, bx, bz, cx2, cz2, dx2, dz2) => {
+      const b = pos.length / 3;
+      pos.push(ax, EPS, az, bx, EPS, bz, cx2, EPS, cz2, dx2, EPS, dz2);
+      uv.push(0, 1, 0, 1, 1, 0, 1, 0); // wall edge dark → fades out
+      idx.push(b, b + 2, b + 1, b, b + 3, b + 2);
+    };
+    for (const w of wallSegs) {
+      if (w.horiz) {
+        quad(w.s, w.at + 0.18, w.e, w.at + 0.18, w.e, w.at + 0.18 + AO_W, w.s, w.at + 0.18 + AO_W);
+        quad(w.e, w.at - 0.18, w.s, w.at - 0.18, w.s, w.at - 0.18 - AO_W, w.e, w.at - 0.18 - AO_W);
+      } else {
+        quad(w.at - 0.18, w.s, w.at - 0.18, w.e, w.at - 0.18 - AO_W, w.e, w.at - 0.18 - AO_W, w.s);
+        quad(w.at + 0.18, w.e, w.at + 0.18, w.s, w.at + 0.18 + AO_W, w.s, w.at + 0.18 + AO_W, w.e);
+      }
+    }
+    const aoGeo = new THREE.BufferGeometry();
+    aoGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    aoGeo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    aoGeo.setIndex(idx);
+    const aoMesh = new THREE.Mesh(aoGeo, new THREE.MeshBasicMaterial({
+      map: aoTex, transparent: true, depthWrite: false,
+    }));
+    aoMesh.renderOrder = 1;
+    statics.add(aoMesh);
+  }
+  // dark skirting line at every wall foot (merged boxes → one mesh)
+  {
+    const skirt = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), mat(0x5b6874), wallSegs.length);
+    const m4 = new THREE.Matrix4();
+    wallSegs.forEach((w, i) => {
+      const len = w.e - w.s, mid = (w.s + w.e) / 2;
+      if (w.horiz) m4.makeScale(len, 0.09, 0.4), m4.setPosition(mid, 0.045, w.at);
+      else m4.makeScale(0.4, 0.09, len), m4.setPosition(w.at, 0.045, mid);
+      skirt.setMatrixAt(i, m4);
+    });
+    statics.add(skirt);
+  }
+
+  // hospital wayfinding: colored guide stripes painted down the main corridor
+  {
+    const stripe = (x, z, w, d, color) => {
+      const sm = new THREE.Mesh(new THREE.PlaneGeometry(w, d),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.6, depthWrite: false }));
+      sm.rotation.x = -Math.PI / 2;
+      sm.position.set(x, 0.014, z);
+      sm.renderOrder = 2;
+      statics.add(sm);
+    };
+    stripe(-8, -5.05, 42, 0.16, 0xd8564a);  // red — exam rooms
+    stripe(-8, -5.5, 42, 0.16, 0x3f9d8a);   // teal — lab & diagnostics
+    stripe(-6.5, -5.95, 39, 0.16, 0x4bb35f); // green — discharge
+    stripe(8.5, -9.5, 0.16, 5.0, 0x4bb35f);  // green turns south through the arch
+    stripe(-14.5, -1.5, 0.16, 7.1, 0xd8564a); // red feeds up through the triage door
+    stripe(-16.5, 2.8, 4.16, 0.16, 0xd8564a);
   }
 
   // ---- the ten patient rooms: bed + desk each, numbered ----
@@ -137,10 +222,19 @@ export function buildMap(scene, physics) {
   const roomDesks = [];
   const roomLights = [];
   const ROOM_X = [-28, -24, -20, -16, -12, -8, -3.5, 1.5, 6.5, 11.5];
+  const BLANKETS = [0x9fc4e8, 0x8fceb4, 0xe8c49f];
   ROOM_X.forEach((cx, i) => {
-    const g = makeBed(0x9fc4e8);
+    const g = makeBed(BLANKETS[i % 3]);
     g.position.set(cx - 0.7, 0, -9.9);
     statics.add(g);
+    shadowBlob(cx - 0.7, -9.9, 2.0, 3.2);
+    shadowBlob(cx + 1.05, -10.6, 1.7, 1.3);
+    const matt = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 3.4),
+      new THREE.MeshStandardMaterial({ color: BLANKETS[i % 3], roughness: 0.95, transparent: true, opacity: 0.38 }));
+    matt.rotation.x = -Math.PI / 2;
+    matt.position.set(cx - 0.4, 0.012, -9.6);
+    matt.receiveShadow = true;
+    statics.add(matt);
     physics.staticBox(cx - 0.7, 0.25, -9.9, 0.5, 0.25, 1.05);
     beds.push({ x: cx - 0.7, z: -9.9, y: 0, room: 'room', roomNo: i + 1, occupant: null, index: i });
     const desk = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.78, 0.6), mat(0xd9c6a8));
@@ -200,6 +294,8 @@ export function buildMap(scene, physics) {
   const penCup = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.12, 8), mat(0xc0392b));
   penCup.position.set(-23.2, 0.79, 9.05);
   statics.add(monB, monScr, kbd, papers, penCup);
+  shadowBlob(-24.2, 9.5, 5.4, 2.4, 0.26);
+  shadowBlob(-26.35, 8.9, 1.6, 3.6, 0.26);
   const receptionSeat = { x: -24.2, z: 8.35 }; // the Game parks a seated rig here
 
   // ---- waiting-area dressing (depth!) ----
@@ -228,6 +324,9 @@ export function buildMap(scene, physics) {
   const tvScr = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.82), emat(0x6fa8d8, 0.5));
   tvScr.position.set(-20.5, 2.1, 16.94); tvScr.rotation.y = Math.PI;
   statics.add(vend, vendGlass, coolerBase, table, tvFrame, tvScr);
+  shadowBlob(-16.9, 12.4, 2.0, 1.6, 0.3);
+  shadowBlob(-26.6, 12.2, 1.1, 1.1, 0.26);
+  shadowBlob(-20.4, 14.7, 2.6, 1.7, 0.24);
 
   // rampage waypoints: the WHOLE waiting area — angry patients storm between
   // these and shove whatever physics props are in reach
@@ -254,6 +353,7 @@ export function buildMap(scene, physics) {
     s.position.set(x, 0, z);
     statics.add(s);
     physics.staticBox(x, 0.5, z, 1.3, 0.5, 0.3);
+    shadowBlob(x, z, 3.0, 1.1, 0.26);
     shelfUnits.push({ shelf: SHELVES[i], x, z });
   });
 
@@ -262,11 +362,31 @@ export function buildMap(scene, physics) {
   desk.position.set(-16, 0, -1.2);
   statics.add(desk);
   physics.staticBox(-16, 0.45, -1.2, 1.6, 0.45, 0.55);
+  shadowBlob(-16, -1.2, 4.0, 1.8, 0.26);
+  // the nurses' station: idle staff SIT here until dispatched
+  // tucked toward the west end of the desk — clear of the door funnel at
+  // (-14.5, 2) so a dragged patient never plows through the seated crew
+  const staffSeats = {
+    aide: { x: -18.5, z: -0.3, yaw: Math.PI },
+    porter: { x: -16.1, z: -0.3, yaw: Math.PI },
+    surgeon: { x: -17.3, z: -0.3, yaw: Math.PI },
+    tech: { x: 6.6, z: -0.6, yaw: 0 },
+  };
+  for (const key of ['aide', 'porter', 'surgeon']) {
+    const c = makeChair();
+    c.position.set(staffSeats[key].x, 0, staffSeats[key].z + 0.15);
+    c.rotation.y = Math.PI;
+    statics.add(c);
+  }
+  const techStool = makeChair();
+  techStool.position.set(staffSeats.tech.x, 0, staffSeats.tech.z - 0.15);
+  statics.add(techStool);
 
   // ---- LAB (Z3 south-west) ----
   const centMesh = makeCentrifuge();
   centMesh.position.set(-3.6, 0, 0.6);
   statics.add(centMesh);
+  shadowBlob(-3.6, 0.6, 2.4, 1.6, 0.28);
   physics.staticBox(-3.6, 0.4, 0.6, 0.8, 0.4, 0.5);
   const centrifuge = { x: -2.4, z: 0, y: 0, mesh: centMesh, busy: null, timer: 0, outX: -1.6, outZ: -0.9 };
 
@@ -274,6 +394,7 @@ export function buildMap(scene, physics) {
   const scan = makeScanner();
   scan.position.set(8.6, 0, 0.4);
   statics.add(scan);
+  shadowBlob(8.6, 0.5, 3.2, 2.2, 0.28);
   physics.staticBox(8.6, 0.5, 0.9, 1.1, 0.5, 0.5);
   const diagnostics = {
     machine: { x: 8.6, z: 0.4 },
@@ -337,7 +458,7 @@ export function buildMap(scene, physics) {
 
   return {
     beds, seats, centrifuge, imagingPad, diagnostics, shelfUnits, rings, dropRing,
-    roomDesks, roomLights, knockSpots, triageDesk, receptionSeat,
+    roomDesks, roomLights, knockSpots, triageDesk, receptionSeat, staffSeats,
     discharge, gateOut, firePit, fire,
     floorYAt: () => 0,
     zoneOf, zoneDoors: ZONE_DOORS,

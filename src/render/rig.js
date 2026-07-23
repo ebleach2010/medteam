@@ -26,7 +26,7 @@ function limb(len, rTop, rBot, material, footMat) {
 export function buildRig(p) {
   const root = new THREE.Group();
   const inner = new THREE.Group();
-  inner.scale.setScalar(0.95);
+  inner.scale.setScalar(0.8);
   root.add(inner);
   const bob = new THREE.Group();
   inner.add(bob);

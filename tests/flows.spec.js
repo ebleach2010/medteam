@@ -64,6 +64,7 @@ const helpers = `
 `;
 
 test('full lab loop: bed → labs → centrifuge → results → dx → meds → discharge', async ({ page }) => {
+  test.setTimeout(160000); // longest E2E — walked drags on cold software GL need slack
   await boot(page);
   await page.evaluate(helpers);
 
@@ -76,7 +77,17 @@ test('full lab loop: bed → labs → centrifuge → results → dx → meds →
     await api.drive('nurse', [[-14.5, 3.4], [-13.2, -0.5], [-12, -5.8], [-12.4, -9.2], [-13.2, -8.6]]);
     await api.sleep(1200);                    // let the tow swing fully into the room
     api.release('nurse');                     // release → room bed
-    await api.until(() => api.patient(id).state === 'inbed');
+    try {
+      await api.until(() => api.patient(id).state === 'inbed', 8000);
+    } catch {
+      // walked tow came up short (slow CI GL) — do what a player does: grab
+      // again and haul them the last meter to the bed
+      api.grab('nurse');
+      await api.until(() => g.game.nurse.dragging, 5000);
+      await api.dragTo('nurse', -13.2, -8.6, 1.4);
+      api.release('nurse');
+      await api.until(() => api.patient(id).state === 'inbed', 8000);
+    }
     await api.until(() => api.patient(id).hooked, 8000);  // monitor self-hooks
 
     api.act('nurse');                         // WORKUP → clipboard

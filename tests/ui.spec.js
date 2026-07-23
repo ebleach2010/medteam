@@ -14,22 +14,23 @@ test('title button starts the game; SWAP toggles roles', async ({ page }) => {
   await boot(page);
   await page.locator('#screen .go').click();
   await page.waitForFunction(() => window.__game.state().mode === 'playing');
-  expect((await page.evaluate(() => window.__game.state().active))).toBe('nurse');
+  // you ARE the physician — the nurse is the swap-in sidekick
+  expect((await page.evaluate(() => window.__game.state().active))).toBe('doctor');
   await page.locator('#btn-swap').dispatchEvent('pointerdown');
-  await page.waitForFunction(() => window.__game.state().active === 'doctor');
+  await page.waitForFunction(() => window.__game.state().active === 'nurse');
 });
 
 test('joystick drag moves the character', async ({ page }) => {
   await boot(page);
   await page.locator('#screen .go').click();
-  const before = await page.evaluate(() => window.__game.state().chars[0].pos.x);
-  // drag on the left-half joystick zone with the mouse (same pointer pipeline)
+  const before = await page.evaluate(() => window.__game.state().chars[1].pos.x);
+  // drag on the joystick zone with the mouse (same pointer pipeline)
   await page.mouse.move(180, 250);
   await page.mouse.down();
   await page.mouse.move(260, 250, { steps: 5 });
   await page.waitForTimeout(1500);
   await page.mouse.up();
-  const after = await page.evaluate(() => window.__game.state().chars[0].pos.x);
+  const after = await page.evaluate(() => window.__game.state().chars[1].pos.x);
   expect(after).toBeGreaterThan(before + 1);
 });
 
@@ -39,28 +40,28 @@ test('GRAB button toggles: tap grabs, tap again lets go', async ({ page }) => {
   await page.evaluate(() => {
     const g = window.__game;
     const id = g.spawnCase('strep', -19.5, 8.8);
-    g.teleport('nurse', -20, 8);
+    g.teleport('doctor', -20, 8);
     window.__pid = id;
   });
   await page.waitForTimeout(400);
   const grab = page.locator('#btn-grab');
   await grab.dispatchEvent('pointerdown');
-  await page.waitForFunction(() => !!window.__game.game.nurse.dragging, null, { timeout: 5000 });
+  await page.waitForFunction(() => !!window.__game.game.doctor.dragging, null, { timeout: 5000 });
   await grab.dispatchEvent('pointerup');   // lifting the finger must NOT release
   await page.waitForTimeout(400);
-  expect(await page.evaluate(() => !!window.__game.game.nurse.dragging)).toBe(true);
+  expect(await page.evaluate(() => !!window.__game.game.doctor.dragging)).toBe(true);
   await grab.dispatchEvent('pointerdown'); // second tap lets go
-  await page.waitForFunction(() => !window.__game.game.nurse.dragging);
+  await page.waitForFunction(() => !window.__game.game.doctor.dragging);
 });
 
 test('contextual prompt button opens the med cabinet', async ({ page }) => {
   await boot(page);
   await page.locator('#screen .go').click();
-  await page.evaluate(() => window.__game.teleport('nurse', -6, 17.7));
+  await page.evaluate(() => window.__game.teleport('doctor', -6, 17.7));
   await page.waitForSelector('#prompt', { state: 'visible' });
   await page.locator('#prompt').dispatchEvent('pointerdown');
   await page.waitForFunction(() => window.__game.state().modal === 'cabinet');
   // pick a med through the real modal button
   await page.locator('#modal .medbtn').first().dispatchEvent('pointerdown');
-  await page.waitForFunction(() => !!window.__game.state().chars[0].carrying);
+  await page.waitForFunction(() => !!window.__game.state().chars[1].carrying);
 });

@@ -48,7 +48,12 @@ export class Game {
     this.receptionist.position.set(this.map.receptionSeat.x, 0.28, this.map.receptionSeat.z);
     this.renderer.scene.add(this.receptionist);
     this.tasks = new Map();      // staff char → current task
-    this.activeIdx = 0;
+    this.activeIdx = 1;          // you play the PHYSICIAN; SWAP for the nurse
+    // idle staff sit at the nurses' station (tech at diagnostics) until called
+    this.aide.home = this.map.staffSeats.aide;
+    this.porter.home = this.map.staffSeats.porter;
+    this.surgeon.home = this.map.staffSeats.surgeon;
+    this.tech.home = this.map.staffSeats.tech;
 
     this.ui = new UI(this);
     this.intentQueue = [];
@@ -201,6 +206,7 @@ export class Game {
 
   fixedTick(dt) {
     this.timeReal += dt;
+    this._tickN = (this._tickN ?? 0) + 1;
     if (this.mode === 'playing') this.clock.update(dt);
 
     // player input → intents → sim (the co-op seam)
@@ -222,7 +228,9 @@ export class Game {
       return;
     }
 
-    this.idle.applyMove(0, 0);
+    // tests/co-op can still drive the idle twin — zero it only after a short
+    // grace, since catch-up steps outnumber inbound MOVE intents on slow GPUs
+    if (this._tickN - (this.idle._moveTick ?? -999) > 6) this.idle.applyMove(0, 0);
     this._staffTick(dt);
     for (const c of this.world.byTag('chars')) c.fixedUpdate(dt);
     for (const p of [...this.world.byTag('patients')]) p.sim.tick(dt);
@@ -324,6 +332,30 @@ export class Game {
   }
 
   _staffTick(dt) {
+    // off-duty staff head back to their post and SIT until dispatched
+    for (const ch of [this.aide, this.porter, this.tech, this.surgeon]) {
+      if (this.tasks.has(ch)) { ch.atPost = false; continue; }
+      const h = ch.home;
+      if (!h) continue;
+      const p = ch.pos;
+      const dx = h.x - p.x, dz = h.z - p.z, d = Math.hypot(dx, dz);
+      if (d > 0.45) {
+        ch.atPost = false;
+        // furniture dodge: if we're pushing into a desk and not moving,
+        // sidestep along it until the way home is clear
+        let mx = dx / d, mz = dz / d;
+        const v = ch.body.linvel();
+        if (Math.hypot(v.x, v.z) < 0.3) ch._homeStuck = (ch._homeStuck ?? 0) + dt;
+        else if ((ch._dodgeT ?? 0) <= 0) ch._homeStuck = 0;
+        if (ch._homeStuck > 0.6) { ch._dodgeDir = ch._dodgeDir ?? 1; ch._dodgeT = 0.9; ch._homeStuck = 0; }
+        if ((ch._dodgeT ?? 0) > 0) {
+          ch._dodgeT -= dt;
+          const s = ch._dodgeDir ?? 1;
+          const tx = mx; mx = mz * s; mz = -tx * s;
+        }
+        ch.applyMove(mx * 0.55, mz * 0.55);
+      } else { ch.applyMove(0, 0); ch.atPost = true; ch.yaw = h.yaw; }
+    }
     for (const [ch, t] of [...this.tasks]) {
       // wall-snag failsafe: if the towed patient jams on a corner for over a
       // second, the staffer yanks the gurney free (snap them in behind)
@@ -355,6 +387,14 @@ export class Game {
 
   _done(ch) { this.tasks.delete(ch); }
 
+  _playerNear(p, d) {
+    for (const c of [this.nurse, this.doctor]) {
+      const a = c.pos;
+      if (Math.hypot(a.x - p.x, a.z - p.z) <= d) return true;
+    }
+    return false;
+  }
+
   // the phlebotomist doesn't come to you — they scoop the patient up and DRAG
   // them to the lab, draw there, spin, and drag them back with the results
   _task_labs(ch, t, dt) {
@@ -373,8 +413,7 @@ export class Game {
     }
     if (t.phase === 'awaitChoice') {
       if (sim.state !== 'inbed') { this._done(ch); return; }
-      const a = this.active.pos, s = ch.pos;
-      if (Math.hypot(a.x - s.x, a.z - s.z) > 3.2) { t.asked = false; return; }
+      if (!this._playerNear(ch.pos, 3.2)) { t.asked = false; return; }
       if (!t.asked && !this.ui.modals.open) { t.asked = true; this.ui.modals.labPick({ patient: t.patient, task: t }); }
       return;
     }
@@ -509,9 +548,7 @@ export class Game {
       return;
     }
     if (t.phase === 'awaitChoice') {
-      const d = this.map.diagnostics.dock;
-      const a = this.active.pos;
-      if (Math.hypot(a.x - d.x, a.z - d.z) > 3.4) { t.asked = false; return; }
+      if (!this._playerNear(this.map.diagnostics.dock, 3.4)) { t.asked = false; return; }
       if (!t.asked && !this.ui.modals.open) { t.asked = true; this.ui.modals.studyPick(t); }
       return;
     }
@@ -607,8 +644,7 @@ export class Game {
     }
     if (t.phase === 'awaitChoice') {
       if (sim.state !== 'inbed') { this._done(ch); return; }
-      const a = this.active.pos, s = ch.pos;
-      if (Math.hypot(a.x - s.x, a.z - s.z) > 3.2) { t.asked = false; return; }
+      if (!this._playerNear(ch.pos, 3.2)) { t.asked = false; return; }
       if (!t.asked && !this.ui.modals.open) { t.asked = true; this.ui.modals.surgeryPick(t); }
       return;
     }
@@ -906,7 +942,7 @@ export class Game {
   applyIntent(i) {
     const char = [...this.world.byTag('chars')].find((c) => c.id === i.actorId) ?? this.active;
     switch (i.type) {
-      case INTENT.MOVE: char.applyMove(i.payload.x, i.payload.z); break;
+      case INTENT.MOVE: char.applyMove(i.payload.x, i.payload.z); char._moveTick = this._tickN; break;
       case INTENT.GRAB: char.grabHeld = true; char.tryGrab(); break;
       case INTENT.RELEASE: char.grabHeld = false; char.release(); break;
       case INTENT.ACTION: this.actionContext(char)?.run(); break;
@@ -1108,7 +1144,7 @@ export class Game {
       this._dischargeAttempt(pt);
       return;
     }
-    const bed = this._nearestFreeBed(pt, 2.4);
+    const bed = this._nearestFreeBed(pt, 2.9); // HFF forgiveness: "close enough" counts
     if (bed && !['dead'].includes(pt.sim.state)) { this.bedPatient(pt, bed); return; }
     this.setPatientDynamic(pt);
     if (!['sedated', 'dead', 'pinned', 'agitated'].includes(pt.sim.state)) pt.sim.state = 'waiting';

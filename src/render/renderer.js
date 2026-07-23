@@ -21,8 +21,10 @@ export class Renderer {
     this.camOffset = new THREE.Vector3(0, 4.9, 6.0); // tight third-person — a few rooms, not the whole hospital
     this.camTarget = new THREE.Vector3();
 
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0xb2bccc, 1.35));
-    const key = new THREE.DirectionalLight(0xfff2dc, 1.9);
+    // contrast recipe: dimmer ambient so the sun actually CARVES — shadows
+    // and wall shading are what make the rooms read as 3D, not tan mush
+    this.scene.add(new THREE.HemisphereLight(0xf4f8ff, 0x8895aa, 1.0));
+    const key = new THREE.DirectionalLight(0xfff2dc, 2.3);
     key.position.set(8, 28, 14);
     key.castShadow = !lite;
     key.shadow.mapSize.set(2048, 2048);

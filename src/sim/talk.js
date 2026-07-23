@@ -23,6 +23,32 @@ const INTENTS = [
   [/why|here|wrong|problem|matter/, (c) => c.complaint[0]],
 ];
 
+// yes/no engine helpers: every factual sentence the patient "knows" about
+// themselves, so "is the toe oozing?" gets checked against the actual case
+const STOP = new Set(['the', 'and', 'your', 'you', 'have', 'has', 'had', 'does', 'did', 'are',
+  'is', 'was', 'were', 'any', 'with', 'there', 'this', 'that', 'they', 'them', 'been', 'ever',
+  'still', 'like', 'get', 'got', 'getting', 'feel', 'feeling', 'notice', 'noticed', 'right', 'left', 'side']);
+const stem = (w) => { const s = w.replace(/(ing|ed|es|s)$/, ''); return s.length >= 3 ? s : w; };
+// patients don't say "erythema" — map street symptoms onto chart language
+const SYN = [
+  ['ooz', 'weep', 'drain', 'discharg', 'pus', 'crust', 'wet'],
+  ['itch', 'scratch', 'prurit'],
+  ['fever', 'hot', 'chill', 'temperature', 'febrile', 'sweat'],
+  ['swoll', 'swell', 'puffy', 'edema'],
+  ['red', 'erythem', 'inflam'],
+  ['throw', 'vomit', 'puk', 'nause', 'sick to'],
+  ['dizz', 'lightheaded', 'spin', 'vertigo', 'faint', 'syncope', 'pass out', 'passed out'],
+  ['breath', 'winded', 'air', 'dyspnea', 'wheez'],
+  ['numb', 'tingl', 'pins', 'paresthes'],
+  ['tired', 'fatigue', 'exhaust', 'weak', 'letharg'],
+  ['bleed', 'blood', 'hemorrhag'],
+  ['cough', 'hack'],
+  ['headach', 'migrain', 'head pound'],
+];
+const expandStems = (st) => { for (const g of SYN) if (g.some((s) => st.startsWith(s) || s.startsWith(st))) return g; return [st]; };
+const factSentences = (c) => [...c.complaint, c.history, c.physical, c.neuro, c.ekg ? `EKG shows ${c.ekg}` : null]
+  .filter(Boolean).flatMap((s) => String(s).split(/(?<=[.!?])\s+/));
+
 export function answerQuestion(sim, text) {
   const q = norm(text);
   if (!q) return '...';
@@ -32,6 +58,40 @@ export function answerQuestion(sim, text) {
   if (/(which|what) (side|one|ankle|leg|arm|knee|wrist|hand|foot|elbow|shoulder|hip|eye|ear)\b/.test(q)
     || /left or right/.test(q)) {
     return `The ${side}. ${c.physical ?? c.complaint[0]}`;
+  }
+  // pain scale
+  if (/scale|out of (10|ten)|1 to 10|how bad|rate (the|your)? ?pain/.test(q)) {
+    const n = Math.min(10, Math.round(2 + c.tier * 1.5 + ((sim.scanSeed ?? 0) % 3)));
+    return `Ehh... a ${n} out of 10. ${n >= 8 ? 'Okay fine, an 11.' : `Maybe a ${n + 1} when I move.`}`;
+  }
+  // yes/no symptom probe: "is the toe oozing?", "any fever?", "does it itch?"
+  if (/^(is|are|does|do|did|has|have|any|was|were|got)\b/.test(q)) {
+    const words = q.split(' ').filter((w) => w.length >= 3 && !STOP.has(w) && !/^(it|its|there)$/.test(w));
+    if (words.length) {
+      const sents = factSentences(c);
+      const sentsN = sents.map(norm);
+      const hits = [], misses = [];
+      for (const w of words) {
+        const alts = expandStems(stem(w));
+        const idx = sentsN.findIndex((s) => alts.some((a) => s.includes(a)));
+        if (idx >= 0) hits.push(sents[idx]);
+        else if (/pain|hurt|sore|tender|ache/.test(w)) hits.push(c.physical ?? c.complaint[0]); // "does it hurt" — obviously
+        else misses.push(w);
+      }
+      if (hits.length && !misses.length) return `Yeah. ${hits[hits.length - 1]}`;
+      if (hits.length) {
+        return sim.game.rng.pick([
+          `${misses[0][0].toUpperCase()}${misses[0].slice(1)}? No, nothing like that. But ${(c.physical ?? c.complaint[0]).toLowerCase()}`,
+          `No ${misses[0]} that I've noticed. It's more that ${(c.physical ?? c.complaint[0]).toLowerCase()}`,
+        ]);
+      }
+      const echo = misses[misses.length - 1] ?? '';
+      return sim.game.rng.pick([
+        `${echo ? `${echo[0].toUpperCase()}${echo.slice(1)}? ` : ''}No, nothing like that.`,
+        'No... I don\'t think so?',
+        `Hm, no. Mostly it's just that ${c.complaint[0].toLowerCase()}`,
+      ]);
+    }
   }
   for (const [re, fn] of INTENTS) if (re.test(q)) return fn(c);
   // topic probe: a question word that appears in their story — answer about

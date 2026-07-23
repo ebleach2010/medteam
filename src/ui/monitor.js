@@ -37,11 +37,12 @@ export class Monitors {
       const s = g.renderer.project(anchor);
       if (!s) { card.el.style.display = 'none'; continue; }
       card.el.style.display = 'block';
+      // stays glued to its wall mount / body — when the room scrolls off
+      // screen the card goes with it instead of clamping and tagging along
+      const offscreen = s.x < -70 || s.x > window.innerWidth + 70 || s.y < -30 || s.y > window.innerHeight + 10;
+      if (offscreen) { card.el.style.display = 'none'; continue; }
       if (bed) {
-        // mounted on the far wall: hang DOWN from the mount point, clamped on-screen
-        const x = Math.min(Math.max(s.x, 90), window.innerWidth - 90);
-        const y = Math.max(s.y, 44);
-        card.el.style.transform = `translate(${x | 0}px, ${y | 0}px) translate(-50%, 0)`;
+        card.el.style.transform = `translate(${s.x | 0}px, ${Math.max(s.y, 6) | 0}px) translate(-50%, 0)`;
       } else {
         card.el.style.transform = `translate(${(s.x + 30) | 0}px, ${(s.y - 40) | 0}px)`;
       }
