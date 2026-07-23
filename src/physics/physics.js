@@ -36,7 +36,8 @@ export class Physics {
                       linDamp = 0.6, angDamp = 3.0 } = {}) {
     const desc = RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(x, halfHeight + radius + 0.05, z)
-      .setLinearDamping(linDamp).setAngularDamping(angDamp).setCanSleep(false);
+      .setLinearDamping(linDamp).setAngularDamping(angDamp).setCanSleep(false)
+      .setCcdEnabled(true); // fast bodies + thin ramps must never tunnel
     if (tiltWobble) desc.enabledRotations(true, false, true);
     else desc.lockRotations();
     const body = this.world.createRigidBody(desc);

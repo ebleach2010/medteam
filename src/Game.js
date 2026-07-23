@@ -331,10 +331,57 @@ export class Game {
   // medical acts: reading results, drawing blood, the cabinet, diagnosing.
   actionContext(char) {
     const held = char.carrying;
+    // manual triggers for everything a station also does automatically —
+    // the button makes the interaction legible, the auto keeps it forgiving
+    if (held?.itemKind === 'med') {
+      const pt = this.nearestPatient(char, 1.9, (s) => s.canReceiveMeds());
+      if (pt) {
+        const sedating = held.data.medId === 'sedative' && ['agitated', 'pinned'].includes(pt.sim.state);
+        return {
+          ico: sedating ? '💉' : '💊', color: '#21b573',
+          label: sedating ? 'SEDATE' : `GIVE ${held.label.toUpperCase()}`,
+          run: () => { const id = held.data.medId; this._consumeHeld(char); giveMed(this, pt, id); },
+        };
+      }
+    }
+    if (held?.itemKind === 'vial') {
+      const c = this.map.centrifuge;
+      const p = char.pos;
+      if (!c.busy && Math.hypot(p.x - c.x, p.z - c.z) < 2.2) {
+        return {
+          ico: '🌀', label: 'LOAD CENTRIFUGE', color: '#36b5c9',
+          run: () => {
+            const pid = held.data.patientId;
+            this._consumeHeld(char);
+            c.busy = { patientId: pid };
+            c.timer = 20;
+            const pt = [...this.world.byTag('patients')].find((q) => q.id === pid);
+            if (pt) pt.sim.labState = 'spinning';
+            this.ui.toast('🌀 Centrifuge spinning (20s)...');
+          },
+        };
+      }
+    }
+    const pad = this.map.imagingPad;
+    if (!this._scanJob && !this.ui.modals.open) {
+      const onPad = this.nearestPatient(char, 3.0, (s) =>
+        s.case.imaging && !s.imagingDone && !['dead', 'agitated'].includes(s.state) &&
+        Math.hypot(s.ent.body.translation().x - pad.x, s.ent.body.translation().z - pad.z) < 2.0);
+      if (onPad) {
+        return {
+          ico: '📷', label: 'START SCAN', color: '#8f6fd8',
+          run: () => {
+            this._scanJob = { patient: onPad, t: 3 };
+            this.ui.toast(`📷 Scanning ${onPad.sim.displayName}... hold still...`);
+            this.audio.tap();
+          },
+        };
+      }
+    }
     if (held?.itemKind === 'paper') {
       const pt = [...this.world.byTag('patients')].find((p) => p.id === held.data.patientId);
       return {
-        ico: '📄', label: 'READ RESULTS',
+        ico: '📄', label: 'READ RESULTS', color: '#c9a83c',
         run: () => {
           if (!pt) { this.ui.toast('Patient is gone...'); return; }
           if (char.role === 'doctor' && pt.sim.labState !== 'read') this.addScore(15, 'Results to the doctor');
@@ -346,7 +393,7 @@ export class Game {
     // med cabinet: any pharmacy shelf is a face of the same tabbed cabinet
     const cp = char.pos;
     const nearShelf = this.map.shelfUnits.some((u) => Math.hypot(u.x - cp.x, u.z - cp.z) < 2.3);
-    if (nearShelf) return { ico: '💊', label: 'MED CABINET', run: () => this.ui.modals.cabinet() };
+    if (nearShelf) return { ico: '💊', label: 'OPEN MED CABINET', color: '#d05a9e', run: () => this.ui.modals.cabinet() };
 
     const pt = this.nearestPatient(char, 1.9, (s) => s.state !== 'dead');
     if (!pt) return null;
@@ -354,7 +401,7 @@ export class Game {
     if (sim.state === 'inbed') {
       if (!held && sim.labState === 'none' && sim.case.labs) {
         return {
-          ico: '🩸', label: 'DRAW BLOOD',
+          ico: '🩸', label: 'DRAW BLOOD', color: '#d05450',
           run: () => {
             sim.labState = 'drawn';
             const a = char.handAnchor();
@@ -367,7 +414,7 @@ export class Game {
           },
         };
       }
-      if (char.role === 'doctor') return { ico: '✅', label: 'DIAGNOSE', run: () => this.ui.modals.diagnose(pt) };
+      if (char.role === 'doctor') return { ico: '✅', label: 'DIAGNOSE', color: '#2f80ff', run: () => this.ui.modals.diagnose(pt) };
     }
     return null;
   }

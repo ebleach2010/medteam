@@ -151,8 +151,10 @@ export function buildMap(scene, physics) {
     const cx = axis === 'z' ? x : x + (dir * run) / 2;
     const cz = axis === 'z' ? z + (dir * run) / 2 : z;
     const cy = (yLo + yHi) / 2;
-    if (axis === 'z') physics.staticRamp(cx, cy, cz, width / 2, 0.12, len / 2, 'x', -dir * angle);
-    else physics.staticRamp(cx, cy, cz, len / 2, 0.12, width / 2, 'z', dir * angle);
+    // thick slab collider (thin ones let fast bodies tunnel through and vanish
+    // under the stairs); center sunk so the walking surface stays on the steps
+    if (axis === 'z') physics.staticRamp(cx, cy - 0.34, cz, width / 2, 0.45, len / 2, 'x', -dir * angle);
+    else physics.staticRamp(cx, cy - 0.34, cz, len / 2, 0.45, width / 2, 'z', dir * angle);
     // visible steps
     const n = 10;
     for (let i = 0; i < n; i++) {
@@ -176,8 +178,8 @@ export function buildMap(scene, physics) {
       rail.position.set(rx, cy + 0.55, rz);
       rail.rotation[axis === 'z' ? 'x' : 'z'] = (axis === 'z' ? -dir : dir) * angle;
       statics.add(rail);
-      if (axis === 'z') physics.staticRamp(rx, cy + 0.55, rz, 0.06, 0.45, len / 2 + 0.3, 'x', -dir * angle);
-      else physics.staticRamp(rx, cy + 0.55, rz, len / 2 + 0.3, 0.45, 0.06, 'z', dir * angle);
+      if (axis === 'z') physics.staticRamp(rx, cy + 0.55, rz, 0.16, 0.5, len / 2 + 0.3, 'x', -dir * angle);
+      else physics.staticRamp(rx, cy + 0.55, rz, len / 2 + 0.3, 0.5, 0.16, 'z', dir * angle);
     }
   }
   stairs(-14.5, 8, 'z', -1, F.f1, F.f2);   // F1 → F2: runs north from z=8 to z=2
@@ -309,7 +311,7 @@ export function buildMap(scene, physics) {
     beds, seats, centrifuge, imagingPad, shelfUnits, rings, dropRing, floorYAt,
     entrance: { x: -28.2, z: 10 },
     spawnOutside: { x: -32.5, z: 10 },
-    insideWaypoint: { x: -26.5, z: 11.5 },
+    insideWaypoint: { x: -27, z: 13.4 }, // south of the reception desk — no more desk-wedged patients
     nurseSpawn: { x: -20, z: 8 },
     doctorSpawn: { x: -18, z: 10 },
   };

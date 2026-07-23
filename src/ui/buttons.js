@@ -1,7 +1,8 @@
 import { INTENT, make } from '../intents/intents.js';
 
-// Right-thumb cluster: GRAB, context ACTION (hold ≥300ms → radial wheel),
-// TACKLE (only near an agitated patient), SWAP (role toggle).
+// Controls: HOLD grab (sticky hands) · big contextual PROMPT pill (the
+// tether/rec-room "Play —" pattern) · ORDERS button opens the radial wheel
+// (press, drag, release) · TACKLE near a rampage · SWAP roles.
 export class Buttons {
   constructor(root, game) {
     this.game = game;
@@ -12,12 +13,22 @@ export class Buttons {
       root.appendChild(b);
       return b;
     };
-    this.grab = mk('btn-grab', '✋', 'GRAB');
-    this.action = mk('btn-action', '⚡', '—');
+    this.grab = mk('btn-grab', '✋', 'HOLD TO GRAB');
+    this.orders = mk('btn-action', '📋', 'ORDERS');
     this.tackle = mk('btn-tackle', '💥', 'TACKLE');
     this.swap = mk('btn-swap', '🔄', 'SWAP');
 
-    // HFF grab: HOLD the button to keep your hands sticky, release to let go
+    // the big contextual prompt — appears when the world has something to say
+    this.prompt = document.createElement('button');
+    this.prompt.id = 'prompt';
+    root.appendChild(this.prompt);
+    this.prompt.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      game.enqueue(make(INTENT.ACTION, game.active.id));
+      game.audio.tap();
+    });
+
+    // HFF grab: HOLD to keep hands sticky, release to let go
     this.grab.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       this.grab.setPointerCapture(e.pointerId);
@@ -26,13 +37,14 @@ export class Buttons {
     const grabUp = (e) => { e.preventDefault(); game.enqueue(make(INTENT.RELEASE, game.active.id)); };
     this.grab.addEventListener('pointerup', grabUp);
     this.grab.addEventListener('pointercancel', grabUp);
-    // desktop: hold Space to grab
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Space' && !e.repeat) game.enqueue(make(INTENT.GRAB, game.active.id));
+      if (e.code === 'KeyE') game.enqueue(make(INTENT.ACTION, game.active.id));
     });
     window.addEventListener('keyup', (e) => {
       if (e.code === 'Space') game.enqueue(make(INTENT.RELEASE, game.active.id));
     });
+
     this.swap.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       game.enqueue(make(INTENT.SWAP_ROLE, 0));
@@ -42,39 +54,31 @@ export class Buttons {
       game.enqueue(make(INTENT.TACKLE, game.active.id));
     });
 
-    // ACTION: tap = context action, hold = radial wheel
-    let holdT = null, wheelOpened = false;
-    this.action.addEventListener('pointerdown', (e) => {
+    // ORDERS wheel: opens on press, pick by dragging, commits on release
+    this.orders.addEventListener('pointerdown', (e) => {
       e.preventDefault();
-      this.action.setPointerCapture(e.pointerId);
-      wheelOpened = false;
-      holdT = setTimeout(() => {
-        wheelOpened = true;
-        game.ui.wheel.open(e.clientX, e.clientY);
-      }, 300);
+      this.orders.setPointerCapture(e.pointerId);
+      game.ui.wheel.open(e.clientX, e.clientY);
     });
-    this.action.addEventListener('pointermove', (e) => {
-      if (wheelOpened) game.ui.wheel.track(e.clientX, e.clientY);
-    });
-    const up = (e) => {
-      clearTimeout(holdT);
-      if (wheelOpened) { game.ui.wheel.commit(); wheelOpened = false; }
-      else if (e.type === 'pointerup') game.enqueue(make(INTENT.ACTION, game.active.id));
-    };
-    this.action.addEventListener('pointerup', up);
-    this.action.addEventListener('pointercancel', (e) => { clearTimeout(holdT); game.ui.wheel.close(); });
+    this.orders.addEventListener('pointermove', (e) => game.ui.wheel.track(e.clientX, e.clientY));
+    this.orders.addEventListener('pointerup', () => game.ui.wheel.commit());
+    this.orders.addEventListener('pointercancel', () => game.ui.wheel.close());
   }
 
   update() {
     const g = this.game;
     const ctx = g.actionContext(g.active);
-    this.action.querySelector('.ico').textContent = ctx?.ico ?? '⚡';
-    this.action.querySelector('.lbl').textContent = ctx?.label ?? '…';
-    this.action.classList.toggle('disabled', !ctx);
+    if (ctx) {
+      this.prompt.style.display = 'flex';
+      this.prompt.innerHTML = `<span>${ctx.ico}</span> ${ctx.label}`;
+      this.prompt.style.borderColor = ctx.color ?? '#2f80ff';
+      this.prompt.style.boxShadow = `0 6px 20px rgba(0,0,0,.45), 0 0 22px ${ctx.color ?? '#2f80ff'}66`;
+    } else {
+      this.prompt.style.display = 'none';
+    }
     const gl = this.grab.querySelector('.lbl');
     gl.textContent = (g.active.carrying || g.active.dragging) ? 'HOLDING'
       : g.active.grabHeld ? 'STICKY…' : 'HOLD TO GRAB';
-    // tackle only surfaces when someone's rampaging nearby
     const near = g.nearestPatient(g.active, 3.2, (s) => s.state === 'agitated');
     this.tackle.style.display = near ? 'flex' : 'none';
   }

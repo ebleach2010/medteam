@@ -87,9 +87,10 @@ export class Character {
     if (this.dragging) {
       const a = this.handAnchor();
       const t = { x: a.x, y: this.body.translation().y - 0.3, z: a.z };
-      const imp = springToward(this.dragging.body, t, { k: 2600, c: 620, maxForce: 1500, dt });
+      const imp = springToward(this.dragging.body, t, { k: 3200, c: 700, maxForce: 2400, dt });
       // equal-and-opposite reaction: a heavy patient visibly yanks you around
-      this.body.applyImpulse({ x: -imp.x * 0.55, y: 0, z: -imp.z * 0.55 }, true);
+      // (scaled down so hauling uphill is arduous, not futile)
+      this.body.applyImpulse({ x: -imp.x * 0.3, y: 0, z: -imp.z * 0.3 }, true);
     }
   }
 
@@ -124,12 +125,15 @@ export class Character {
       game.ui.toast(`Grabbed: ${best.label}`);
       return;
     }
-    // then a grabbable patient
-    let bp = null, bpD = 1.7;
+    // then a grabbable patient — forgiving HFF magnetism: reach from the hand
+    // OR from the body, whichever is closer
+    const me = this.pos;
+    let bp = null, bpD = 2.1;
     for (const pt of game.world.byTag('patients')) {
       if (!pt.sim.isGrabbable()) continue;
       const p = pt.body.translation();
-      const d = Math.hypot(p.x - a.x, p.z - a.z);
+      if (Math.abs(p.y - me.y) > 1.6) continue; // same floor only
+      const d = Math.min(Math.hypot(p.x - a.x, p.z - a.z), Math.hypot(p.x - me.x, p.z - me.z) + 0.3);
       if (d < bpD) { bp = pt; bpD = d; }
     }
     if (bp) {
