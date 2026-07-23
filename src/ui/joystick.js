@@ -11,10 +11,13 @@ export class Joystick {
     this.origin = { x: 0, y: 0 };
 
     const zone = document.createElement('div');
-    zone.style.cssText = 'position:absolute;left:0;top:0;bottom:0;width:46%;pointer-events:auto;';
+    // touch-action:none is critical: it isn't inherited, and without it the
+    // browser (or an embedding page) treats the thumb drag as a scroll gesture
+    zone.style.cssText = 'position:absolute;left:0;top:0;bottom:0;width:46%;pointer-events:auto;touch-action:none;';
     root.appendChild(zone);
 
     zone.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
       if (this.touchId !== null) return;
       this.touchId = e.pointerId;
       zone.setPointerCapture(e.pointerId);

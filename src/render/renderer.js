@@ -28,7 +28,7 @@ export class Renderer {
   }
 
   follow(pos, dt) {
-    this.camTarget.lerp(pos, Math.min(1, dt * 5));
+    this.camTarget.lerp(pos, Math.min(1, dt * 8));
     this.camera.position.copy(this.camTarget).add(this.camOffset);
     this.camera.lookAt(this.camTarget.x, 0, this.camTarget.z);
   }

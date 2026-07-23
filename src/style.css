@@ -38,7 +38,7 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0e1420; t
   background: rgba(255,255,255,.28); transform: translate(-50%,-50%); }
 
 /* ---------- Buttons ---------- */
-.btn { position: absolute; pointer-events: auto; border: none; border-radius: 50%;
+.btn { position: absolute; pointer-events: auto; touch-action: none; border: none; border-radius: 50%;
   color: #fff; font-weight: 700; display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 1px;
   box-shadow: 0 4px 14px rgba(0,0,0,.4); text-shadow: 0 1px 2px rgba(0,0,0,.4); }
@@ -86,7 +86,8 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0e1420; t
 
 /* ---------- Modals ---------- */
 #modal-veil { position: absolute; inset: 0; background: rgba(4,8,16,.55); display: none;
-  align-items: center; justify-content: center; pointer-events: auto; z-index: 80; }
+  align-items: center; justify-content: center; pointer-events: auto; touch-action: none; z-index: 80; }
+#modal { touch-action: pan-y; }
 #modal { width: min(480px, 92vw); max-height: 86vh; overflow-y: auto; background: #121a2c;
   border: 1px solid #334a73; border-radius: 14px; padding: 16px; color: #e8eefc; }
 #modal h3 { font-size: 16px; margin-bottom: 10px; color: #ffd23c; }
