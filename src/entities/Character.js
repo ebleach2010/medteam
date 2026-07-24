@@ -123,17 +123,27 @@ export class Character {
   syncMesh(dt, now) {
     const p = this.body.translation();
     const q = this.body.rotation();
-    this.mesh.position.set(p.x, p.y - 0.8, p.z);
-    // yaw from movement, tilt from physics (the wobble stays!)
+    const seated = !!this.atPost && !this.carrying && !this.dragging;
+    // seated staff go kinematic, which FREEZES whatever tilt the capsule had
+    // when they sat — that's what made the crew look drunk in their chairs.
+    // Sitting is always bolt upright; only walkers keep the physics wobble.
     _yawQ.setFromAxisAngle(_up, this.yaw);
-    _tiltQ.set(q.x, q.y, q.z, q.w);
-    this.mesh.quaternion.copy(_tiltQ).multiply(_yawQ);
+    if (seated) {
+      this.mesh.position.set(p.x, p.y - 0.8, p.z);
+      this.mesh.quaternion.copy(_yawQ);
+    } else {
+      this.mesh.position.set(p.x, p.y - 0.8, p.z);
+      _tiltQ.set(q.x, q.y, q.z, q.w);
+      this.mesh.quaternion.copy(_tiltQ).multiply(_yawQ);
+    }
     // gait driven by actual velocity
     const v = this.body.linvel();
     const speed01 = Math.min(1, Math.hypot(v.x, v.z) / SPRINT);
     animateRig(this.mesh, dt, now, speed01, {
       reach: !!(this.carrying || this.dragging),
-      sitting: !!this.atPost && !this.carrying && !this.dragging,
+      sitting: seated,
+      // desk work: a seated staffer taps at a keyboard instead of freezing
+      busy: seated ? (this.seatPhase ??= Math.random() * 6) : 0,
     });
   }
 

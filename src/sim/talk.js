@@ -138,27 +138,81 @@ export function deescalate(sim, text) {
 }
 
 // ---------- TREAT: typed order → a med the aide can fetch ----------
+// Typed orders shouldn't demand the exact trade name. Drug CLASSES, common
+// brand names and plain-English phrasings all resolve to the pharmacy id, so
+// "give a beta blocker" / "start some LR" / "tylenol" all land correctly.
 const ALIASES = {
+  // analgesia / antipyretics
   wrap: 'nsaid', splint: 'nsaid', bandage: 'nsaid', ice: 'nsaid', advil: 'nsaid', ibuprofen: 'nsaid',
-  o2: 'oxygen', oxygen: 'oxygen', 'nasal cannula': 'oxygen',
-  saline: 'fluids', bolus: 'fluids', 'iv fluids': 'fluids', hydrate: 'fluids', hydration: 'fluids',
+  motrin: 'nsaid', naproxen: 'nsaid', aleve: 'nsaid', nsaids: 'nsaid', toradol: 'nsaid', ketorolac: 'nsaid',
+  tylenol: 'nsaid', acetaminophen: 'nsaid', paracetamol: 'nsaid', antipyretic: 'nsaid', antipyretics: 'nsaid',
+  pain: 'nsaid', analgesic: 'nsaid', // bare "something for the pain" → first-line analgesia
+  'pain meds': 'morphine', 'pain medicine': 'morphine', 'pain control': 'morphine', analgesia: 'morphine',
+  opioid: 'morphine', opiate: 'morphine', narcotic: 'morphine', fentanyl: 'morphine', dilaudid: 'morphine',
+  hydromorphone: 'morphine', 'iv opioid': 'morphine',
+  // oxygen
+  o2: 'oxygen', oxygen: 'oxygen', 'nasal cannula': 'oxygen', 'non rebreather': 'oxygen',
+  nrb: 'oxygen', 'supplemental oxygen': 'oxygen',
+  // volume
+  saline: 'fluids', 'normal saline': 'fluids', ns: 'fluids', lr: 'fluids', 'lactated ringers': 'fluids',
+  ringers: 'fluids', crystalloid: 'fluids', crystalloids: 'fluids', bolus: 'fluids', 'fluid bolus': 'fluids',
+  'iv fluids': 'fluids', 'iv fluid': 'fluids', hydrate: 'fluids', hydration: 'fluids',
   rehydrate: 'fluids', rehydration: 'fluids', fluid: 'fluids', fluids: 'fluids', ivf: 'fluids',
-  sedate: 'sedative', 'calm them': 'sedative', versed: 'sedative',
-  blood: 'prbc', transfuse: 'prbc', transfusion: 'prbc',
-  sugar: 'd50', glucose: 'd50', dextrose: 'd50',
-  'clot buster': 'tpa', thrombolytic: 'tpa', alteplase: 'tpa',
-  'beta blocker': 'metoprolol', epinephrine: 'epi', epipen: 'epi', adrenaline: 'epi', epi: 'epi',
-  antibiotic: 'ceftriaxone', abx: 'ceftriaxone', pressor: 'epi',
-  'pain meds': 'morphine', analgesia: 'morphine', opioid: 'morphine',
-  benzodiazepine: 'benzo', ativan: 'benzo', lorazepam: 'benzo',
-  neb: 'albuterol', nebulizer: 'albuterol', inhaler: 'albuterol',
-  cream: 'antifungal',
+  'banana bag': 'fluids', resuscitate: 'fluids',
+  // sedation
+  sedate: 'sedative', sedation: 'sedative', 'calm them': 'sedative', versed: 'sedative',
+  midazolam: 'sedative', propofol: 'sedative', 'chemical restraint': 'sedative',
+  benzodiazepine: 'benzo', benzodiazepines: 'benzo', benzos: 'benzo', benzo: 'benzo',
+  ativan: 'benzo', lorazepam: 'benzo',
+  diazepam: 'benzo', valium: 'benzo', antipsychotic: 'haloperidol', haldol: 'haloperidol',
+  // blood
+  blood: 'prbc', transfuse: 'prbc', transfusion: 'prbc', 'packed cells': 'prbc', prbcs: 'prbc',
+  // glycemic
+  sugar: 'd50', glucose: 'd50', dextrose: 'd50', 'd 50': 'd50', amp: 'd50',
+  // thrombolysis / cardiac
+  'clot buster': 'tpa', thrombolytic: 'tpa', thrombolysis: 'tpa', alteplase: 'tpa', lytics: 'tpa',
+  'beta blocker': 'metoprolol', 'beta blockers': 'metoprolol', bblocker: 'metoprolol',
+  lopressor: 'metoprolol', 'rate control': 'metoprolol',
+  epinephrine: 'epi', epipen: 'epi', adrenaline: 'epi', epi: 'epi', pressor: 'epi', pressors: 'epi',
+  vasopressor: 'epi', vasopressors: 'epi',
+  asa: 'aspirin', 'baby aspirin': 'aspirin',
+  nitro: 'nitroglycerin', ntg: 'nitroglycerin',
+  'calcium channel blocker': 'nicardipine', diltiazem: 'nicardipine', cardizem: 'nicardipine',
+  diuretic: 'furosemide', lasix: 'furosemide', 'water pill': 'furosemide',
+  anticoagulant: 'heparin', 'blood thinner': 'heparin', lovenox: 'heparin', enoxaparin: 'heparin',
+  // antimicrobials
+  antibiotic: 'ceftriaxone', antibiotics: 'ceftriaxone', abx: 'ceftriaxone', rocephin: 'ceftriaxone',
+  'broad spectrum': 'ceftriaxone', cephalosporin: 'ceftriaxone', 'iv antibiotics': 'ceftriaxone',
+  penicillin: 'amoxicillin', amox: 'amoxicillin', augmentin: 'amoxicillin', ampicillin: 'amoxicillin',
+  zpak: 'azithromycin', 'z pak': 'azithromycin', macrolide: 'azithromycin', zithromax: 'azithromycin',
+  tetracycline: 'doxycycline', doxy: 'doxycycline',
+  vanc: 'vancomycin', vanco: 'vancomycin',
+  flagyl: 'metronidazole',
+  antifungal: 'antifungal', 'antifungal cream': 'antifungal', cream: 'antifungal',
+  antiviral: 'acyclovir',
+  // resp / allergy
+  neb: 'albuterol', nebulizer: 'albuterol', inhaler: 'albuterol', bronchodilator: 'albuterol',
+  salbutamol: 'albuterol', duoneb: 'albuterol',
+  steroid: 'steroids', corticosteroid: 'steroids', solumedrol: 'steroids', prednisone: 'steroids',
+  methylprednisolone: 'steroids', dexamethasone: 'steroids',
+  antihistamine: 'antihistamine', benadryl: 'antihistamine', diphenhydramine: 'antihistamine',
+  // gi
+  zofran: 'ondansetron', antiemetic: 'ondansetron', 'anti emetic': 'ondansetron',
+  // reversal (specific — kept exact on the treatment side)
+  narcan: 'naloxone',
+  // neuro
+  anticonvulsant: 'levetiracetam', keppra: 'levetiracetam', antiepileptic: 'levetiracetam',
+  mag: 'magnesium',
 };
+
+// longest alias first, so a specific phrase beats a substring of it
+// ("blood thinner" → heparin, not "blood" → PRBC)
+const ALIAS_ORDER = Object.entries(ALIASES).sort((a, b) => b[0].length - a[0].length);
 
 export function matchTreatment(text) {
   const q = norm(text);
   if (!q) return null;
-  for (const [alias, id] of Object.entries(ALIASES)) {
+  for (const [alias, id] of ALIAS_ORDER) {
     if (new RegExp(`\\b${alias}\\b`).test(q)) return id; // word-bounded: "juice" must not match "ice"
   }
   let best = null, bestScore = 0;
