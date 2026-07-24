@@ -148,9 +148,9 @@ export function animateRig(root, dt, now, speed01, { reach = false, lying = fals
   const breathe = dead ? 0 : Math.sin(now * 1.6) * 0.02;
   r.chest.scale.set(1, 1 + breathe, 1);
   let bobY = Math.abs(Math.sin(r.walkClock)) * bobAmt + breathe * 0.5;
-  if (sitting) bobY = -0.26;
+  if (sitting) bobY = -0.4;                    // clearly lower than a standing figure
   r.bob.position.y = bobY;
-  r.torso.rotation.x = sitting ? 0.08 : lean;
+  r.torso.rotation.x = sitting ? 0.16 + Math.sin(now * 1.1) * 0.03 : lean; // hunched over the desk
   r.head.rotation.x = -lean * 0.6;
 
   let lL = Math.sin(r.walkClock) * stride;

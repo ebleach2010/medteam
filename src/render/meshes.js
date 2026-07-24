@@ -136,6 +136,11 @@ export function makeBed(accent = 0x76a9ea) {
   return g;
 }
 
+// wheeled office chair for the staff station (falls back to the armchair)
+export function makeOfficeChair(ry = 0) {
+  return useModel('officechair', { size: 0.85, ry }) ?? makeChair();
+}
+
 export function makeChair() {
   const m = useModel('chair', { size: 0.72, ry: 0 });
   if (m) return m;

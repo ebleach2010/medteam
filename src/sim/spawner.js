@@ -46,7 +46,9 @@ export class Spawner {
       // then to a free waiting chair
       const seat = g.map.seats.find((st) => !st.taken);
       const route = [{ ...g.map.entrance }, { ...g.map.insideWaypoint }];
-      if (seat) { seat.taken = p; p.sim.seat = seat; route.push({ x: seat.x, z: seat.z - 0.8 }); }
+      // approach the chair from the NORTH (the side patients enter from) —
+      // the south side is blocked by the reception desk, which stranded them
+      if (seat) { seat.taken = p; p.sim.seat = seat; route.push({ x: seat.x, z: seat.z + 0.7 }); }
       else route.push({ x: g.map.insideWaypoint.x + g.rng.range(-1, 3), z: g.map.insideWaypoint.z + g.rng.range(1, 3) });
       p.sim.route = route;
       p.sim.walkTarget = p.sim.route.shift();
