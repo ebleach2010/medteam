@@ -9,6 +9,21 @@ document.addEventListener('touchmove', (e) => {
 document.addEventListener('gesturestart', (e) => e.preventDefault());
 
 const physics = await initPhysics();
+// 🔑 key handoff: open the game as <url>#key=sk-ant-... once and the key is
+// stored on this device (same slot the 🔑 board and MED-DOC use), then
+// scrubbed from the address bar. Fragments are never sent to any server —
+// this is how the key travels to new devices WITHOUT living in the repo.
+{
+  const m = /[#&?]key=([^&]+)/.exec(location.hash) ?? /[?&]key=([^&#]+)/.exec(location.search);
+  if (m) {
+    try { localStorage.setItem('medteam.anthropic_key', decodeURIComponent(m[1])); } catch { /* private mode */ }
+    const url = new URL(location.href);
+    url.searchParams.delete('key');
+    url.hash = url.hash.replace(/[#&]key=[^&]*/, '');
+    history.replaceState(null, '', url);
+  }
+}
+
 const params = new URLSearchParams(location.search);
 const game = new Game(document.getElementById('game'), physics, {
   seed: params.get('seed') ? +params.get('seed') : ((Math.random() * 0x7fffffff) | 0), // fresh shuffle every boot — no more ankle-sprain openers
