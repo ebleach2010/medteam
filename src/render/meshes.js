@@ -68,6 +68,9 @@ const ROLE_RIGS = {
     gloves: GLOVE, shoes: WHITE_SNEAKER },
   receptionist: { top: 0x8f7fc9, bottom: 0x5f5490, skin: 0xf0cfae, hairColor: 0x5a3c28, hairStyle: 'long',
     shoes: 0x6b5f4c },
+  // visiting specialist: white coat, badge + stethoscope, satchel-grey slacks
+  specialist: { top: 0xf1f3f6, bottom: 0x3a4658, skin: 0xd8a87c, hairColor: 0x30251c, hairStyle: 'short',
+    stethoscope: true, badge: true, shoes: 0x2e3440 },
 };
 export function makeCharacterMesh(role) {
   return buildRig(ROLE_RIGS[role] ?? ROLE_RIGS.nurse);

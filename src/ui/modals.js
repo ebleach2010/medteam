@@ -49,8 +49,8 @@ export class Modals {
   get open() { return !!this.current; }
 
   // results show ONLY the panels that were ordered — a test never sent never
-  // comes back. The printout says what you skipped.
-  labResults(patient) {
+  // the lab printout body (also reused by the folder-tabbed reports view)
+  _labsHtml(patient) {
     const sim = patient.sim, c = sim.case;
     const ordered = sim.orderedPanels ?? PANELS.map((p) => p.id);
     const { rows } = filterLabs(c.labs, ordered);
@@ -64,14 +64,53 @@ export class Modals {
     }
     const skipped = PANELS.filter((p) => !ordered.includes(p.id)).map((p) => p.id).join(', ');
     if (skipped) lines.push('', `NOT ORDERED: ${skipped}`);
-    this._show({
-      type: 'labs', patient, options: [],
-      html: `<h3>🧪 Lab results — ${sim.displayName}</h3>
-             <div class="paper">MEDTEAM GENERAL LABORATORY\n------------------------\n${c.labs === null ? 'No labs indicated for this presentation.' : lines.join('\n')}</div>`,
-      closable: true,
-    });
-    sim.labState = 'read';
-    this.game.addScore(20, 'Labs reviewed');
+    return `<div class="paper">MEDTEAM GENERAL LABORATORY\n------------------------\n${c.labs === null ? 'No labs indicated for this presentation.' : lines.join('\n')}</div>`;
+  }
+
+  labResults(patient) { this.reports(patient, 'labs'); }
+
+  // 🗂 the patient's chart folder: every report on file (labs / imaging /
+  // specialist consults) as tabbed Manila envelopes. Tapping a tab shuffles
+  // the current folder to the back and flips the selected one to the front.
+  reports(patient, wantTab) {
+    const sim = patient.sim;
+    const tabs = [];
+    if (sim.labState === 'ready' || sim.labState === 'read') {
+      tabs.push({ key: 'labs', label: 'LAB WORK', render: () => this._labsHtml(patient) });
+    }
+    if (sim.imagingReport) {
+      const r = sim.imagingReport;
+      tabs.push({ key: 'imaging', label: 'IMAGING', render: () =>
+        `${r.img ? `<img class="scan" src="${r.img}">` : ''}<div class="paper">${esc(r.text)}</div>` });
+    }
+    (sim.consultReports ?? []).forEach((c, i) => tabs.push({
+      key: 'consult' + i, label: c.specialty.toUpperCase(),
+      render: () => `<div class="paper"><b>${esc(c.specialty)} consult</b>\n\n${esc(c.text)}</div>`,
+    }));
+    if (!tabs.length) { this.game.ui.toast('No reports on file for this patient yet.'); return; }
+
+    this.current = { type: 'reportview', patient, options: [] };
+    this.box.classList.add('folders');
+    let active = tabs.find((t) => t.key === wantTab) ? wantTab : tabs[0].key;
+    const paint = (flip) => {
+      const cur = tabs.find((t) => t.key === active) ?? tabs[0];
+      this.box.innerHTML = `<h3 style="color:#f0e6cf">🗂 Chart — ${esc(sim.displayName)}</h3>
+        <div class="foldertabs">${tabs.map((t) =>
+          `<button class="ftab${t.key === active ? ' on' : ''}" data-t="${t.key}">${t.label}</button>`).join('')}</div>
+        ${tabs.length > 1 ? '<div class="folderback"></div>' : ''}
+        <div class="folder${flip ? ' flip' : ''}"><h4>${cur.label}</h4>${cur.render()}</div>
+        <button class="close" style="background:#c7ad76;color:#4a3a1c">Close chart</button>`;
+      this.box.querySelectorAll('.ftab').forEach((b) => b.addEventListener('click', () => {
+        if (b.dataset.t === active) return;
+        active = b.dataset.t;
+        paint(true); // flip the newly-selected folder to the front
+      }));
+      this.box.querySelector('.close').addEventListener('click', () => this.close());
+    };
+    paint(false);
+    this.veil.style.display = 'flex';
+    // reviewing labs still counts as read (score + it stops the pester)
+    if (sim.labState === 'ready') { sim.labState = 'read'; this.game.addScore(20, 'Labs reviewed'); }
   }
 
   // 🧪 the phlebotomist's order board: toggle panels, then SEND. Used both at
@@ -341,6 +380,34 @@ export class Modals {
       b.addEventListener('click', () =>
         this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: type, choice: +b.dataset.i } })));
     this.box.querySelector('.close')?.addEventListener('click', () => this.close());
+  }
+
+  // 📟 call a specialist consult: pick the specialty and a real physician walks
+  // into the ED, evaluates the patient for ~30s, and leaves a note in the chart.
+  consultPick(patient) {
+    const g = this.game;
+    const sim = patient.sim;
+    this.current = { type: 'consultpick', patient, options: [] };
+    if (sim.consultPending) {
+      this.box.innerHTML = `<h3>📟 Consult</h3>
+        <div class="paper">${esc(sim.consultPending)} is already on the way to ${sim.bed ? 'Room ' + sim.bed.roomNo : 'this patient'}.
+They'll evaluate at the bedside and file a note in the chart.</div>
+        <button class="close">OK</button>`;
+      this.veil.style.display = 'flex';
+      this.box.querySelector('.close').addEventListener('click', () => this.close());
+      return;
+    }
+    let body = `<h3>📟 Call a specialist — ${esc(sim.displayName)}</h3>
+      <p style="color:#6e7f9e;font-size:11px;margin:2px 0 8px">They walk in, evaluate at the bedside (~30s), and leave a consult note in the chart.</p>`;
+    for (const s of g.constructor.SPECIALTIES) body += `<button class="opt" data-spec="${esc(s.label)}">🩺 ${s.label}</button>`;
+    body += '<button class="close">Cancel</button>';
+    this.box.innerHTML = body;
+    this.veil.style.display = 'flex';
+    this.box.querySelectorAll('[data-spec]').forEach((b) => b.addEventListener('click', () => {
+      g.orderConsult(patient, b.dataset.spec);
+      this.close();
+    }));
+    this.box.querySelector('.close').addEventListener('click', () => this.close());
   }
 
   // 🗣 curbside consult: pick which staff member to grill about this patient.
@@ -828,7 +895,7 @@ Your key stays in this browser only.</div>
     this._cancelRebind();
     this.current = null;
     this.veil.style.display = 'none';
-    this.box.classList.remove('crtbox', 'blue');
+    this.box.classList.remove('crtbox', 'blue', 'folders');
     this.game.paused = false; // only the pause/settings modals ever set it
   }
 }

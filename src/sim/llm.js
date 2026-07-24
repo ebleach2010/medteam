@@ -293,6 +293,34 @@ const ROLE_PERSONA = {
   pharmacy: 'the PHARMACIST — careful and exact; you speak to drug choice, interactions, contraindication risk and what to verify before pushing a med',
 };
 
+// a visiting specialist's written consult note (they walk in, evaluate, and
+// leave this in the chart). Live Claude writes it in the specialty's voice;
+// offline gives a sensible stub.
+export async function consultReport(game, patient, specialty) {
+  if (!llmEnabled()) return localConsultReport(patient, specialty);
+  try {
+    const system = [
+      `You are a ${specialty} attending physician writing a brief consult note for a patient in a fictional ED-simulator game.`,
+      'Write 2 to 4 sentences of plain prose: your impression from your specialty\'s angle and a concrete recommendation. Be decisive and specific to THIS patient. No markdown, no disclaimers.',
+      'You can see the chart below but NOT the hidden answer key — reason from the findings.',
+      '--- CHART ---',
+      chartFor(patient, 1),
+    ].join('\n');
+    const reply = await textCall(system, `Provide your ${specialty} consult impression and recommendation for this patient.`);
+    _lastMode = 'live';
+    return reply;
+  } catch (e) {
+    console.warn('consult report live failed — local fallback:', e?.message);
+    fellBack(game, e);
+    return localConsultReport(patient, specialty);
+  }
+}
+function localConsultReport(patient, specialty) {
+  const c = patient.sim.case;
+  const lead = c.dxOptions?.[0] ? `findings are consistent with ${c.dxOptions[0]}` : 'findings reviewed';
+  return `${specialty} consult — ${lead}. Recommend proceeding with the appropriate workup and standard management, and calling us back with any change. (Offline note — connect an API key for a full specialist opinion.)`;
+}
+
 export async function consultStaff(game, patient, role, question) {
   if (!llmEnabled()) return consultLocal(game, patient, role);
   try {

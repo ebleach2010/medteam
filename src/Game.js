@@ -21,6 +21,7 @@ import { dayConfig } from './data/days.js';
 import { generateScan } from './render/xray.js';
 import { glowSprite } from './render/meshes.js';
 import { matchTreatment } from './sim/talk.js';
+import { consultReport } from './sim/llm.js';
 
 const FIXED_DT = 1 / 60;
 
@@ -160,6 +161,7 @@ export class Game {
     this.mode = 'summary';
     this.clock.running = false;
     this.tasks.clear();
+    for (const c of [...this.world.byTag('chars')]) if (c.isConsultant) this.world.remove(c, this);
     this.ui.screens.fade(true);
     const passed = this.dayStats.treated >= this.quota;
     if (passed) {
@@ -201,6 +203,7 @@ export class Game {
     this.paused = false;
     this.timers = [];
     this.tasks.clear();
+    for (const c of [...this.world.byTag('chars')]) if (c.isConsultant) this.world.remove(c, this);
     this._scanJob = null;
     this._etherBusy = 0;
     for (const c of this.world.byTag('chars')) {
@@ -330,8 +333,9 @@ export class Game {
   // fan clipboards across the desk so a lab result and an imaging report never
   // land on the exact same spot (one hiding under the other)
   _deskSlot(desk, kind) {
-    const dx = kind === 'imaging' ? 0.26 : kind === 'labs' ? -0.26 : 0;
-    return { x: desk.x + dx, z: desk.z + (kind === 'imaging' ? 0.06 : -0.06) };
+    if (kind === 'imaging') return { x: desk.x + 0.26, z: desk.z + 0.06 };
+    if (kind === 'labs') return { x: desk.x - 0.26, z: desk.z - 0.06 };
+    return { x: desk.x, z: desk.z + 0.24 }; // consult clips sit at the front edge
   }
 
   _routeToRoomBed(from, bed) {
@@ -384,6 +388,75 @@ export class Game {
     if (!this.dispatch(this.surgeon, { type: 'surgery', phase: 'toPatient', patient,
       bed: sim.bed, route: this._routeToRoomBed(this.surgeon.pos, sim.bed) })) return;
     this.ui.bubbles.say(this.surgeon, '🫡 ROGER!! Surgery en route!', { hold: 3 });
+  }
+
+  // ---- CONSULTS: a specialist physically comes to the ED, evaluates the
+  // patient for ~30s, and leaves a written note in the chart, then departs. ----
+  static SPECIALTIES = [
+    { id: 'neuro', label: 'Neurology' },
+    { id: 'cards', label: 'Cardiology' },
+    { id: 'ophtho', label: 'Ophthalmology' },
+    { id: 'ortho', label: 'Orthopedics' },
+    { id: 'gensurg', label: 'General Surgery' },
+    { id: 'obgyn', label: 'OB/GYN' },
+    { id: 'psych', label: 'Psychiatry' },
+    { id: 'id', label: 'Infectious Disease' },
+    { id: 'tox', label: 'Toxicology' },
+  ];
+
+  orderConsult(patient, specialtyLabel) {
+    const sim = patient.sim;
+    if (sim.state !== 'inbed') { this.ui.toast('Get them into a room bed first'); return; }
+    if (sim.consultPending) { this.ui.toast(`${sim.consultPending} is already on the way`); return; }
+    sim.consultPending = specialtyLabel;
+    // a fresh specialist walks in from the entrance
+    const spec = this.world.add(new Character(this, 'specialist', this.map.spawnOutside.x, this.map.spawnOutside.z), 'chars');
+    spec.isConsultant = true;
+    const route = [{ ...this.map.entrance }, { ...this.map.insideWaypoint },
+      ...this._routeToRoomBed(this.map.insideWaypoint, sim.bed)];
+    this.tasks.set(spec, { type: 'consult', phase: 'toPatient', patient, specialty: specialtyLabel, bed: sim.bed, route, wait: 0 });
+    this.ui.announce(`📟 ${specialtyLabel} consult paged — the specialist is on their way in.`, 'good');
+  }
+
+  _task_consult(ch, t, dt) {
+    const sim = t.patient?.sim;
+    if (!sim || sim.state === 'dead') { if (sim) sim.consultPending = null; this._despawnConsultant(ch); return; }
+    if (t.phase === 'toPatient') {
+      t.phase = 'evaluate'; t.wait = 0;
+      this.ui.bubbles.say(ch, `🔬 ${t.specialty}. Let me take a look.`, { hold: 4 });
+      return;
+    }
+    if (t.phase === 'evaluate') {
+      t.wait += dt;
+      if (t.wait < 30) return;                 // ~30s at the bedside
+      if (!t.reqSent) { t.reqSent = true; this._generateConsult(t); }
+      if (t.report == null) return;            // wait for the note to come back
+      (sim.consultReports ??= []).push({ specialty: t.specialty, text: t.report });
+      sim.consultPending = null;
+      const desk = this.map.roomDesks[t.bed.roomNo - 1];
+      const spot = this._deskSlot(desk, 'consult');
+      const clip = spawnCarryable(this, 'paper', spot.x, desk.y + 0.05, spot.z,
+        { patientId: t.patient.id, label: `${t.specialty}: ${sim.displayName}`, clip: 'consult' });
+      clip.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
+      clip.body.setTranslation({ x: spot.x, y: desk.y + 0.05, z: spot.z }, true);
+      this.ui.announce(`📋 ${t.specialty} consult filed — Room ${t.bed.roomNo}.`, 'good');
+      this.audio.good();
+      this.addScore(25, 'Specialist consult');
+      t.phase = 'leave';
+      t.route = [...this._routeTo(ch.pos, this.map.insideWaypoint), { ...this.map.spawnOutside }];
+      return;
+    }
+    this._despawnConsultant(ch); // 'leave' route drained → they're gone
+  }
+
+  async _generateConsult(t) {
+    try { t.report = await consultReport(this, t.patient, t.specialty); }
+    catch { t.report = `${t.specialty} consult: unable to complete. Recommend re-paging.`; }
+  }
+
+  _despawnConsultant(ch) {
+    this.tasks.delete(ch);
+    this.world.remove(ch, this);
   }
 
   orderMedFetch(patient, medId) {
@@ -874,6 +947,7 @@ export class Game {
       this.bedPatient(t.patient, t.bed);
       const desk = this.map.roomDesks[t.bed.roomNo - 1];
       const spot = this._deskSlot(desk, 'imaging');
+      sim.imagingReport = t.report; // filed in the chart folder (reports view)
       const clip = spawnCarryable(this, 'paper', spot.x, desk.y + 0.05, spot.z,
         { patientId: t.patient.id, label: `Imaging: ${sim.displayName}`, clip: 'imaging', report: t.report });
       clip.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
@@ -1276,7 +1350,7 @@ export class Game {
     if (order === 'imaging') { this.orderImaging(pt); return; } // study chosen AT the machine
     if (order === 'surgery') { this.orderSurgery(pt); return; }
     if (order === 'dx') { this.ui.modals.diagnose(pt); return; }
-    if (order === 'consult') { this.ui.modals.consult(pt); return; }
+    if (order === 'consult') { this.ui.modals.consultPick(pt); return; }
     if (order === 'discharge') {
       if (pt.sim.stabilized) {
         const sim = pt.sim;
@@ -1327,11 +1401,10 @@ export class Game {
       }
       if (clip) {
         return {
-          ico: '📋', label: clip.data.clip === 'imaging' ? 'READ IMAGING' : 'READ LABS', color: '#c9a83c',
+          ico: '🗂', label: 'OPEN CHART', color: '#c9a83c',
           run: () => {
             const pt2 = [...this.world.byTag('patients')].find((p) => p.id === clip.data.patientId);
-            if (clip.data.clip === 'imaging') this.ui.modals.report(clip);
-            else if (pt2) this.ui.modals.labResults(pt2);
+            if (pt2) this.ui.modals.reports(pt2, clip.data.clip);
             else this.ui.toast('Patient is gone...');
           },
         };
