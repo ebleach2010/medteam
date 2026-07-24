@@ -20,11 +20,11 @@ export class HUD {
     this._toastT = null;
   }
 
-  toast(msg, cls = '') {
+  toast(msg, cls = '', ms = 2600) {
     this.toastEl.textContent = msg;
     this.toastEl.className = cls ? `show ${cls}` : 'show';
     clearTimeout(this._toastT);
-    this._toastT = setTimeout(() => (this.toastEl.className = ''), 2600);
+    this._toastT = setTimeout(() => (this.toastEl.className = ''), ms);
   }
 
   update() {

@@ -6,6 +6,7 @@ const NURSE = [
   { id: 'labs', ico: '🩸', txt: 'CALL LABS' },
   { id: 'imaging', ico: '📷', txt: 'CALL IMAGING' },
   { id: 'surgery', ico: '🔪', txt: 'CALL SURGERY' },
+  { id: 'consult', ico: '🗣️', txt: 'CONSULT' },
   { id: 'dx', ico: '✅', txt: 'DIAGNOSE' },
   { id: 'discharge', ico: '🏠', txt: 'DISCHARGE' },
 ];

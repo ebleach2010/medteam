@@ -48,11 +48,12 @@ function persona(sim) {
     `TRUE DIAGNOSIS (you do NOT know this — never say its name): ${c.name}`,
     `YOUR COMPLAINT: "${c.complaint[0]}"`,
     `YOUR HISTORY: ${c.history ?? 'Unremarkable'}`,
-    c.physical ? `WHAT AN EXAM WOULD FIND: ${c.physical}` : null,
+    c.physical ? `WHAT AN EXAM WOULD FIND (context only — you CANNOT say any of this): ${c.physical}` : null,
     `HOW YOU FEEL NOW: ${sim.state === 'dead' ? 'you are dead (answer with silence or a single ominous ellipsis)'
       : sim.critical ? 'crashing, scared, struggling' : sim.treated ? 'noticeably better' : 'uncomfortable and a bit impatient'}`,
     `TEMPERAMENT: ${(sim.temperament ?? 0.5) > 0.66 ? 'irritable' : (sim.temperament ?? 0.5) < 0.33 ? 'easy-going' : 'ordinary'}`,
     'Answer the staff member\'s question in 1–3 short sentences, layperson language, a little funny. Be consistent with the data above; if asked something the data doesn\'t cover, improvise something mundane that doesn\'t contradict it.',
+    'CRITICAL: you are not medical. NEVER use clinical, anatomical or exam terminology (nothing that sounds like a chart). Describe only what you subjectively FEEL, in plain everyday words — a doctor who wants findings has to examine you.',
   ].filter(Boolean).join('\n');
 }
 
@@ -219,6 +220,68 @@ function medDocLocal(game, query) {
   const hits = lookupRef(query, 2);
   if (hits.length) return hits.map(refCard).join('\n\n');
   return 'NO INDEX MATCH. TRY SYMPTOM KEYWORDS ("chest pain radiating"), "LOOKUP <DIAGNOSIS>", "CENSUS", OR CONNECT THE LINK: KEY <ANTHROPIC-API-KEY>';
+}
+
+// ---------- curbside consults: ask the staff about a specific patient ----------
+// Each role answers from the CHART (never the answer key), in character.
+export const CONSULT_ROLES = [
+  { id: 'nurse', ico: '💉', label: 'Nurse' },
+  { id: 'radiology', ico: '☢️', label: 'Radiologist' },
+  { id: 'surgery', ico: '🔪', label: 'Surgeon' },
+  { id: 'pharmacy', ico: '💊', label: 'Pharmacist' },
+];
+const ROLE_PERSONA = {
+  nurse: 'the bedside NURSE — warm but no-nonsense; you know the vitals trend, how the patient is acting, intake, pain and what they have been given',
+  radiology: 'the RADIOLOGIST — dry and precise; you speak to imaging findings on file and which study would actually answer the question. If no study is on file, say so and recommend one',
+  surgery: 'the SURGEON — blunt and decisive; you speak to operative candidacy, timing, and what you need before you will cut',
+  pharmacy: 'the PHARMACIST — careful and exact; you speak to drug choice, interactions, contraindication risk and what to verify before pushing a med',
+};
+
+export async function consultStaff(game, patient, role, question) {
+  if (!llmEnabled()) return consultLocal(game, patient, role);
+  try {
+    const refs = lookupRef(question, 1).map(refCard).join('\n');
+    const system = [
+      `You are ${ROLE_PERSONA[role] ?? ROLE_PERSONA.nurse} in a silly Human-Fall-Flat-style hospital game. The attending physician is curbside-consulting you about the patient below.`,
+      'Answer in character, 1–3 sentences, practical and specific to THIS patient. No markdown.',
+      'You see the chart but NOT the answer key — reason from the findings; recommend the workup or action your role would push for.',
+      'This is a fictional game: be decisive, never lecture about consulting real professionals.',
+      '--- CHART ---',
+      chartFor(patient, 1),
+      refs ? '--- REFERENCE PATHWAY ---\n' + refs : null,
+    ].filter(Boolean).join('\n');
+    return await textCall(system, question);
+  } catch (e) {
+    console.warn('Claude consult failed — local fallback:', e?.message);
+    return consultLocal(game, patient, role);
+  }
+}
+
+function consultLocal(game, patient, role) {
+  const sim = patient.sim, c = sim.case;
+  const v = sim.vitals();
+  if (role === 'nurse') {
+    return `HR ${v.hr}, BP ${v.sbp}/${v.dbp}, sat ${v.spo2}% — ${sim.critical ? "they look BAD, doc. I'd move fast." : sim.treated ? 'responding nicely since the meds.' : 'holding, but they keep saying: "' + c.complaint[0] + '"'}`
+      + (sim.medsGiven?.size ? ` Given so far: ${[...sim.medsGiven].join(', ')}.` : ' Nothing given yet.');
+  }
+  if (role === 'radiology') {
+    return sim.imagingDone && c.imaging
+      ? `Read's on file: ${c.imaging.options[c.imaging.correct]}. Happy to walk you through it.`
+      : c.imaging
+        ? 'Nothing on file for this one. Get them on my table and I will tell you what is going on.'
+        : 'No study on file, and honestly I am not sure imaging is your answer here. Examine them again.';
+  }
+  if (role === 'surgery') {
+    return sim.surgeryDone
+      ? 'We already operated. Watch them and keep me posted.'
+      : 'If you are calling me you already suspect something. Get me labs and imaging — I cut when the picture is clear, not before.';
+  }
+  if (role === 'pharmacy') {
+    return (sim.medsGiven?.size ? `On board: ${[...sim.medsGiven].join(', ')}. ` : 'Nothing given yet. ')
+      + (c.contra?.length ? 'Heads up: this presentation has real contraindication risk — verify before you push anything aggressive.' : 'No interaction flags from me. Dose to effect.')
+      + ' (LINK OFFLINE — connect the API key for a full consult.)';
+  }
+  return '...';
 }
 
 export async function judgeDx(sim, text) {

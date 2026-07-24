@@ -68,7 +68,7 @@ export class UI {
     this.game = game;
   }
 
-  toast(msg, cls) { this.hud.toast(msg, cls); }
+  toast(msg, cls, ms) { this.hud.toast(msg, cls, ms); }
 
   update(dt, t) {
     this.bubbles.update(dt);

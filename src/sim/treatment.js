@@ -1,6 +1,17 @@
 import { medById } from '../data/meds.js';
 
 // Applying a med to a patient — where heroes are made and malpractice happens.
+// A few seconds after any therapy, the staff radios back whether the room
+// responded — so you always KNOW whether your order did anything.
+function radioReport(game, sim, med, responded, rec, tone) {
+  const where = sim.bed ? `ROOM ${sim.bed.roomNo}` : sim.displayName.toUpperCase();
+  setTimeoutTicks(game, 3.5, () => {
+    if (sim.state === 'dead') { game.ui.toast(`📻 ${where} LOST DESPITE ${med.name.toUpperCase()} — SORRY, SIR.`, 'bad', 5500); return; }
+    game.ui.toast(`📻 ${where} ${responded ? 'RESPONDED' : 'DID NOT RESPOND'} TO ${med.name.toUpperCase()} — ${rec}, SIR!`, tone, 5500);
+    game.audio?.blip?.();
+  });
+}
+
 export function giveMed(game, patient, medId) {
   const sim = patient.sim;
   const med = medById(medId);
@@ -30,10 +41,12 @@ export function giveMed(game, patient, medId) {
       sim.accel *= 3;
       sim._say('worse', 'critical');
       game.addScore(-80, 'Harmful medication');
+      radioReport(game, sim, med, false, 'PATIENT WORSE — RECOMMEND IMMEDIATE RE-EVALUATION', 'bad');
       return;
     }
     game.ui.toast(`⚠ ${contra.note}`, 'bad');
     game.addScore(-30, 'Wrong med');
+    radioReport(game, sim, med, false, 'ADVERSE REACTION NOTED — RECOMMEND DIFFERENT AGENT', 'bad');
     return;
   }
 
@@ -66,10 +79,14 @@ export function giveMed(game, patient, medId) {
   if (needed.includes(medId)) {
     game.ui.toast(`✓ ${med.name} given to ${name}`, 'good');
     game.addScore(30, 'Correct med');
-    if (needed.every((m) => sim.medsGiven.has(m))) applyTreatment(game, sim);
+    const complete = needed.every((m) => sim.medsGiven.has(m));
+    if (complete) applyTreatment(game, sim);
+    radioReport(game, sim, med, true,
+      complete ? 'READY FOR DISPO ONCE STABLE' : 'PARTIAL RESPONSE — CONTINUE CURRENT PLAN', 'good');
   } else {
     game.ui.toast(`${med.name} given... it does nothing useful.`);
     game.addScore(-10, 'Unnecessary med');
+    radioReport(game, sim, med, false, 'RECOMMEND FURTHER WORKUP', 'bad');
   }
 }
 

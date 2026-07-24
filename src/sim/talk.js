@@ -18,7 +18,7 @@ const INTENTS = [
   [/drink|alcohol|drugs|smok|substance/, (c) => /drink|alcohol|drug|iv drug|smok|moonshine|pack-year/i.test(c.history) ? c.history : 'Nothing like that. Mostly.'],
   [/travel|trip|abroad|country|vacation/, (c) => /tropic|safari|flight|tokyo|travel/i.test(c.history) ? c.history : 'Haven’t been anywhere lately.'],
   [/family|mother|father|relative/, (c) => /fhx|family|dad|cousin|died/i.test(c.history) ? c.history : 'Family’s healthy as far as I know.'],
-  [/pain|hurt|where|feel/, (c) => `${c.complaint[0]} ${c.physical ? `(It's tender — ${c.physical.toLowerCase()})` : ''}`],
+  [/pain|hurt|where|feel/, (c) => `${c.complaint[0]} It gets worse when you poke at it, if that helps.`],
   [/worse|better|chang/, (c) => (c.timeline?.length ? 'Definitely getting worse the longer I sit here.' : 'About the same since it started.')],
   [/why|here|wrong|problem|matter/, (c) => c.complaint[0]],
 ];
@@ -46,8 +46,13 @@ const SYN = [
   ['headach', 'migrain', 'head pound'],
 ];
 const expandStems = (st) => { for (const g of SYN) if (g.some((s) => st.startsWith(s) || s.startsWith(st))) return g; return [st]; };
-const factSentences = (c) => [...c.complaint, c.history, c.physical, c.neuro, c.ekg ? `EKG shows ${c.ekg}` : null]
-  .filter(Boolean).flatMap((s) => String(s).split(/(?<=[.!?])\s+/));
+const factSentences = (c) => [
+  ...c.complaint.map((t) => ({ t, lay: true })),
+  c.history ? { t: c.history, lay: true } : null,
+  c.physical ? { t: c.physical, lay: false } : null,
+  c.neuro ? { t: c.neuro, lay: false } : null,
+  c.ekg ? { t: `EKG shows ${c.ekg}`, lay: false } : null,
+].filter(Boolean).flatMap((f) => String(f.t).split(/(?<=[.!?])\s+/).map((t) => ({ t, lay: f.lay })));
 
 export function answerQuestion(sim, text) {
   const q = norm(text);
@@ -57,7 +62,7 @@ export function answerQuestion(sim, text) {
   const side = ['left', 'right'][(sim.scanSeed ?? 0) % 2];
   if (/(which|what) (side|one|ankle|leg|arm|knee|wrist|hand|foot|elbow|shoulder|hip|eye|ear)\b/.test(q)
     || /left or right/.test(q)) {
-    return `The ${side}. ${c.physical ?? c.complaint[0]}`;
+    return `The ${side}. ${c.complaint[0]}`;
   }
   // pain scale
   if (/scale|out of (10|ten)|1 to 10|how bad|rate (the|your)? ?pain/.test(q)) {
@@ -69,20 +74,28 @@ export function answerQuestion(sim, text) {
     const words = q.split(' ').filter((w) => w.length >= 3 && !STOP.has(w) && !/^(it|its|there)$/.test(w));
     if (words.length) {
       const sents = factSentences(c);
-      const sentsN = sents.map(norm);
+      const sentsN = sents.map((f) => norm(f.t));
       const hits = [], misses = [];
       for (const w of words) {
         const alts = expandStems(stem(w));
-        const idx = sentsN.findIndex((s) => alts.some((a) => s.includes(a)));
+        const idx = sentsN.findIndex((sn) => alts.some((a) => sn.includes(a)));
         if (idx >= 0) hits.push(sents[idx]);
-        else if (/pain|hurt|sore|tender|ache/.test(w)) hits.push(c.physical ?? c.complaint[0]); // "does it hurt" — obviously
+        else if (/pain|hurt|sore|tender|ache/.test(w)) hits.push({ t: c.complaint[0], lay: true }); // "does it hurt" — obviously
         else misses.push(w);
       }
-      if (hits.length && !misses.length) return `Yeah. ${hits[hits.length - 1]}`;
+      // patients confirm what they FEEL — they never recite the chart
+      const sayYes = (h) => h.lay
+        ? `Yeah. ${h.t}`
+        : sim.game.rng.pick([
+          'Yeah... now that you mention it, yeah.',
+          'Yeah, I think so? It\'s hard to describe, but yeah.',
+          'Yeah, it\'s been doing that since this whole thing started.',
+        ]);
+      if (hits.length && !misses.length) return sayYes(hits[hits.length - 1]);
       if (hits.length) {
         return sim.game.rng.pick([
-          `${misses[0][0].toUpperCase()}${misses[0].slice(1)}? No, nothing like that. But ${(c.physical ?? c.complaint[0]).toLowerCase()}`,
-          `No ${misses[0]} that I've noticed. It's more that ${(c.physical ?? c.complaint[0]).toLowerCase()}`,
+          `${misses[0][0].toUpperCase()}${misses[0].slice(1)}? No, nothing like that. But mostly ${c.complaint[0].toLowerCase()}`,
+          `No ${misses[0]} that I've noticed. Mainly it's just that ${c.complaint[0].toLowerCase()}`,
         ]);
       }
       const echo = misses[misses.length - 1] ?? '';
@@ -99,7 +112,7 @@ export function answerQuestion(sim, text) {
   for (const word of q.split(' ')) {
     if (word.length <= 3) continue;
     if (norm(c.complaint[0]).includes(word)) {
-      return `${c.complaint[0]}${c.physical ? ` And look — ${c.physical.toLowerCase()}.` : ''}`;
+      return `${c.complaint[0]} That's really all I can tell you — I'm not the doctor here.`;
     }
     if (norm(c.history).includes(word)) return c.history;
   }

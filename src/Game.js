@@ -300,7 +300,7 @@ export class Game {
     if (!this.dispatch(this.aide, { type: 'labs', phase: 'toPatient', patient, panels,
       route: this._routeToRoomBed(this.aide.pos, sim.bed) })) return;
     sim.orders.add('labs');
-    this.ui.bubbles.say(this.aide, '🩸 On my way!', { hold: 3 });
+    this.ui.bubbles.say(this.aide, '🫡 ROGER!! Drawing blood!', { hold: 3 });
   }
 
   beginLabs(t, panels) {
@@ -324,7 +324,7 @@ export class Game {
     if (!this.dispatch(this.porter, { type: 'imaging', phase: 'toRoom', patient, modality: M,
       bed: sim.bed, route: this._routeToRoomBed(this.porter.pos, sim.bed) })) return;
     sim.imagingOrder = { modality: M?.id ?? 'TBD', phase: 'transport' };
-    this.ui.bubbles.say(this.porter, '🛏️ Transport rolling!', { hold: 3 });
+    this.ui.bubbles.say(this.porter, '🫡 ROGER!! Transport rolling!', { hold: 3 });
   }
 
   orderSurgery(patient) {
@@ -335,7 +335,7 @@ export class Game {
     if (this.tasks.has(this.surgeon)) { this._queueJob(this.surgeon, { kind: 'surgery', patientId: patient.id }, sim, 'surgery'); return; }
     if (!this.dispatch(this.surgeon, { type: 'surgery', phase: 'toPatient', patient,
       bed: sim.bed, route: this._routeToRoomBed(this.surgeon.pos, sim.bed) })) return;
-    this.ui.bubbles.say(this.surgeon, '🔪 Surgery — on our way.', { hold: 3 });
+    this.ui.bubbles.say(this.surgeon, '🫡 ROGER!! Surgery en route!', { hold: 3 });
   }
 
   orderMedFetch(patient, medId) {
@@ -344,6 +344,7 @@ export class Game {
     if (this.tasks.has(this.aide)) { this._queueJob(this.aide, { kind: 'fetch', patientId: patient.id, medId }, patient.sim, 'med fetch'); return true; }
     if (!this.dispatch(this.aide, { type: 'fetch', phase: 'toPharmacy', patient, medId,
       route: this._routeTo(this.aide.pos, { x: -9.5, z: 17.4 }) })) return false;
+    this.ui.bubbles.say(this.aide, `🫡 ROGER!! ${med.name}, coming up!`, { hold: 3 });
     this.ui.toast(`💊 Nurse fetching ${med.name}...`);
     return true;
   }
@@ -1038,6 +1039,7 @@ export class Game {
     if (order === 'imaging') { this.orderImaging(pt); return; } // study chosen AT the machine
     if (order === 'surgery') { this.orderSurgery(pt); return; }
     if (order === 'dx') { this.ui.modals.diagnose(pt); return; }
+    if (order === 'consult') { this.ui.modals.consult(pt); return; }
     if (order === 'discharge') {
       if (pt.sim.stabilized) {
         const sim = pt.sim;

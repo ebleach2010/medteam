@@ -1,5 +1,5 @@
 import { generateScan } from '../render/xray.js';
-import { askPatient, talkDown, orderTreatment, judgeDx, medDocConsult, llmEnabled, getKey, setKey, getModel, setModel, MODELS } from '../sim/llm.js';
+import { askPatient, talkDown, orderTreatment, judgeDx, medDocConsult, consultStaff, CONSULT_ROLES, llmEnabled, getKey, setKey, getModel, setModel, MODELS } from '../sim/llm.js';
 import { MEDS, SHELVES } from '../data/meds.js';
 import { PANELS, filterLabs } from '../data/labs.js';
 import { spawnCarryable } from '../entities/Carryable.js';
@@ -323,6 +323,48 @@ export class Modals {
       b.addEventListener('pointerdown', () =>
         this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: type, choice: +b.dataset.i } })));
     this.box.querySelector('.close')?.addEventListener('pointerdown', () => this.close());
+  }
+
+  // 🗣 curbside consult: pick which staff member to grill about this patient.
+  // Live Claude answers in role with the chart; offline gives role summaries.
+  consult(patient, role = 'nurse') {
+    const g = this.game;
+    const sim = patient.sim;
+    this.current = { type: 'consult', patient, options: [] };
+    patient._consultLog ??= [];
+    const roleDef = CONSULT_ROLES.find((r) => r.id === role) ?? CONSULT_ROLES[0];
+    const tabs = CONSULT_ROLES.map((r) =>
+      `<button class="tab${r.id === role ? ' on' : ''}" data-role="${r.id}">${r.ico} ${r.label}</button>`).join('');
+    this.box.innerHTML = `<h3>🗣️ Consult — ${sim.displayName}${sim.bed ? ` (Room ${sim.bed.roomNo})` : ''}</h3>
+      <div class="tabs">${tabs}</div>
+      <div class="paper" id="clog" style="max-height:34vh;overflow-y:auto">${patient._consultLog.map((l) =>
+        l.who === 'you' ? `<b>YOU:</b> ${esc(l.text)}` : `<b>${esc(l.role.toUpperCase())}:</b> ${esc(l.text)}`).join('\n') || `Ask the ${roleDef.label.toLowerCase()} anything about this patient.`}</div>
+      <div class="txrow"><input id="conbar" autocomplete="off" placeholder="Ask the ${roleDef.label.toLowerCase()}..." /><button class="opt go-mini" id="congo">💬</button></div>
+      <button class="close">Done</button>`;
+    this.veil.style.display = 'flex';
+    this.box.querySelectorAll('.tab').forEach((b) =>
+      b.addEventListener('pointerdown', () => this.consult(patient, b.dataset.role)));
+    const logEl = this.box.querySelector('#clog');
+    const paint = () => {
+      logEl.innerHTML = patient._consultLog.map((l) =>
+        l.who === 'you' ? `<b>YOU:</b> ${esc(l.text)}` : `<b>${esc(l.role.toUpperCase())}:</b> ${esc(l.text)}`).join('\n');
+      logEl.scrollTop = logEl.scrollHeight;
+    };
+    const input = this.box.querySelector('#conbar');
+    this._wireTyped('#conbar', '#congo', async (text) => {
+      const t = text.trim();
+      if (!t) return;
+      input.value = '';
+      patient._consultLog.push({ who: 'you', text: t });
+      const pending = { who: 'staff', role: roleDef.label, text: '...' };
+      patient._consultLog.push(pending);
+      paint();
+      const reply = await consultStaff(g, patient, role, t);
+      pending.text = reply;
+      if (this.current?.type === 'consult') paint();
+    });
+    setTimeout(() => input?.focus(), 50);
+    this.box.querySelector('.close').addEventListener('pointerdown', () => this.close());
   }
 
   // 🖥 MED-DOC 4000 — the green-phosphor consult terminal at the station.
