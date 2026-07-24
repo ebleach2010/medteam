@@ -32,7 +32,7 @@ export function giveMed(game, patient, medId) {
       sim._sayRaw('...that feels... very wrong...', 'critical');
       sim.accel = 10;
       sim.critical = true;
-      setTimeoutTicks(game, 4, () => sim.die('iatrogenic — ' + med.name));
+      setTimeoutTicks(game, 4, () => sim.die('iatrogenic — ' + med.name, true));
       game.addScore(-200, 'Fatal medication error');
       return;
     }
@@ -55,7 +55,7 @@ export function giveMed(game, patient, medId) {
     if (game.rng.chance(0.5)) {
       game.ui.toast('☠ tPA without a CT — they were bleeding. Catastrophe.', 'bad');
       sim.accel = 10; sim.critical = true;
-      setTimeoutTicks(game, 4, () => sim.die('tPA-induced hemorrhage (no CT first)'));
+      setTimeoutTicks(game, 4, () => sim.die('tPA-induced hemorrhage (no CT first)', true));
       game.addScore(-200, 'tPA before imaging');
       return;
     }
@@ -67,7 +67,7 @@ export function giveMed(game, patient, medId) {
     if (game.rng.chance(0.5)) {
       game.ui.toast(`☠ ${med.name} blind, no labs — it went badly.`, 'bad');
       sim.accel = 10; sim.critical = true;
-      setTimeoutTicks(game, 4, () => sim.die(`${med.name} given without labs`));
+      setTimeoutTicks(game, 4, () => sim.die(`${med.name} given without labs`, true));
       game.addScore(-150, 'Meds without labs');
       return;
     }
@@ -82,7 +82,9 @@ export function giveMed(game, patient, medId) {
     const complete = needed.every((m) => sim.medsGiven.has(m));
     if (complete) applyTreatment(game, sim);
     radioReport(game, sim, med, true,
-      complete ? 'READY FOR DISPO ONCE STABLE' : 'PARTIAL RESPONSE — CONTINUE CURRENT PLAN', 'good');
+      complete
+        ? (sim.dxPicked == null ? 'READY FOR DISPO ONCE STABLE — DIAGNOSE FOR FULL CREDIT' : 'READY FOR DISPO ONCE STABLE')
+        : 'PARTIAL RESPONSE — CONTINUE CURRENT PLAN', 'good');
   } else {
     game.ui.toast(`${med.name} given... it does nothing useful.`);
     game.addScore(-10, 'Unnecessary med');
