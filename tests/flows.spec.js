@@ -102,7 +102,11 @@ test('full loop: bed → dx → labs (ether) → meds → stabilize → discharg
     g.inject({ type: 'SELECT', actorId: g.game.nurse.id, payload: { modal: 'dx', choice: 0 } });
     await api.until(() => api.patient(id).dx === 0);
 
-    api.act('nurse');                         // ORDER LABS → the panel board opens
+    // ACTION always opens the chart now; ordering labs lives inside it (the
+    // old button used to REPLACE the workup, hiding the chart for the case)
+    api.act('nurse');
+    await api.until(() => g.state().modal === 'workup');
+    document.querySelector('#modal [data-w="labs"]').click();
     await api.until(() => g.state().modal === 'labs_order');
     g.inject({ type: 'SELECT', actorId: g.game.nurse.id, payload: { modal: 'labs_order', choice: ['CBC', 'CHEM', 'INFECT'] } });
     // the phlebotomist draws at the bedside then runs the sample through the

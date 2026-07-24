@@ -22,6 +22,7 @@ import { generateScan } from './render/xray.js';
 import { glowSprite } from './render/meshes.js';
 import { matchTreatment } from './sim/talk.js';
 import { consultReport } from './sim/llm.js';
+import { Blood } from './sim/blood.js';
 
 const FIXED_DT = 1 / 60;
 
@@ -36,6 +37,7 @@ export class Game {
     this.audio = new Audio();
     this.map = buildMap(this.renderer.scene, physics);
     this.spawner = new Spawner(this);
+    this.blood = new Blood(this); // bleeders pool on the floor; you can slip in it
 
     this.nurse = this.world.add(new Character(this, 'nurse', this.map.nurseSpawn.x, this.map.nurseSpawn.z), 'chars');
     this.doctor = this.world.add(new Character(this, 'doctor', this.map.doctorSpawn.x, this.map.doctorSpawn.z), 'chars');
@@ -112,6 +114,7 @@ export class Game {
     this.mode = 'playing';
     this.clock.running = true;
     this._spawnLobbyProps();
+    this.blood.clear(); // fresh floors each shift
     this.ui.screens.fade(false);
     this.ui.toast(`Day ${this.clock.day} — 12:00 AM. Here they come.`);
     // first-ever shift: teach the loop before the clock bites (pauses the sim)
@@ -279,6 +282,7 @@ export class Game {
     this.physics.step();
 
     this._postPhysics(dt);
+    this.blood.tick(dt);
     this.spawner.tick();
 
     // scheduled one-shots (fatal med errors etc.)
@@ -1471,20 +1475,9 @@ export class Game {
 
     const pt = this.nearestPatient(char, 1.9, (s) => s.state !== 'dead');
     if (pt && pt.sim.state === 'inbed') {
-      const sim = pt.sim;
-      if (!held && !sim.chartSeen) {
-        return {
-          ico: '📋', label: 'WORKUP', color: '#2f80ff',
-          run: () => this.ui.modals.workup(pt),
-        };
-      }
-      if (!held && sim.labState === 'none' && sim.case.labs) {
-        // order labs — the phlebotomist draws & runs them (you never hold blood)
-        return {
-          ico: '🩸', label: 'ORDER LABS', color: '#d05450',
-          run: () => this.ui.modals.labPick({ patient: pt }),
-        };
-      }
+      // ALWAYS the chart. Ordering labs lives inside the workup (and on the
+      // ORDERS wheel) — it used to replace this button once you'd read the
+      // chart once, which made the workup unreachable for the rest of the case.
       return { ico: '📋', label: 'WORKUP', color: '#2f80ff', run: () => this.ui.modals.workup(pt) };
     }
 
