@@ -583,16 +583,9 @@ Your key stays in this browser only.</div>
       if (cur.task) {
         if (cur.task.phase === 'awaitChoice' || cur.task.phase === 'toPatient') g.beginLabs(cur.task, panels);
       } else {
-        // bedside draw: the vial goes straight into the actor's sticky hand
-        const who = actor ?? g.active;
-        sim.labState = 'drawn';
-        const a = who.handAnchor();
-        const vial = spawnCarryable(g, 'vial', a.x, 0.8, a.z,
-          { patientId: cur.patient.id, label: `Blood: ${sim.displayName}` });
-        who.carrying = vial; vial.heldBy = who;
-        who.grabHeld = true;
-        if (sim.orders?.has('labs')) g.addScore(10, 'Ordered labs drawn');
-        g.ui.toast(`Blood drawn (${panels.length} panels) — to the centrifuge!`);
+        // no phlebotomist en route yet — dispatch one with these panels (you
+        // never handle blood yourself; they draw and run it to the lab)
+        g.orderLabs(cur.patient, panels);
       }
       this.close();
       return;
@@ -608,10 +601,10 @@ Your key stays in this browser only.</div>
         return; // board stays up — fix the typo and hit ✅ again
       }
       const t2 = cur.task;
-      if (t2?.phase === 'awaitChoice') {
-        if (cur.type === 'study') g.beginScan(t2, picked);
-        else g.beginSurgery(t2, picked);
-      }
+      // record the choice at the bedside; the task then wheels the patient
+      // through the ether door and runs it offstage
+      if (cur.type === 'study') { t2.modality = picked; g.ui.toast(`📷 ${picked.label} ordered — rolling to imaging`); }
+      else { g.beginSurgery(t2, picked); g.ui.toast(`🔪 ${picked.label} ordered — rolling to the OR`); }
       this.close();
       return;
     }

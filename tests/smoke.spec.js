@@ -2,6 +2,11 @@ import { test, expect } from '@playwright/test';
 
 const url = '/?seed=42&lite=1'; // lite: CI's software GL can't afford shadows
 
+// skip the first-run how-to card — it pauses the sim, freezing spawns/staff
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => { try { localStorage.setItem('medteam.seenTutorial', '1'); } catch { /* private */ } });
+});
+
 test('boots to title without console errors and starts a day', async ({ page }) => {
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));

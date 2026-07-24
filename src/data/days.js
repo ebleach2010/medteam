@@ -7,8 +7,9 @@ export function dayConfig(day) {
   return {
     // day 1 is a shakedown shift — a handful of walk-ins, room to learn.
     // The flood starts day 2 and grows from there.
-    patients: d === 1 ? 8 : Math.min(11 + (d - 2) * 2, 24),
-    quota: d === 1 ? 5 : Math.min(10, 7 + (d - 2)),
+    // compact 6-room ED: fewer beds means fewer patients + a lighter quota
+    patients: d === 1 ? 6 : Math.min(8 + (d - 2) * 2, 16),
+    quota: d === 1 ? 4 : Math.min(8, 5 + (d - 2)),
     tierWeights:
       d === 1 ? [1, 0.15, 0, 0, 0] :
       d === 2 ? [1, 0.7, 0.1, 0, 0] :
