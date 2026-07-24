@@ -368,6 +368,39 @@ export class Game {
     ch.applyMove(mx * mag, mz * mag);
   }
 
+  // freeform typed orders that aren't meds: judged (live Claude or local
+  // rules) and applied with proportionate consequences
+  applyIntervention(pt, effect, reply, label) {
+    const sim = pt.sim;
+    const line = reply || 'It... happens. Nobody is sure it helped.';
+    if (effect === 'helps') {
+      sim.accel = Math.max(0.4, (sim.accel ?? 1) * 0.6);
+      this.addScore(25, 'Good improvisation');
+      this.ui.toast(`✚ ${line}`, 'good', 4500);
+      sim._say?.('better');
+    } else if (effect === 'nothing') {
+      this.addScore(-5, 'Questionable order');
+      this.ui.toast(`🤷 ${line}`, '', 4200);
+    } else if (effect === 'harms') {
+      sim.accel = (sim.accel ?? 1) * 2;
+      this.addScore(-40, 'Harmful intervention');
+      this.ui.toast(`⚠ ${line}`, 'bad', 4500);
+      sim._say?.('worse');
+      if (sim.state === 'inbed' && this.rng.chance(0.35)) sim.agitate?.();
+    } else if (effect === 'severe') {
+      sim.accel = (sim.accel ?? 1) * 4;
+      this.addScore(-120, 'That was assault, basically');
+      sim._goCritical?.(); // its CRASHING toast fires first...
+      this.ui.toast(`🚨 ${line}`, 'bad', 5000); // ...so the narration stays on screen
+    } else if (effect === 'lethal') {
+      this.addScore(-250, 'Malpractice of legend');
+      this.ui.toast(`☠ ${line}`, 'bad', 5500);
+      sim.critical = true;
+      sim.accel = 10;
+      this.timers.push({ at: this.timeReal + 4, fn: () => { if (sim.state !== 'dead') sim.die?.(`iatrogenic — ${label}`); } });
+    }
+  }
+
   _staffTick(dt) {
     // off-duty staff head back to their post and SIT until dispatched
     for (const ch of [this.aide, this.porter, this.tech, this.surgeon]) {

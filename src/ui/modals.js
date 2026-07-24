@@ -174,8 +174,9 @@ export class Modals {
     this.box.innerHTML = `<h3>📋 Chart — ${sim.displayName}</h3>
       <div class="paper">MEDTEAM GENERAL — INTAKE\n------------------------\n${lines}</div>
       <div class="txrow"><input id="askbar" placeholder="Ask the patient anything..." /><button class="opt go-mini" data-w="ask">💬</button></div>
-      <div class="txrow"><input id="treatbar" placeholder="Order treatment (e.g. wrap ankle, give epi)..." /><button class="opt go-mini" data-w="treat">💊</button></div>
-      ${(sim.chatLog ?? []).slice(-2).map((e) => `<div class="chatline"><b>You:</b> ${e.q}<br><b>${sim.displayName}:</b> ${e.a}</div>`).join('')}
+      <div class="txrow"><input id="treatbar" placeholder="Order ANYTHING (wrap ankle, CPR, juice...)" /><button class="opt go-mini" data-w="treat">💊</button></div>
+      <div class="llmchip${llmEnabled() ? ' on' : ''}">${llmEnabled() ? '● LIVE CLAUDE — real conversation' : '○ OFFLINE MATCHER — connect your API key (🔑 title screen / MED-DOC) for real conversation. NOTE: blocked inside the claude.ai artifact.'}</div>
+      ${(sim.chatLog ?? []).slice(-3).map((e) => `<div class="chatline"><b>You:</b> ${esc(e.q)}<br><b>${sim.displayName}:</b> ${esc(e.a)}</div>`).join('')}
       <button class="opt" data-w="ekg">🫀 Run EKG ${w.ekg ? '✓' : ''}</button>
       <button class="opt" data-w="phys">🩺 Physical exam ${w.phys ? '✓' : ''}</button>
       <button class="opt" data-w="neuro">🧠 Neuro exam ${w.neuro ? '✓' : ''}</button>
@@ -482,10 +483,11 @@ Your key stays in this browser only.</div>
         return;
       }
       if (choice === 'treat') {
-        g.ui.toast('💊 Pharmacy processing the order...');
-        orderTreatment(sim2, text ?? '').then(({ medId }) => {
-          if (medId) g.orderMedFetch(cur.patient, medId);
-          else g.ui.toast('Pharmacy: “we don’t recognize that order.”', 'bad');
+        g.ui.toast('💊 Processing the order...');
+        orderTreatment(sim2, text ?? '').then(({ medId, effect, reply }) => {
+          if (medId) { g.orderMedFetch(cur.patient, medId); return; }
+          if (effect) { g.applyIntervention(cur.patient, effect, reply, text); return; }
+          g.ui.toast('Staff blink at the order. “...do WHAT, exactly?”', 'bad');
         });
         this.workup(cur.patient);
         return;

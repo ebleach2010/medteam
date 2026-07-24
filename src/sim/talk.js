@@ -146,7 +146,7 @@ const ALIASES = {
   blood: 'prbc', transfuse: 'prbc', transfusion: 'prbc',
   sugar: 'd50', glucose: 'd50', dextrose: 'd50',
   'clot buster': 'tpa', thrombolytic: 'tpa', alteplase: 'tpa',
-  'beta blocker': 'metoprolol', epinephrine: 'epi', epipen: 'epi', adrenaline: 'epi',
+  'beta blocker': 'metoprolol', epinephrine: 'epi', epipen: 'epi', adrenaline: 'epi', epi: 'epi',
   antibiotic: 'ceftriaxone', abx: 'ceftriaxone', pressor: 'epi',
   'pain meds': 'morphine', analgesia: 'morphine', opioid: 'morphine',
   benzodiazepine: 'benzo', ativan: 'benzo', lorazepam: 'benzo',
@@ -158,7 +158,7 @@ export function matchTreatment(text) {
   const q = norm(text);
   if (!q) return null;
   for (const [alias, id] of Object.entries(ALIASES)) {
-    if (q.includes(alias)) return id;
+    if (new RegExp(`\\b${alias}\\b`).test(q)) return id; // word-bounded: "juice" must not match "ice"
   }
   let best = null, bestScore = 0;
   for (const m of MEDS) {

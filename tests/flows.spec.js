@@ -123,6 +123,11 @@ test('full lab loop: bed → labs → centrifuge → results → dx → meds →
     await api.until(() => g.state().chars[0].carrying === 'Amoxicillin');
     g.teleport('nurse', -12, -8.6);
     await api.until(() => api.patient(id).treated, 10000);
+    // stabilization lags treatment — leaving early means a refused discharge
+    await api.until(() => {
+      const p = [...g.game.world.byTag('patients')].find((q) => q.id === id);
+      return p?.sim.stabilized;
+    }, 60000);
 
     // haul them to the DISCHARGE room — walked, through the doors
     api.grab('nurse');

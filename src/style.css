@@ -257,3 +257,11 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0e1420; t
 }
 #modal.crtbox .crt-go { background: #123c1e; color: #4dff7c; border-color: #1e4a28; }
 #modal.crtbox .close { background: #0c1a10; color: #7cc796; border: 1px solid #1e4a28; }
+
+.llmchip {
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  margin: 2px 0 6px;
+  color: #7a8aa8;
+}
+.llmchip.on { color: #59d98c; }

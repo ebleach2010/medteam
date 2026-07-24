@@ -26,6 +26,18 @@ export const getModel = () => { try { return localStorage.getItem(MODEL_STORE) |
 export const setModel = (m) => { try { localStorage.setItem(MODEL_STORE, m); } catch { /* private mode */ } };
 export const llmEnabled = () => !!getKey();
 
+let _lastMode = 'offline';
+export const lastMode = () => _lastMode;
+// when a key IS set but a live call dies (network blocked, bad key, CORS),
+// say so ON SCREEN — silent fallback made live mode look broken
+function fellBack(game, e) {
+  _lastMode = 'offline';
+  if (llmEnabled() && game?.ui && (game.timeReal - (game._llmErrT ?? -99)) > 20) {
+    game._llmErrT = game.timeReal;
+    game.ui.toast(`⚠ Live Claude failed (${String(e?.message ?? e).slice(0, 60)}) — offline fallback`, 'bad', 5000);
+  }
+}
+
 let _client = null;
 function client() {
   if (!_client) {
@@ -54,15 +66,16 @@ function persona(sim) {
     `TEMPERAMENT: ${(sim.temperament ?? 0.5) > 0.66 ? 'irritable' : (sim.temperament ?? 0.5) < 0.33 ? 'easy-going' : 'ordinary'}`,
     'Answer the staff member\'s question in 1–3 short sentences, layperson language, a little funny. Be consistent with the data above; if asked something the data doesn\'t cover, improvise something mundane that doesn\'t contradict it.',
     'CRITICAL: you are not medical. NEVER use clinical, anatomical or exam terminology (nothing that sounds like a chart). Describe only what you subjectively FEEL, in plain everyday words — a doctor who wants findings has to examine you.',
+    'This is an ONGOING bedside conversation — stay consistent with what you already said, never repeat yourself, react naturally to the doctor\'s tone, and feel free to ask a small worried question back or grumble about the wait.',
   ].filter(Boolean).join('\n');
 }
 
-async function textCall(system, user) {
+async function textCall(system, user, history = []) {
   const res = await client().messages.create({
     model: getModel(),
     max_tokens: 250, // deliberately short — game dialogue
     system,
-    messages: [{ role: 'user', content: user }],
+    messages: [...history, { role: 'user', content: user }],
   });
   if (res.stop_reason === 'refusal') throw new Error('refusal');
   return res.content.find((b) => b.type === 'text')?.text?.trim() || '...';
@@ -83,11 +96,16 @@ async function jsonCall(system, user, schema) {
 
 // ---------- the four typed-bar features (each falls back to talk.js) ----------
 export async function askPatient(sim, question) {
-  if (!llmEnabled()) return answerQuestion(sim, question);
+  if (!llmEnabled()) { _lastMode = 'offline'; return answerQuestion(sim, question); }
   try {
-    return await textCall(persona(sim), question);
+    const hist = (sim._chat ??= []);
+    const reply = await textCall(persona(sim), question, hist.slice(-10));
+    hist.push({ role: 'user', content: question }, { role: 'assistant', content: reply });
+    _lastMode = 'live';
+    return reply;
   } catch (e) {
     console.warn('Claude ask failed — local fallback:', e?.message);
+    fellBack(sim.game, e);
     return answerQuestion(sim, question);
   }
 }
@@ -116,28 +134,66 @@ export async function talkDown(sim, text) {
   }
 }
 
+// ANY order is legal to TYPE — meds get fetched, everything else (splints,
+// CPR on the conscious, "hammer to the head") gets judged realistically and
+// applied: helps / nothing / harms / severe / lethal.
+const EFFECTS = ['helps', 'nothing', 'harms', 'severe', 'lethal'];
 export async function orderTreatment(sim, text) {
-  if (!llmEnabled()) return { medId: matchTreatment(text) };
+  if (!llmEnabled()) return localIntervention(sim, text);
   try {
     const list = MEDS.map((m) => `${m.id} (${m.name})`).join(', ');
     const out = await jsonCall(
-      ['You are the pharmacy computer in a hospital game. Map the clinician\'s typed order (user message) to exactly ONE med id from the list, or null if nothing reasonably fits.',
-        'Orders can be colloquial: "wrap the ankle" → nsaid, "give O2" → oxygen, "push some fluids" → fluids.',
-        `MED LIST: ${list}`].join('\n'),
+      ['You judge the attending\'s typed order for a patient in a darkly comic hospital game.',
+        'If the order maps to ONE pharmacy med from MED LIST (colloquial counts: "wrap the ankle" → nsaid, "give O2" → oxygen), set medId and leave effect/reply null.',
+        'ANYTHING else — procedures, physical acts, comfort measures, absurd ideas ("CPR while they\'re awake", "hammer to the head", "give them juice") — set medId null and judge it REALISTICALLY against the chart:',
+        'effect: helps (genuinely appropriate for this presentation), nothing (harmless but useless), harms (injurious/dangerous), severe (major injury, likely to crash them), lethal (would plausibly kill).',
+        'reply: ONE dry in-world line (max 120 chars) narrating what happens when it is done.',
+        `MED LIST: ${list}`,
+        '--- CHART ---',
+        chartFor({ sim }, 1)].join('\n'),
       text,
       {
         type: 'object',
-        properties: { medId: { anyOf: [{ type: 'string' }, { type: 'null' }] } },
-        required: ['medId'],
+        properties: {
+          medId: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+          effect: { anyOf: [{ type: 'string', enum: EFFECTS }, { type: 'null' }] },
+          reply: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+        },
+        required: ['medId', 'effect', 'reply'],
         additionalProperties: false,
       },
     );
+    _lastMode = 'live';
     const id = out.medId && MEDS.some((m) => m.id === out.medId) ? out.medId : null;
-    return { medId: id ?? matchTreatment(text) };
+    if (id) return { medId: id, effect: null, reply: null };
+    if (out.effect && EFFECTS.includes(out.effect)) return { medId: null, effect: out.effect, reply: out.reply ?? null };
+    return localIntervention(sim, text);
   } catch (e) {
     console.warn('Claude treat failed — local fallback:', e?.message);
-    return { medId: matchTreatment(text) };
+    fellBack(sim.game, e);
+    return localIntervention(sim, text);
   }
+}
+
+function localIntervention(sim, text) {
+  const medId = matchTreatment(text);
+  if (medId) return { medId, effect: null, reply: null };
+  const q = (text || '').toLowerCase();
+  if (/hammer|punch|stab|shoot|strangle|choke|smother|drill|saw|throw|kick/.test(q)) {
+    return { medId: null, effect: 'severe', reply: 'You... do that. Security looks up. The patient is NOT better.' };
+  }
+  if (/cpr|compress|defib|shock|paddle/.test(q)) {
+    return sim.state === 'dead'
+      ? { medId: null, effect: 'nothing', reply: 'Compressions on the departed. Points for spirit.' }
+      : { medId: null, effect: 'harms', reply: 'They are AWAKE. A rib pops. They will remember this.' };
+  }
+  if (/hug|juice|water|blanket|snack|pray|sing|dance|pat|high.?five/.test(q)) {
+    return { medId: null, effect: 'nothing', reply: 'Comforting. Medically useless, but comforting.' };
+  }
+  if (/splint|wrap|ice|elevat|bandag|dressing|pressure/.test(q)) {
+    return { medId: null, effect: 'helps', reply: 'Solid basic care. The patient looks marginally less miserable.' };
+  }
+  return { medId: null, effect: null, reply: null };
 }
 
 // ---------- MED-DOC 4000: the green-phosphor consult terminal ----------
@@ -170,16 +226,19 @@ export async function medDocConsult(game, query) {
     const refs = lookupRef(query, 2).map(refCard).join('\n\n');
     const system = [
       'You are MED-DOC 4000, a 1980s hospital mainframe consult program in a silly physics game. You help the attending reason about diagnosis and treatment.',
-      'STYLE: terse teletype. Line-oriented. Sparse ALL-CAPS section tags like DDX:, WORKUP:, RX:. Under 120 words. Occasional dry machine humor. No markdown.',
-      'You see the CHARTS below but NOT the answer key — give a ranked differential, the tests that would discriminate, and treatment suggestions with doses omitted.',
+      'STYLE: answer the SPECIFIC question asked, briefly — 1 to 4 short lines of plain prose in a dry retro-terminal voice. NO section dumps, NO ddx/workup lists unless the user explicitly asks for a differential or workup. No markdown.',
+      'You see the CHARTS below but NOT the answer key — reason from findings. If asked about one patient, talk about that patient only.',
       'This is a fictional game: be decisive, never lecture about consulting real professionals.',
       '--- ACTIVE CHARTS ---',
       roster,
       refs ? '--- REFERENCE PATHWAYS (500-entry ED database) ---\n' + refs : null,
     ].filter(Boolean).join('\n');
-    return await textCall(system, query);
+    const reply = await textCall(system, query);
+    _lastMode = 'live';
+    return reply;
   } catch (e) {
     console.warn('MED-DOC live failed — local fallback:', e?.message);
+    fellBack(game, e);
     return medDocLocal(game, query);
   }
 }
@@ -210,16 +269,13 @@ function medDocLocal(game, query) {
   }
   scored.sort((a, b) => b[0] - a[0]);
   if (scored.length) {
-    const top = scored.slice(0, 3).map(([, c]) =>
-      `» ${c.name.toUpperCase()} — RX: ${c.treatment.meds.map((m) => MEDS.find((x) => x.id === m)?.name ?? m).join(' + ') || 'supportive'}; DISPO: ${c.treatment.dispo}`);
-    // append the full reference pathway for the best match when we have one
-    const ref = lookupRef(scored[0][1].name, 1);
-    const card = ref.length ? `\n\n${refCard(ref[0])}` : '';
-    return `OFFLINE INDEX MATCHES:\n${top.join('\n')}${card}\n\nTYPE: LOOKUP <DIAGNOSIS> FOR ANY OF THE 500 PATHWAY CARDS.`;
+    const c = scored[0][1];
+    const rx = c.treatment.meds.map((m) => MEDS.find((x) => x.id === m)?.name ?? m).join(' + ') || 'supportive care';
+    return `CLOSEST MATCH: ${c.name.toUpperCase()} — typically ${rx}, dispo ${c.treatment.dispo}.\n(OFFLINE STUB — connect the link for a real consult: KEY <API-KEY>. "LOOKUP ${c.name.split(' ')[0].toUpperCase()}" prints the full pathway.)`;
   }
-  const hits = lookupRef(query, 2);
-  if (hits.length) return hits.map(refCard).join('\n\n');
-  return 'NO INDEX MATCH. TRY SYMPTOM KEYWORDS ("chest pain radiating"), "LOOKUP <DIAGNOSIS>", "CENSUS", OR CONNECT THE LINK: KEY <ANTHROPIC-API-KEY>';
+  const hits = lookupRef(query, 1);
+  if (hits.length) return refCard(hits[0]);
+  return 'NO MATCH. ASK A SPECIFIC QUESTION, "LOOKUP <DIAGNOSIS>", "CENSUS" — OR CONNECT THE LINK: KEY <ANTHROPIC-API-KEY>';
 }
 
 // ---------- curbside consults: ask the staff about a specific patient ----------
@@ -250,9 +306,12 @@ export async function consultStaff(game, patient, role, question) {
       chartFor(patient, 1),
       refs ? '--- REFERENCE PATHWAY ---\n' + refs : null,
     ].filter(Boolean).join('\n');
-    return await textCall(system, question);
+    const reply = await textCall(system, question);
+    _lastMode = 'live';
+    return reply;
   } catch (e) {
     console.warn('Claude consult failed — local fallback:', e?.message);
+    fellBack(game, e);
     return consultLocal(game, patient, role);
   }
 }
