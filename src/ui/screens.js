@@ -1,3 +1,5 @@
+import { llmEnabled, getKey, setKey } from '../sim/llm.js';
+
 // Fullscreen states: title, day transition fade, end-of-day summary.
 export class Screens {
   constructor(root, game) {
@@ -12,17 +14,44 @@ export class Screens {
 
   title(onStart) {
     this.el.style.display = 'flex';
+    const on = llmEnabled();
     this.el.innerHTML = `
       <h1>MED<span>TEAM</span></h1>
       <p>The ED is filling up. Triage them, work them up, treat them —
       and try very hard not to kill anyone. Swap between your nurse and doctor,
       drag patients to beds, spin bloods, read scans, raid the pharmacy,
       and tackle anyone who rips out their IV.</p>
-      <p style="font-size:12px">🕹️ left thumb: move · ✋ grab/drop · ⚡ tap: act, hold: order wheel · 🔄 swap roles</p>
-      <button class="go">START SHIFT</button>
-      <button class="ai" style="padding:9px 24px;font-size:13px;font-weight:800;color:#fff;border:none;border-radius:999px;background:linear-gradient(#3a4a6b,#26355a)">🔑 LIVE CLAUDE (API key)</button>`;
+      <p style="font-size:12px">🕹️ left thumb / WASD: move · ✋ grab &amp; drop · 📋 orders · 🔄 swap roles</p>
+      <div id="keybox">
+        <div class="klabel">🔑 Live Claude
+          <span class="kpill ${on ? 'on' : 'off'}">${on ? '● CONNECTED' : '○ OFFLINE'}</span>
+        </div>
+        <div class="krow">
+          <input id="titlekey" type="password" autocomplete="off" placeholder="Paste sk-ant-… for live patient AI" value="">
+          <button id="titlekeygo">SAVE</button>
+        </div>
+        <div class="khint">Optional. On phone, paste your key here so patients, MED-DOC &amp; consults use real Claude. Stored in this browser only.</div>
+      </div>
+      <button class="go">START SHIFT</button>`;
+    const input = this.el.querySelector('#titlekey');
+    const pill = this.el.querySelector('.kpill');
+    const refresh = () => {
+      const now = llmEnabled();
+      pill.className = `kpill ${now ? 'on' : 'off'}`;
+      pill.textContent = now ? '● CONNECTED' : '○ OFFLINE';
+    };
+    const save = () => {
+      const k = input.value.trim();
+      if (!k) return;
+      setKey(k);
+      input.value = '';
+      input.blur();
+      refresh();
+      this.game.ui.toast(llmEnabled() ? '🔑 Claude connected' : 'Key cleared', 'good');
+    };
+    this.el.querySelector('#titlekeygo').addEventListener('click', save);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } });
     this.el.querySelector('.go').addEventListener('pointerdown', () => { this.hide(); onStart(); });
-    this.el.querySelector('.ai').addEventListener('pointerdown', () => this.game.ui.modals.apiSettings());
   }
 
   daySummary(stats, day, quota, onNext) {

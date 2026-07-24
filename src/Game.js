@@ -113,6 +113,10 @@ export class Game {
     this._spawnLobbyProps();
     this.ui.screens.fade(false);
     this.ui.toast(`Day ${this.clock.day} — 12:00 AM. Here they come.`);
+    // first-ever shift: teach the loop before the clock bites (pauses the sim)
+    let seen = false;
+    try { seen = localStorage.getItem('medteam.seenTutorial') === '1'; } catch { /* private */ }
+    if (!seen && day === 1) setTimeout(() => { if (this.mode === 'playing' && !this.ui.modals.open) this.ui.modals.howToPlay(false); }, 400);
   }
 
   // waiting-room physics props, reset fresh each day — angry patients shove
@@ -310,6 +314,17 @@ export class Game {
     task.wait = 0;
     this.tasks.set(char, task);
     return true;
+  }
+
+  // a patient LEAVING a bed must thread their room door before any zone
+  // routing — otherwise self-navigation walks them into the room's front wall
+  _routeLeaving(sim, to) {
+    const from = sim.ent.body.translation();
+    if (sim.bed) {
+      const door = this.map.roomDoor(sim.bed.index);
+      return [{ x: door.x, z: -6.4 }, ...this._routeTo({ x: door.x, z: -5.6 }, to)];
+    }
+    return this._routeTo(from, to);
   }
 
   _routeToRoomBed(from, bed) {
@@ -1175,6 +1190,11 @@ export class Game {
       f.sp.material.opacity = f.life * 0.4;
     }
 
+    // consult-terminal LEDs blink so the stations read as live & interactive
+    for (const s of this.map.stationLights) {
+      s.mat.emissiveIntensity = 0.5 + Math.max(0, Math.sin(now * 3 + s.phase)) * 1.6;
+    }
+
     // the pit flickers; flares when fed
     const fire = this.map.fire;
     fire.flare = Math.max(0, fire.flare - dt * 1.2);
@@ -1251,10 +1271,11 @@ export class Game {
         this.dayStats.treated += 1;
         this.addScore(Math.round(sim.case.score * (sim.dxPicked === 0 ? 1 : 0.55)), 'Discharged well');
         this.ui.toast(`🏠 ${sim.displayName} walking home!`, 'good');
+        const leaveRoute = this._routeLeaving(sim, this.map.discharge); // door-first, BEFORE freeing the bed
         if (sim.bed) this.freeBed(sim);
         this.setPatientDynamic(pt);
         sim.state = 'leaving';
-        sim.route = this._routeTo(pt.body.translation(), this.map.discharge).concat([{ ...this.map.gateOut }]);
+        sim.route = leaveRoute.concat([{ ...this.map.gateOut }]);
         sim.walkTarget = sim.route.shift();
       } else {
         this.ui.toast('They are NOT stable yet — monitor them longer.', 'bad');

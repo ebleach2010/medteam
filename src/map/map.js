@@ -773,7 +773,9 @@ export function buildMap(scene, physics) {
   crtScreen.position.set(0, 0.26, 0.258);
   const crtKeys = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.05, 0.2), mat(0xbfb9a4));
   crtKeys.position.set(0, 0.03, 0.42);
-  crt.add(crtCase, crtScreen, crtKeys);
+  const crtLed = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), emat(0x39ff6e, 1.4).clone());
+  crtLed.position.set(-0.22, 0.06, 0.26);
+  crt.add(crtCase, crtScreen, crtKeys, crtLed);
   crt.position.set(-14.75, 0.9, -1.2);
   crt.rotation.y = Math.PI; // screen faces the corridor side
   statics.add(crt);
@@ -788,11 +790,17 @@ export function buildMap(scene, physics) {
   crt2Screen.position.set(0, 0.26, 0.258);
   const crt2Keys = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.05, 0.2), mat(0xb2b8c2));
   crt2Keys.position.set(0, 0.03, 0.42);
-  crt2.add(crt2Case, crt2Screen, crt2Keys);
+  const crt2Led = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), emat(0x4aa8ff, 1.4).clone());
+  crt2Led.position.set(-0.22, 0.06, 0.26);
+  crt2.add(crt2Case, crt2Screen, crt2Keys, crt2Led);
   crt2.position.set(-17.25, 0.9, -1.2);
   crt2.rotation.y = Math.PI;
   statics.add(crt2);
   const triagePC = { x: -17.25, z: -2.6 }; // stand here → TRIAGE BOARD prompt
+  const stationLights = [
+    { mesh: crtLed, mat: crtLed.material, phase: 0 },
+    { mesh: crt2Led, mat: crt2Led.material, phase: 1.6 },
+  ];
 
   // when dispatched they round the desk via a fixed lane, then sprint
   // lanes bow NORTH around the seated row first, then round the desk end —
@@ -894,6 +902,8 @@ export function buildMap(scene, physics) {
   floorRing(-9.5, 17.6, 0xff5db0, 1.7);
   floorRing(discharge.x, discharge.z, 0x4dd07a, 2.0);
   floorRing(firePit.x, firePit.z, 0xff6a2c, 1.9);
+  floorRing(medDoc.x, medDoc.z, 0x39ff6e, 1.0);   // stand-here spot for the green consult terminal
+  floorRing(triagePC.x, triagePC.z, 0x4aa8ff, 1.0); // …and the blue triage board
 
   const dropRing = new THREE.Mesh(new THREE.RingGeometry(1.0, 1.3, 36),
     new THREE.MeshBasicMaterial({ color: 0x4dd07a, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }));
@@ -909,7 +919,7 @@ export function buildMap(scene, physics) {
   return {
     beds, seats, centrifuge, imagingPad, diagnostics, shelfUnits, rings, dropRing,
     roomDesks, roomLights, roomMonitors, knockSpots, triageDesk, receptionSeat, staffSeats, stationExit, medDoc, triagePC,
-    discharge, gateOut, firePit, fire, fadeWalls,
+    discharge, gateOut, firePit, fire, fadeWalls, stationLights,
     floorYAt: () => 0,
     zoneOf, zoneDoors: ZONE_DOORS,
     entrance: { x: -28.2, z: 10 },
