@@ -247,11 +247,27 @@ export class Modals {
 
   // text bars submit ONLY via their ✅ button (or a deliberate Enter);
   // keystrokes are fenced off from the game's hotkeys
-  _wireTyped(inputSel, btnSel, submit) {
+  // Wire a text input so a SINGLE keystroke sends: the iOS keyboard shows a
+  // blue "Send" key (enterkeyhint), and pressing it (or Enter) submits and
+  // keeps the keyboard up for chat-style modals — no checkmark-then-send dance.
+  _wireTyped(inputSel, btnSel, submit, { keepFocus = true } = {}) {
     const input = this.box.querySelector(inputSel);
-    const go = () => { const t = input?.value ?? ''; if (t.trim()) submit(t); };
+    if (input) {
+      input.setAttribute('enterkeyhint', 'send');
+      input.setAttribute('autocomplete', 'off');
+      input.setAttribute('autocorrect', 'off');
+    }
+    const go = () => {
+      const t = input?.value ?? '';
+      if (!t.trim()) return;
+      submit(t);
+      if (keepFocus && input && document.body.contains(input)) input.focus();
+    };
     if (btnSel) this.box.querySelector(btnSel)?.addEventListener('click', go);
-    input?.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); e.stopPropagation(); });
+    input?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); go(); }
+      e.stopPropagation();
+    });
   }
 
   // clipboard rises up with the imaging report
@@ -450,11 +466,9 @@ export class Modals {
     const g = this.game;
     g.medDocLog ??= [{
       who: 'doc',
-      text: `MED-DOC 4000 — CLINICAL CONSULT SYSTEM
-(C) 1987 MEDTEAM GENERAL. ALL RIGHTS RESERVED.
-${llmEnabled() ? `LINK: ● LIVE — ${getModel()}` : 'LINK: ○ OFFLINE — TYPE: KEY <ANTHROPIC-API-KEY>'}
-REF DB: 500 ED PATHWAYS LOADED.
-TYPE A QUESTION · "LOOKUP <DX>" · "CENSUS" · "CLEAR"`,
+      text: `MED-DOC 4000 — Claude, at your terminal.
+${llmEnabled() ? `Link: ● live — ${getModel()}. Ask me anything about your patients.` : 'Link: ○ offline. Type  key <your-anthropic-key>  to bring me online.'}
+Try: a plain question, "census", "lookup <diagnosis>", or "clear".`,
     }];
     this.current = { type: 'meddoc', patient: null, options: [] };
     this.box.classList.add('crtbox');
@@ -482,12 +496,20 @@ TYPE A QUESTION · "LOOKUP <DX>" · "CENSUS" · "CLEAR"`,
         return;
       }
       g.medDocLog.push({ who: 'you', text: t });
-      const pending = { who: 'doc', text: '▮ PROCESSING...' };
+      const pending = { who: 'doc', text: '▮' };
       g.medDocLog.push(pending);
       paint();
       const reply = await medDocConsult(g, t);
-      pending.text = reply;
-      if (this.current?.type === 'meddoc') paint();
+      // typewriter it out — Claude "typing" on the CRT, letter by letter
+      clearInterval(this._ttT);
+      let i = 0;
+      this._ttT = setInterval(() => {
+        if (this.current?.type !== 'meddoc') { clearInterval(this._ttT); pending.text = reply; return; }
+        i += 1;
+        pending.text = reply.slice(0, i) + (i < reply.length ? ' ▮' : '');
+        paint();
+        if (i >= reply.length) clearInterval(this._ttT);
+      }, 45);
     });
     setTimeout(() => input?.focus(), 50);
     this.box.querySelector('.close').addEventListener('click', () => this.close());
@@ -802,6 +824,7 @@ Your key stays in this browser only.</div>
 
   close() {
     clearInterval(this._vfT);
+    clearInterval(this._ttT);
     this._cancelRebind();
     this.current = null;
     this.veil.style.display = 'none';

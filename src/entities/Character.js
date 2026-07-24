@@ -86,30 +86,35 @@ export class Character {
       springToward(this.carrying.body, a, { k: 55, c: 4, maxForce: 30, dt });
     }
     if (this.dragging) {
-      const a = this.handAnchor();
-      const t = { x: a.x, y: this.body.translation().y - 0.55, z: a.z }; // scrape them along the floor
-      const imp = springToward(this.dragging.body, t, { k: 3200, c: 700, maxForce: 2400, dt });
-      // equal-and-opposite reaction: a heavy patient visibly yanks you around
-      this.body.applyImpulse({ x: -imp.x * 0.3, y: 0, z: -imp.z * 0.3 }, true);
+      // staff wheeling a patient thread tight doorways, so they keep the looser
+      // gurney tow; YOU get the tightened, damped tow that feels controlled
+      const staffTow = !!this.game.tasks?.has?.(this);
+      const me = this.body.translation();
+      const fwd = staffTow ? 0.55 : 0.72;
+      const a = { x: me.x + Math.sin(this.yaw) * fwd, y: me.y - (staffTow ? 0.55 : 0.34), z: me.z + Math.cos(this.yaw) * fwd };
+      const imp = springToward(this.dragging.body,
+        a, staffTow ? { k: 3200, c: 700, maxForce: 2400, dt } : { k: 2400, c: 1000, maxForce: 2200, dt });
+      // reaction: staff shrug it off; for you a light tug so a heavy patient has
+      // SOME weight without wrenching you off course (the old 0.3 felt drunk)
+      this.body.applyImpulse({ x: -imp.x * (staffTow ? 0.3 : 0.12), y: 0, z: -imp.z * (staffTow ? 0.3 : 0.12) }, true);
       const db = this.dragging.body;
       const dv = db.linvel();
       let dp = db.translation();
-      // HARD tether: your grip is a grip, not a bungee. If the spring ever
-      // stretches past arm's length, reel the body straight back to the hand.
-      const TETHER = 1.15;
+      // hard tether: grip is a grip, not a bungee.
+      const TETHER = staffTow ? 1.15 : 0.95;
       const gap = Math.hypot(dp.x - a.x, dp.z - a.z);
       if (gap > TETHER) {
         const f = TETHER / gap;
         db.setTranslation({ x: a.x + (dp.x - a.x) * f, y: dp.y, z: a.z + (dp.z - a.z) * f }, true);
-        db.setLinvel({ x: dv.x * 0.5, y: dv.y, z: dv.z * 0.5 }, true);
+        db.setLinvel({ x: dv.x * 0.4, y: dv.y, z: dv.z * 0.4 }, true);
         dp = db.translation();
       }
-      // unstick yank: if the tow jams on a corner, give it a hop over the snag
-      const far = Math.hypot(dp.x - a.x, dp.z - a.z) > 1.05;
+      // unstick yank: if the tow jams on a corner, hop it over the snag
+      const far = Math.hypot(dp.x - a.x, dp.z - a.z) > (staffTow ? 1.05 : 0.9);
       if (far && Math.hypot(dv.x, dv.z) < 0.2) this._stuckT = (this._stuckT ?? 0) + dt;
       else this._stuckT = 0;
-      if (this._stuckT > 0.45) {
-        db.applyImpulse({ x: (a.x - dp.x) * 14, y: 190, z: (a.z - dp.z) * 14 }, true);
+      if (this._stuckT > 0.42) {
+        db.applyImpulse({ x: (a.x - dp.x) * 13, y: 170, z: (a.z - dp.z) * 13 }, true);
         this._stuckT = 0;
       }
     }

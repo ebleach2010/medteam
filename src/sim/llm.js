@@ -225,13 +225,13 @@ export async function medDocConsult(game, query) {
     const roster = pts.map((p, i) => chartFor(p, i + 1)).join('\n') || '(no active patients)';
     const refs = lookupRef(query, 2).map(refCard).join('\n\n');
     const system = [
-      'You are MED-DOC 4000, a 1980s hospital mainframe consult program in a silly physics game. You help the attending reason about diagnosis and treatment.',
-      'STYLE: answer the SPECIFIC question asked, briefly — 1 to 4 short lines of plain prose in a dry retro-terminal voice. NO section dumps, NO ddx/workup lists unless the user explicitly asks for a differential or workup. No markdown.',
-      'You see the CHARTS below but NOT the answer key — reason from findings. If asked about one patient, talk about that patient only.',
-      'This is a fictional game: be decisive, never lecture about consulting real professionals.',
-      '--- ACTIVE CHARTS ---',
+      'You are Claude, running on the "MED-DOC 4000" workstation in an ED-simulator game. The attending physician is asking you for help. Answer exactly like you (Claude) normally would at a computer — clear, direct, genuinely helpful.',
+      'STYLE: answer the specific question asked, concisely — usually 1 to 4 sentences of plain prose. Only give a differential or a workup list if they actually ask for one. Plain text, no markdown headers, no roleplay, no "1980s terminal" affectation, no all-caps.',
+      'You can see the active patient CHARTS below but NOT the hidden answer key — reason from the findings like a real consult. If they ask about one patient, focus on that patient.',
+      'This is a fictional game — be decisive and practical; do not add disclaimers about consulting real professionals.',
+      '--- ACTIVE PATIENT CHARTS ---',
       roster,
-      refs ? '--- REFERENCE PATHWAYS (500-entry ED database) ---\n' + refs : null,
+      refs ? '--- REFERENCE PATHWAYS (internal ED database, for grounding) ---\n' + refs : null,
     ].filter(Boolean).join('\n');
     const reply = await textCall(system, query);
     _lastMode = 'live';
