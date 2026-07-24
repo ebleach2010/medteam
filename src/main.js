@@ -1,6 +1,7 @@
 import { initPhysics } from './physics/physics.js';
 import { Game } from './Game.js';
 import { installTestApi } from './debug/testApi.js';
+import { preloadModels } from './render/models.js';
 
 // stop touch drags from ever scrolling/bouncing the page (or an embedding host)
 document.addEventListener('touchmove', (e) => {
@@ -8,6 +9,10 @@ document.addEventListener('touchmove', (e) => {
 }, { passive: false });
 document.addEventListener('gesturestart', (e) => e.preventDefault());
 
+const params0 = new URLSearchParams(location.search);
+// real 3D prop models load before the map builds; a miss falls back to the
+// procedural mesh, so this can never block or break the boot
+await preloadModels(params0.has('lite'));
 const physics = await initPhysics();
 // 🔑 key handoff: open the game as <url>#key=sk-ant-... once and the key is
 // stored on this device (same slot the 🔑 board and MED-DOC use), then
