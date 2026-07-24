@@ -144,7 +144,7 @@ export async function orderTreatment(sim, text) {
     const list = MEDS.map((m) => `${m.id} (${m.name})`).join(', ');
     const out = await jsonCall(
       ['You judge the attending\'s typed order for a patient in a darkly comic hospital game.',
-        'If the order maps to ONE pharmacy med from MED LIST (colloquial counts: "wrap the ankle" → nsaid, "give O2" → oxygen), set medId and leave effect/reply null.',
+        'If the order maps to ONE pharmacy med from MED LIST, set medId and leave effect/reply null. Be GENEROUS about this: match on drug CLASS, mechanism, brand name or plain English — "wrap the ankle" → nsaid, "give O2" → oxygen, "a beta blocker" → metoprolol, "start LR"/"normal saline"/"fluid bolus" → fluids, "tylenol" → nsaid, "broad-spectrum abx" → ceftriaxone, "narcan" → naloxone, "something for the pain" → morphine. The player should NOT have to know the exact formulary name.',
         'ANYTHING else — procedures, physical acts, comfort measures, absurd ideas ("CPR while they\'re awake", "hammer to the head", "give them juice") — set medId null and judge it REALISTICALLY against the chart:',
         'effect: helps (genuinely appropriate for this presentation), nothing (harmless but useless), harms (injurious/dangerous), severe (major injury, likely to crash them), lethal (would plausibly kill).',
         'reply: ONE dry in-world line (max 120 chars) narrating what happens when it is done.',

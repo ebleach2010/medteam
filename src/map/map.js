@@ -742,10 +742,12 @@ export function buildMap(scene, physics) {
   };
   for (const key of ['aide', 'surgeon', 'porter', 'tech']) {
     const s = staffSeats[key];
-    const c = makeOfficeChair(Math.PI); // seat faces the desk
-    c.position.set(s.x, 0, s.z);
+    const c = makeOfficeChair(Math.PI); // seat faces the desk (staff face -z)
+    // nudge the chair BEHIND the occupant so the backrest is at their back
+    // instead of running through their chest
+    c.position.set(s.x, 0, s.z + 0.16);
     statics.add(c);
-    shadowBlob(s.x, s.z, 0.8, 0.8, 0.24);
+    shadowBlob(s.x, s.z + 0.1, 0.85, 0.85, 0.24);
   }
   // MED-DOC 4000: green-phosphor consult terminal on the desk's east end
   const crt = new THREE.Group();
@@ -759,8 +761,9 @@ export function buildMap(scene, physics) {
   const crtLed = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), emat(0x39ff6e, 1.4).clone());
   crtLed.position.set(-0.22, 0.06, 0.26);
   crt.add(crtCase, crtScreen, crtKeys, crtLed);
-  crt.position.set(-14.75, 0.9, -1.2);
+  crt.position.set(-14.6, 0.9, -1.25);
   crt.rotation.y = Math.PI; // screen faces the corridor side
+  crt.scale.setScalar(2.1);  // ABSURDLY large — you can read it from the door
   statics.add(crt);
   const medDoc = { x: -14.75, z: -2.6 }; // stand here → MED-DOC prompt
 
@@ -776,8 +779,9 @@ export function buildMap(scene, physics) {
   const crt2Led = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), emat(0x4aa8ff, 1.4).clone());
   crt2Led.position.set(-0.22, 0.06, 0.26);
   crt2.add(crt2Case, crt2Screen, crt2Keys, crt2Led);
-  crt2.position.set(-17.25, 0.9, -1.2);
+  crt2.position.set(-17.4, 0.9, -1.25);
   crt2.rotation.y = Math.PI;
+  crt2.scale.setScalar(2.1); // matching giant twin
   statics.add(crt2);
   const triagePC = { x: -17.25, z: -2.6 }; // stand here → TRIAGE BOARD prompt
   const stationLights = [

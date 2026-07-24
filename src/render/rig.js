@@ -155,7 +155,7 @@ function easeX(node, target, k = 0.35) { node.rotation.x += (target - node.rotat
 
 // Gait + poses. speed01 drives cadence/stride/lean; `reach` = sticky HFF arms
 // up-and-forward; `sitting` = butt-on-chair pose; `lying` = bed/floor.
-export function animateRig(root, dt, now, speed01, { reach = false, lying = false, dead = false, sitting = false, dragged = false } = {}) {
+export function animateRig(root, dt, now, speed01, { reach = false, lying = false, dead = false, sitting = false, dragged = false, busy = 0 } = {}) {
   const r = root.userData.rig;
   const cadence = lerp(0.9, 3.4, speed01);
   r.walkClock += cadence * TAU * dt;
@@ -195,7 +195,19 @@ export function animateRig(root, dt, now, speed01, { reach = false, lying = fals
   let aL = Math.sin(r.walkClock + Math.PI) * armSwing + idleSway;
   let aR = Math.sin(r.walkClock) * armSwing - idleSway;
   let elbow = -0.15; // slight resting bend
-  if (sitting) { aL = aR = -0.25; elbow = -0.5; }        // hands rest in lap
+  if (sitting) {
+    // hands up on the desk, typing away — plus a slow shift in the seat, so a
+    // staffed station reads as ALIVE instead of a row of mannequins
+    const k = now * 2.6 + busy;
+    aL = -0.95 + Math.sin(k) * 0.07;
+    aR = -0.95 + Math.sin(k + 1.7) * 0.07;
+    elbow = -1.05 + Math.sin(k * 1.3) * 0.06;
+    r.torso.rotation.y = Math.sin(now * 0.5 + busy) * 0.09;   // idle swivel
+    r.head.rotation.y = Math.sin(now * 0.37 + busy * 1.3) * 0.22; // glances around
+  } else {
+    r.torso.rotation.y = 0;
+    r.head.rotation.y = 0;
+  }
   if (lying) { aL = aR = dead ? -0.9 : -0.25; elbow = -0.1; }
   if (dragged) { aL = Math.sin(now * 8) * 0.7 - 0.6; aR = Math.sin(now * 8 + 2.1) * 0.7 - 0.6; elbow = -0.6; }
   if (reach) { aL = aR = -1.5; elbow = -0.7; }           // sticky hands up and out, elbows bent

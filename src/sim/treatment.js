@@ -1,4 +1,5 @@
 import { medById } from '../data/meds.js';
+import { satisfies, regimenComplete } from '../data/equiv.js';
 
 // Applying a med to a patient — where heroes are made and malpractice happens.
 // A few seconds after any therapy, the staff radios back whether the room
@@ -76,10 +77,13 @@ export function giveMed(game, patient, medId) {
 
   const needed = sim.case.treatment.meds;
   sim.medsGiven.add(medId);
-  if (needed.includes(medId)) {
+  // clinical equivalence: a defensible substitute counts (IV fluids for a
+  // dehydrated patient, any sensible antibiotic for a simple infection...).
+  // Specific antidotes still demand the exact agent — see data/equiv.js.
+  if (needed.some((m) => satisfies(m, medId))) {
     game.ui.toast(`✓ ${med.name} given to ${name}`, 'good');
     game.addScore(30, 'Correct med');
-    const complete = needed.every((m) => sim.medsGiven.has(m));
+    const complete = regimenComplete(needed, sim.medsGiven);
     if (complete) applyTreatment(game, sim);
     radioReport(game, sim, med, true,
       complete

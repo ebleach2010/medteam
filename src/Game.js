@@ -695,7 +695,26 @@ export class Game {
       if (wp) {
         const p = ch.pos;
         const d = Math.hypot(wp.x - p.x, wp.z - p.z);
-        if (d < 0.9) { t.route.shift(); continue; }
+        if (d < 0.9) { t.route.shift(); t.wpStuck = 0; t.wpBest = null; continue; }
+        // WATCHDOG: a staffer wedged on furniture/a doorway used to stall the
+        // whole errand forever. Track progress toward the waypoint; if it
+        // stops improving, escalate — first shove them, then teleport them
+        // onto the waypoint so the job always finishes.
+        if (t.wpBest == null || d < t.wpBest - 0.1) { t.wpBest = d; t.wpStuck = 0; }
+        else t.wpStuck = (t.wpStuck ?? 0) + dt;
+        if (t.wpStuck > 3.5) {
+          const dirX = (wp.x - p.x) / (d || 1), dirZ = (wp.z - p.z) / (d || 1);
+          ch.body.applyImpulse({ x: dirX * 260, y: 120, z: dirZ * 260 }, true); // hop the snag
+        }
+        if (t.wpStuck > 7) {
+          ch.body.setTranslation({ x: wp.x, y: 1.0, z: wp.z }, true);
+          ch.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+          if (ch.dragging) { // bring the patient along, don't strand them
+            ch.dragging.body.setTranslation({ x: wp.x, y: 0.95, z: wp.z + 0.6 }, true);
+            ch.dragging.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+          }
+          t.route.shift(); t.wpStuck = 0; t.wpBest = null;
+        }
         this._steer(ch, wp.x, wp.z, 0.95, dt); // called staff RUN
         continue;
       }
