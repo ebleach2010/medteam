@@ -1,4 +1,5 @@
 import { INTENT, make } from '../intents/intents.js';
+import { settings, keyLabel } from '../core/settings.js';
 
 const typing = () => /INPUT|TEXTAREA/.test(document.activeElement?.tagName ?? '');
 
@@ -45,24 +46,51 @@ export class Buttons {
       const holding = a.carrying || a.dragging || a.grabHeld;
       game.enqueue(make(holding ? INTENT.RELEASE : INTENT.GRAB, a.id));
     };
-    this.grab.addEventListener('pointerdown', (e) => { e.preventDefault(); toggleGrab(); });
-    window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') { game.ui.modals.close(); return; } // works even while typing
-      if (typing()) return; // typing in a text box must never fire game keys
-      if (e.code === 'Space' && !e.repeat) toggleGrab();
-      if (e.code === 'KeyE') game.enqueue(make(INTENT.ACTION, game.active.id));
-      if (e.code === 'KeyQ' && !e.repeat) game.enqueue(make(INTENT.SWAP_ROLE, 0));
-      if (e.code === 'KeyT' && !e.repeat) game.enqueue(make(INTENT.TACKLE, game.active.id));
-      if (e.code === 'KeyP' && !e.repeat) game.ui.modals.pager();
+    this.grab.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      if (settings.grabMode === 'hold') game.enqueue(make(INTENT.GRAB, game.active.id));
+      else toggleGrab();
     });
-    // MacBook players get the key map on the buttons themselves
-    if (matchMedia('(hover: hover) and (pointer: fine)').matches) {
-      const hint = (btn, k) => { const l = btn.querySelector('.lbl'); if (l) l.textContent += ` (${k})`; };
-      hint(this.grab, 'SPACE');
-      hint(this.swap, 'Q');
-      hint(this.tackle, 'T');
-      hint(this.pager, 'P');
-    }
+    this.grab.addEventListener('pointerup', () => {
+      if (settings.grabMode === 'hold') game.enqueue(make(INTENT.RELEASE, game.active.id));
+    });
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { // works even while typing
+        if (game.ui.modals.open) game.ui.modals.close();
+        else if (game.ui.wheel.isOpen) game.ui.wheel.close();
+        else if (game.mode === 'playing') game.ui.modals.pauseMenu();
+        return;
+      }
+      if (typing()) return; // typing in a text box must never fire game keys
+      if (game.paused || e.repeat) return;
+      const k = settings.keys;
+      if (e.code === k.grab) {
+        if (settings.grabMode === 'hold') game.enqueue(make(INTENT.GRAB, game.active.id));
+        else toggleGrab();
+      }
+      if (e.code === k.action || e.code === 'Space') game.enqueue(make(INTENT.ACTION, game.active.id));
+      if (e.code === k.wheel) {
+        if (settings.wheelMode === 'hold') {
+          const w = game.ui.wheel;
+          if (!w.isOpen && game.mode === 'playing' && !game.ui.modals.open) {
+            w.open(window.innerWidth / 2, window.innerHeight / 2);
+            w.stay(); // mouse highlights sectors while the key is down
+          }
+        } else game.ui.wheel.toggle();
+      }
+      if (e.code === k.swap) game.enqueue(make(INTENT.SWAP_ROLE, 0));
+      if (e.code === k.tackle) game.enqueue(make(INTENT.TACKLE, game.active.id));
+      if (e.code === k.pager) game.ui.modals.pager();
+    });
+    window.addEventListener('keyup', (e) => {
+      if (typing() || game.paused) return;
+      const k = settings.keys;
+      if (e.code === k.grab && settings.grabMode === 'hold') game.enqueue(make(INTENT.RELEASE, game.active.id));
+      if (e.code === k.wheel && settings.wheelMode === 'hold' && game.ui.wheel.isOpen) game.ui.wheel.commit();
+    });
+    // MacBook players get the (rebindable) key map on the buttons themselves
+    this._hints = matchMedia('(hover: hover) and (pointer: fine)').matches;
+    this.refreshHints();
 
     this.swap.addEventListener('pointerdown', (e) => {
       e.preventDefault();
@@ -73,15 +101,36 @@ export class Buttons {
       game.enqueue(make(INTENT.TACKLE, game.active.id));
     });
 
-    // ORDERS wheel: opens on press, pick by dragging, commits on release
+    // ORDERS wheel: quick click TOGGLES it (mouse then highlights, next click
+    // commits); a long press-drag-release still works like the old hold wheel
     this.orders.addEventListener('pointerdown', (e) => {
       e.preventDefault();
+      if (game.ui.wheel.isOpen) { game.ui.wheel.commit(); return; }
+      this._wheelT = performance.now();
       game.ui.wheel.open(e.clientX, e.clientY);
       try { this.orders.setPointerCapture(e.pointerId); } catch { /* synthetic */ }
     });
     this.orders.addEventListener('pointermove', (e) => game.ui.wheel.track(e.clientX, e.clientY));
-    this.orders.addEventListener('pointerup', () => game.ui.wheel.commit());
+    this.orders.addEventListener('pointerup', () => {
+      const held = performance.now() - (this._wheelT ?? 0);
+      if (held > 350 || game.ui.wheel.hot >= 0) game.ui.wheel.commit(); // classic hold-drag
+      else game.ui.wheel.stay(); // quick tap → toggle mode, wheel stays up
+    });
     this.orders.addEventListener('pointercancel', () => game.ui.wheel.close());
+  }
+
+  // repaint key hints (called again after a rebind in settings)
+  refreshHints() {
+    if (!this._hints) return;
+    const k = settings.keys;
+    const set = (btn, base, code) => {
+      const l = btn.querySelector('.lbl');
+      if (l) l.textContent = `${base} (${keyLabel(code)})`;
+    };
+    set(this.orders, 'ORDERS', k.wheel);
+    set(this.swap, 'SWAP', k.swap);
+    set(this.tackle, 'TACKLE', k.tackle);
+    set(this.pager, 'PAGE RN', k.pager);
   }
 
   update() {
@@ -95,8 +144,9 @@ export class Buttons {
       this.prompt.style.display = 'none';
     }
     const gl = this.grab.querySelector('.lbl');
-    gl.textContent = (g.active.carrying || g.active.dragging) ? 'LET GO'
+    const base = (g.active.carrying || g.active.dragging) ? 'LET GO'
       : g.active.grabHeld ? 'STICKY…' : 'GRAB';
+    gl.textContent = this._hints ? `${base} (${keyLabel(settings.keys.grab)})` : base;
     const near = g.nearestPatient(g.active, 3.2, (s) => s.state === 'agitated');
     this.tackle.style.display = near ? 'flex' : 'none';
   }

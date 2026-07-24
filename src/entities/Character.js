@@ -54,6 +54,7 @@ export class Character {
     // movement: joystick magnitude → walk/jog/sprint target, chased by impulses
     const mag = Math.min(1, Math.hypot(this.move.x, this.move.z));
     let cap = targetSpeed(mag);
+    if (this.game.adrenaline && this === this.game.active) cap *= 1.25; // heart pounding, legs flying
     if (this.dragging) cap *= 0.8; // the reaction impulse provides the real resistance
     if (this.carrying) cap *= 0.94;
     const dirX = mag > 0.01 ? this.move.x / mag : 0;
@@ -90,11 +91,21 @@ export class Character {
       const imp = springToward(this.dragging.body, t, { k: 3200, c: 700, maxForce: 2400, dt });
       // equal-and-opposite reaction: a heavy patient visibly yanks you around
       this.body.applyImpulse({ x: -imp.x * 0.3, y: 0, z: -imp.z * 0.3 }, true);
-      // unstick yank: if the tow jams on a corner, give it a hop over the snag
       const db = this.dragging.body;
       const dv = db.linvel();
-      const dp = db.translation();
-      const far = Math.hypot(dp.x - a.x, dp.z - a.z) > 1.3;
+      let dp = db.translation();
+      // HARD tether: your grip is a grip, not a bungee. If the spring ever
+      // stretches past arm's length, reel the body straight back to the hand.
+      const TETHER = 1.15;
+      const gap = Math.hypot(dp.x - a.x, dp.z - a.z);
+      if (gap > TETHER) {
+        const f = TETHER / gap;
+        db.setTranslation({ x: a.x + (dp.x - a.x) * f, y: dp.y, z: a.z + (dp.z - a.z) * f }, true);
+        db.setLinvel({ x: dv.x * 0.5, y: dv.y, z: dv.z * 0.5 }, true);
+        dp = db.translation();
+      }
+      // unstick yank: if the tow jams on a corner, give it a hop over the snag
+      const far = Math.hypot(dp.x - a.x, dp.z - a.z) > 1.05;
       if (far && Math.hypot(dv.x, dv.z) < 0.2) this._stuckT = (this._stuckT ?? 0) + dt;
       else this._stuckT = 0;
       if (this._stuckT > 0.45) {

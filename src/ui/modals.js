@@ -4,6 +4,7 @@ import { MEDS, SHELVES } from '../data/meds.js';
 import { PANELS, filterLabs } from '../data/labs.js';
 import { spawnCarryable } from '../entities/Carryable.js';
 import { ekgPath } from './monitor.js';
+import { settings, saveSettings, keyLabel, DEFAULT_KEYS } from '../core/settings.js';
 
 // fuzzy pick from a {id,label} menu by typed text: score by how much of the
 // text the label covers and vice versa ("ct with contrast" → CT + contrast)
@@ -671,5 +672,104 @@ Your key stays in this browser only.</div>
     this.close();
   }
 
-  close() { clearInterval(this._vfT); this.current = null; this.veil.style.display = 'none'; this.box.classList.remove('crtbox', 'blue'); }
+  // ⏸ the Escape menu: freeze the ED, offer a do-over, open settings
+  pauseMenu() {
+    const g = this.game;
+    this.current = { type: 'pause', patient: null, options: [] };
+    g.paused = true;
+    this.box.innerHTML = `<h3>⏸ PAUSED</h3>
+      <p style="color:#6e7f9e;font-size:11px;margin:2px 0 10px">The whole ED is frozen. Nobody is dying right now. Enjoy it.</p>
+      <button class="opt" id="p-resume">▶ RESUME (ESC)</button>
+      <button class="opt" id="p-restart">🔁 RESTART DAY ${g.clock.day}</button>
+      <button class="opt" id="p-settings">⚙️ SETTINGS</button>`;
+    this.veil.style.display = 'flex';
+    this.box.querySelector('#p-resume').addEventListener('click', () => this.close());
+    this.box.querySelector('#p-restart').addEventListener('click', () => this.game.restartDay());
+    this.box.querySelector('#p-settings').addEventListener('click', () => this.settingsPanel());
+  }
+
+  // ⚙️ audio, control feel, and fully rebindable keys
+  settingsPanel() {
+    const g = this.game;
+    this.current = { type: 'settings', patient: null, options: [] };
+    g.paused = true;
+    const K = settings.keys;
+    const keyRow = (id, label) =>
+      `<div class="setrow"><span>${label}</span><button class="opt mini keybtn" data-bind="${id}">${keyLabel(K[id])}</button></div>`;
+    this.box.innerHTML = `<h3>⚙️ SETTINGS</h3>
+      <div class="setrow"><span>🔊 Volume</span><input id="s-vol" type="range" min="0" max="100" value="${Math.round(settings.vol * 100)}"></div>
+      <div class="setrow"><span>🔇 Sound</span><button class="opt mini" id="s-mute">${settings.muted ? 'MUTED' : 'ON'}</button></div>
+      <div class="setrow"><span>📋 Orders wheel</span><button class="opt mini" id="s-wheel">${settings.wheelMode === 'hold' ? 'PRESS-AND-HOLD' : 'TOGGLE'}</button></div>
+      <div class="setrow"><span>✋ Grab</span><button class="opt mini" id="s-grab">${settings.grabMode === 'hold' ? 'PRESS-AND-HOLD' : 'TOGGLE'}</button></div>
+      <p style="color:#6e7f9e;font-size:11px;margin:10px 0 4px">KEYBINDS — click one, then press the new key. Movement is WASD / arrows.</p>
+      ${keyRow('grab', '✋ Grab / release')}
+      ${keyRow('action', '🩺 Context action')}
+      ${keyRow('wheel', '📋 Orders wheel')}
+      ${keyRow('swap', '🔄 Swap medic')}
+      ${keyRow('tackle', '💥 Tackle')}
+      ${keyRow('pager', '📟 Page the nurse')}
+      <button class="opt" id="s-defaults">RESET TO DEFAULTS</button>
+      <button class="close">◀ Back</button>`;
+    this.veil.style.display = 'flex';
+    this.box.querySelector('#s-vol').addEventListener('input', (e) => {
+      settings.vol = (+e.target.value) / 100;
+      saveSettings();
+      g.audio.tap(); // hear the new level immediately
+    });
+    this.box.querySelector('#s-mute').addEventListener('click', (e) => {
+      settings.muted = !settings.muted;
+      e.target.textContent = settings.muted ? 'MUTED' : 'ON';
+      saveSettings();
+      if (!settings.muted) g.audio.tap();
+    });
+    this.box.querySelector('#s-wheel').addEventListener('click', (e) => {
+      settings.wheelMode = settings.wheelMode === 'hold' ? 'toggle' : 'hold';
+      e.target.textContent = settings.wheelMode === 'hold' ? 'PRESS-AND-HOLD' : 'TOGGLE';
+      saveSettings();
+    });
+    this.box.querySelector('#s-grab').addEventListener('click', (e) => {
+      settings.grabMode = settings.grabMode === 'hold' ? 'toggle' : 'hold';
+      e.target.textContent = settings.grabMode === 'hold' ? 'PRESS-AND-HOLD' : 'TOGGLE';
+      saveSettings();
+    });
+    this.box.querySelectorAll('.keybtn').forEach((b) => {
+      b.addEventListener('click', () => {
+        if (this._rebinding) return;
+        this._rebinding = true;
+        const old = b.textContent;
+        b.textContent = 'PRESS KEY…';
+        const grab = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          window.removeEventListener('keydown', grab, { capture: true });
+          this._rebinding = false;
+          if (e.key === 'Escape') { b.textContent = old; return; } // cancel
+          settings.keys[b.dataset.bind] = e.code;
+          saveSettings();
+          b.textContent = keyLabel(e.code);
+          g.ui.buttons.refreshHints();
+        };
+        window.addEventListener('keydown', grab, { capture: true });
+      });
+    });
+    this.box.querySelector('#s-defaults').addEventListener('click', () => {
+      settings.keys = { ...DEFAULT_KEYS };
+      settings.wheelMode = 'toggle';
+      settings.grabMode = 'toggle';
+      settings.vol = 1;
+      settings.muted = false;
+      saveSettings();
+      g.ui.buttons.refreshHints();
+      this.settingsPanel(); // repaint with fresh values
+    });
+    this.box.querySelector('.close').addEventListener('click', () => this.pauseMenu());
+  }
+
+  close() {
+    clearInterval(this._vfT);
+    this.current = null;
+    this.veil.style.display = 'none';
+    this.box.classList.remove('crtbox', 'blue');
+    this.game.paused = false; // only the pause/settings modals ever set it
+  }
 }

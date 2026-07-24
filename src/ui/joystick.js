@@ -50,8 +50,10 @@ export class Joystick {
     // keyboard fallback for desktop dev/testing — but NEVER while typing in a
     // text box (wasd used to walk you away mid-sentence)
     this.keys = new Set();
-    window.addEventListener('keydown', (e) => { if (typing()) return; this.keys.add(e.key); this._keyVec(); });
-    window.addEventListener('keyup', (e) => { this.keys.delete(e.key); this._keyVec(); });
+    const norm = (k) => (k.length === 1 ? k.toLowerCase() : k); // Shift+W is still forward
+    window.addEventListener('keydown', (e) => { if (typing()) return; this.keys.add(norm(e.key)); this._keyVec(); });
+    window.addEventListener('keyup', (e) => { this.keys.delete(norm(e.key)); this._keyVec(); });
+    window.addEventListener('blur', () => { this.keys.clear(); this._keyVec(); }); // cmd-tab away mid-sprint
   }
 
   _keyVec() {

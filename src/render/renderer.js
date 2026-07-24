@@ -16,9 +16,9 @@ export class Renderer {
     this.scene.background = new THREE.Color(0xaec6de);
     this.scene.fog = new THREE.FogExp2(0xaec6de, 0.005);
 
-    // narrow, in-the-action chase view — you should always feel in a rush
-    this.camera = new THREE.PerspectiveCamera(40, 1, 0.1, 160);
-    this.camOffset = new THREE.Vector3(0, 4.9, 6.0); // tight third-person — a few rooms, not the whole hospital
+    // low, in-the-action chase view — HFF over-the-shoulder, walls around you
+    this.camera = new THREE.PerspectiveCamera(46, 1, 0.1, 160);
+    this.camOffset = new THREE.Vector3(0, 4.2, 5.6); // low enough to feel IN the corridors, high enough to see over cutaway walls
     this.camTarget = new THREE.Vector3();
 
     // contrast recipe: dimmer ambient so the sun actually CARVES — shadows
@@ -45,11 +45,11 @@ export class Renderer {
     // portrait: the landscape 40° vertical FOV would leave a hallway slit —
     // widen the lens and pull back so you still see a room and a half across
     if (this.camera.aspect < 1) {
-      this.camera.fov = 70;
-      this.camOffset.set(0, 7.2, 6.2); // steeper than landscape — less horizon, more floor
+      this.camera.fov = 72;
+      this.camOffset.set(0, 6.9, 6.0); // steeper than landscape — less horizon, more floor
     } else {
-      this.camera.fov = 40;
-      this.camOffset.set(0, 4.9, 6.0);
+      this.camera.fov = 46;
+      this.camOffset.set(0, 4.2, 5.6);
     }
     this.camera.updateProjectionMatrix();
   }

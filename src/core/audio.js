@@ -1,4 +1,7 @@
+import { settings } from './settings.js';
+
 // Tiny WebAudio blips — no assets, initialized on first user gesture.
+// Master volume + mute live in settings (the Escape menu drives them).
 export class Audio {
   constructor() { this.ctx = null; }
   _ensure() {
@@ -6,6 +9,8 @@ export class Audio {
     return this.ctx;
   }
   _beep(freq, dur, type = 'sine', gain = 0.06) {
+    if (settings.muted || settings.vol <= 0) return;
+    gain *= settings.vol;
     const ctx = this._ensure();
     if (!ctx) return;
     const o = ctx.createOscillator(), g = ctx.createGain();
