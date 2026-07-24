@@ -69,5 +69,35 @@ export class Wheel {
     g.enqueue(make(INTENT.ORDER, g.active.id, { order: sel, patientId: target?.id ?? null }));
   }
 
-  close() { this.el.style.display = 'none'; this.hot = -1; }
+  get isOpen() { return this.el.style.display === 'block'; }
+
+  // toggle mode: wheel stays up after a quick tap; the mouse highlights and
+  // the next click (anywhere) commits — or closes if nothing is hot
+  stay() {
+    if (!this.isOpen) return;
+    this._onMove = (e) => this.track(e.clientX, e.clientY);
+    this._onDown = (e) => {
+      if (e.target.closest?.('#btn-action')) return; // ORDERS button handles itself
+      e.stopPropagation();
+      e.preventDefault();
+      this.commit();
+    };
+    window.addEventListener('pointermove', this._onMove);
+    window.addEventListener('pointerdown', this._onDown, { capture: true });
+  }
+
+  // keyboard: R toggles the wheel open at screen center
+  toggle() {
+    if (this.isOpen) { this.commit(); return; }
+    if (this.game.mode !== 'playing' || this.game.ui.modals.open) return;
+    this.open(window.innerWidth / 2, window.innerHeight / 2);
+    this.stay();
+  }
+
+  close() {
+    this.el.style.display = 'none';
+    this.hot = -1;
+    if (this._onMove) { window.removeEventListener('pointermove', this._onMove); this._onMove = null; }
+    if (this._onDown) { window.removeEventListener('pointerdown', this._onDown, { capture: true }); this._onDown = null; }
+  }
 }

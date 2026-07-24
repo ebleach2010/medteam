@@ -100,29 +100,55 @@ export function setFace(patientMesh, face) {
 
 // ---------- props ----------
 export function makeBed(accent = 0x76a9ea) {
+  // proper hospital bed: casters, white frame, thick mattress, side rails,
+  // head/foot boards — the reference ward bed, not a painted box
   const g = new THREE.Group();
-  const frame = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.5, 2.1), mat(0xe8ecf4));
-  frame.position.y = 0.25; frame.castShadow = true;
-  const blanket = new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.12, 1.3), mat(accent));
-  blanket.position.set(0, 0.56, 0.3);
-  const pillow = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.1, 0.4), mat(0xffffff));
-  pillow.position.set(0, 0.56, -0.75);
-  const rail = new THREE.Mesh(new THREE.BoxGeometry(1.06, 0.05, 0.05), mat(0xb9c2d4));
-  rail.position.set(0, 0.55, -1.02);
-  g.add(frame, blanket, pillow, rail);
+  const under = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.14, 1.7), mat(0x9aa4b2));
+  under.position.y = 0.16;
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.22, 2.1), mat(0xe8ecf4));
+  frame.position.y = 0.34; frame.castShadow = true;
+  const mattress = new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.15, 2.02), mat(0xf7f8fa));
+  mattress.position.y = 0.52; mattress.castShadow = true;
+  const blanket = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.09, 1.25), mat(accent));
+  blanket.position.set(0, 0.60, 0.33);
+  const pillow = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.11, 0.4), mat(0xffffff));
+  pillow.position.set(0, 0.615, -0.75);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.55, 0.07), mat(0xdfe3ea));
+  head.position.set(0, 0.62, -1.06); head.castShadow = true;
+  const foot = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.34, 0.07), mat(0xdfe3ea));
+  foot.position.set(0, 0.52, 1.06);
+  g.add(under, frame, mattress, blanket, pillow, head, foot);
+  for (const sx of [-0.51, 0.51]) {          // fold-up side rails (head half)
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.045, 0.95), mat(0xcfd6e0));
+    rail.position.set(sx, 0.7, -0.42);
+    const rail2 = rail.clone();
+    rail2.position.y = 0.6;
+    g.add(rail, rail2);
+  }
+  for (const [cx, cz] of [[-0.42, -0.92], [0.42, -0.92], [-0.42, 0.92], [0.42, 0.92]]) {
+    const caster = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.1, 8), mat(0x4a525e));
+    caster.position.set(cx, 0.06, cz);
+    g.add(caster);
+  }
   return g;
 }
 
 export function makeChair() {
-  // beige waiting-room chair, HFF-hospital style
+  // waiting-room chair off the reference: beige cushions, wood arms + sides
   const g = new THREE.Group();
-  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.12, 0.6), mat(0xcbbfa4));
-  seat.position.y = 0.42;
-  const back = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.58, 0.1), mat(0xcbbfa4));
-  back.position.set(0, 0.76, 0.27);
-  const legs = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.4, 0.5), mat(0x6b5f4c));
-  legs.position.y = 0.2;
-  g.add(seat, back, legs);
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.11, 0.54), mat(0xcbbfa4));
+  seat.position.y = 0.44; seat.castShadow = true;
+  const back = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.52, 0.09), mat(0xcbbfa4));
+  back.position.set(0, 0.73, 0.28);
+  back.rotation.x = -0.1; back.castShadow = true;
+  g.add(seat, back);
+  for (const sx of [-0.31, 0.31]) {
+    const side = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.36, 0.5), mat(0x8a6742));
+    side.position.set(sx, 0.26, 0.02);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.06, 0.5), mat(0x8a6742));
+    arm.position.set(sx, 0.60, 0.02);
+    g.add(side, arm);
+  }
   return g;
 }
 
@@ -146,13 +172,15 @@ export function makeScanner() {
   const g = new THREE.Group();
   const bedS = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.4, 2.6), mat(0xe0e4ee));
   bedS.position.y = 0.2;
+  const pad = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.07, 2.45), mat(0x7fc4bd)); // teal table pad
+  pad.position.y = 0.435;
   const ring = new THREE.Mesh(new THREE.TorusGeometry(1.0, 0.22, 10, 22), mat(0xf5f7fb));
   ring.position.set(0, 1.0, -0.5); ring.castShadow = true;
   const eye = new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.05, 8, 22), emat(0xb083ff, 1.1));
   eye.position.set(0, 1.0, -0.38);
   const base = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.2, 1.0), mat(0xb9c2d4));
   base.position.set(0, 0.1, -0.5);
-  g.add(bedS, ring, eye, base);
+  g.add(bedS, pad, ring, eye, base);
   return g;
 }
 
@@ -173,12 +201,17 @@ export function makeShelf(bandColor) {
 }
 
 export function makeDesk() {
+  // nurses' station: wood counter body, bone worktop, accent kick
   const g = new THREE.Group();
-  const top = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.9, 1.1), mat(0x9fb4d8));
-  top.position.y = 0.45; top.castShadow = true;
+  const body = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.78, 1.05), mat(0xb98d5f));
+  body.position.y = 0.44; body.castShadow = true;
+  const kick = new THREE.Mesh(new THREE.BoxGeometry(3.22, 0.14, 1.07), mat(0x8a6742));
+  kick.position.y = 0.09;
+  const top = new THREE.Mesh(new THREE.BoxGeometry(3.42, 0.07, 1.22), mat(0xefece2));
+  top.position.y = 0.865; top.castShadow = true;
   const screen = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.35, 0.05), emat(0x6effe6, 0.7));
   screen.position.set(-0.8, 1.12, 0);
-  g.add(top, screen);
+  g.add(body, kick, top, screen);
   return g;
 }
 

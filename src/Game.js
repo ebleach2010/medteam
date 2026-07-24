@@ -64,6 +64,7 @@ export class Game {
     this.timers = [];
     this.timeReal = 0;
     this.mode = 'title';
+    this.paused = false; // Escape menu freezes the whole ED
     this.score = 0;
     this.dayStats = this._freshStats();
     this._acc = 0;
@@ -190,6 +191,29 @@ export class Game {
     this.doctor.carrying = this.doctor.dragging = null;
   }
 
+  // Escape-menu do-over: wipe the shift and run the same day again
+  restartDay() {
+    this.ui.modals.close();
+    this.paused = false;
+    this.timers = [];
+    this.tasks.clear();
+    this._scanJob = null;
+    const cf = this.map.centrifuge;
+    cf.busy = null; cf.timer = 0;
+    for (const c of this.world.byTag('chars')) {
+      c.carrying = null; c.dragging = null; c.grabHeld = false;
+      c._jobQueue = [];
+    }
+    this._clearAllPatients();
+    const home = [this.map.nurseSpawn, this.map.doctorSpawn];
+    [this.nurse, this.doctor].forEach((ch, i) => {
+      ch.body.setTranslation({ x: home[i].x, y: 1.0, z: home[i].z }, true);
+      ch.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    });
+    this.score -= this.dayStats.score; // the scrapped shift's points go with it
+    this.startDay(this.clock.day);
+  }
+
   // ---------------- loop ----------------
   start() {
     let last = performance.now();
@@ -211,6 +235,7 @@ export class Game {
   }
 
   fixedTick(dt) {
+    if (this.paused) return; // hard freeze — nobody deteriorates behind the Escape menu
     this.timeReal += dt;
     this._tickN = (this._tickN ?? 0) + 1;
     if (this.mode === 'playing') this.clock.update(dt);
@@ -237,6 +262,10 @@ export class Game {
     // tests/co-op can still drive the idle twin — zero it only after a short
     // grace, since catch-up steps outnumber inbound MOVE intents on slow GPUs
     if (this._tickN - (this.idle._moveTick ?? -999) > 6) this.idle.applyMove(0, 0);
+    // adrenaline: someone is crashing and it's on YOU — legs know it
+    this.adrenaline = [...this.world.byTag('patients')]
+      .some((p) => p.sim.critical && p.sim.state !== 'dead' && !p.sim.resolved);
+
     this._staffTick(dt);
     for (const c of this.world.byTag('chars')) c.fixedUpdate(dt);
     for (const p of [...this.world.byTag('patients')]) p.sim.tick(dt);
@@ -1115,6 +1144,17 @@ export class Game {
     });
 
     animateRig(this.receptionist, dt, now, 0, { sitting: true }); // typing away forever
+
+    // the discharge wing shares a wall with rooms 9–10: it drops to a ghost
+    // whenever you're behind it so the chase cam never loses you
+    const fw = this.map.fadeWalls;
+    if (fw?.mats.length) {
+      const behind = this.active.pos.z < -11.6;
+      fw._t = (fw._t ?? 1) + ((behind ? 0.18 : 1) - (fw._t ?? 1)) * Math.min(1, dt * 8);
+      for (const m of fw.mats) m.opacity = fw._t;
+      const solid = fw._t > 0.95;
+      for (const mesh of fw.meshes) mesh.castShadow = solid && !!mesh.userData.casts;
+    }
 
     // FX fades: skids over 5s (oldest first), dust puffs fast
     for (const f of this.fx.skids) {

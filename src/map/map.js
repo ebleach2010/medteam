@@ -7,7 +7,18 @@ import { SHELVES } from '../data/meds.js';
 //   Z2  ROOMS 1–6 along the north wall + staff station
 //   Z3  ROOMS 7–10 + LAB + DIAGNOSTICS (the one machine)
 //   Z4  DISCHARGE gate + INCINERATOR pit
-const WALL_H = 1.15;
+//
+// Architecture is two-tier for the chase camera (which always looks north,
+// straight down -z, with zero x offset):
+//   TALL walls — every north/south-running wall (edge-on to the camera, they
+//   can never stand between you and the lens) and the far "backdrop" walls.
+//   These get windows, mullions and the city outside. Real building.
+//   LOW walls — any east/west wall that could block the view gets the classic
+//   dollhouse cutaway: hip-height solid + a see-through glass upper so the
+//   architecture still reads full height.
+const WALL_H = 1.3;         // cutaway tier
+const TALL_H = 2.75;        // full tier
+const GLASS_TOP = 2.0;      // glass uppers rise to here (below the camera ray at bedside)
 const ZONES = [
   { x1: -30, z1: 2, x2: -2, z2: 20 },
   { x1: -30, z1: -12, x2: -6, z2: 2 },
@@ -17,24 +28,35 @@ const ZONES = [
 export const zoneOf = (x, z) => ZONES.findIndex((s) => x >= s.x1 - 0.6 && x <= s.x2 + 0.6 && z >= s.z1 - 0.6 && z <= s.z2 + 0.6);
 export const ZONE_DOORS = [{ x: -14.5, z: 2 }, { x: -6, z: -5.5 }, { x: 8.5, z: -12 }];
 
-function terrazzoTexture() {
-  const s = 512;
+// big pale porcelain tiles with thin grout — the polished-hospital floor
+function tileTexture() {
+  const s = 512, n = 4, ts = s / n; // 4×4 tiles per texture → 1.2 m tiles at repeat/4.8
   const c = document.createElement('canvas');
   c.width = c.height = s;
   const g = c.getContext('2d');
-  g.fillStyle = '#e9eaec';
-  g.fillRect(0, 0, s, s);
-  const chips = ['#b8bfca', '#c9c1b2', '#a9b8cf', '#d8cfc2', '#9fb4b8'];
-  for (let i = 0; i < 2600; i++) {
-    g.fillStyle = chips[i % chips.length];
-    g.globalAlpha = 0.15 + Math.random() * 0.12;
-    const w = 1 + Math.random() * 3;
-    g.fillRect(Math.random() * s, Math.random() * s, w, w * 0.8);
+  for (let ty = 0; ty < n; ty++) {
+    for (let tx = 0; tx < n; tx++) {
+      const v = 226 + ((tx + ty) % 2) * 5 + Math.floor(Math.random() * 5);
+      g.fillStyle = `rgb(${v - 4},${v},${v + 4})`;
+      g.fillRect(tx * ts, ty * ts, ts, ts);
+      // faint diagonal polish streak on some tiles
+      if ((tx * 7 + ty * 3) % 5 === 0) {
+        g.fillStyle = 'rgba(255,255,255,0.10)';
+        g.beginPath();
+        g.moveTo(tx * ts, ty * ts + ts * 0.7);
+        g.lineTo(tx * ts + ts * 0.7, ty * ts);
+        g.lineTo(tx * ts + ts, ty * ts);
+        g.lineTo(tx * ts, ty * ts + ts);
+        g.fill();
+      }
+    }
   }
-  g.globalAlpha = 1;
-  g.strokeStyle = 'rgba(130,140,158,0.22)';
-  g.lineWidth = 2;
-  g.strokeRect(0, 0, s, s);
+  g.strokeStyle = 'rgba(150,160,172,0.85)';
+  g.lineWidth = 3;
+  for (let i = 0; i <= n; i++) {
+    g.beginPath(); g.moveTo(i * ts, 0); g.lineTo(i * ts, s); g.stroke();
+    g.beginPath(); g.moveTo(0, i * ts); g.lineTo(s, i * ts); g.stroke();
+  }
   const t = new THREE.CanvasTexture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.anisotropy = 8;
@@ -42,12 +64,27 @@ function terrazzoTexture() {
   return t;
 }
 
+// pale sky + hazy skyline gradient for the window panes
+function skyTexture() {
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 64;
+  const g = c.getContext('2d');
+  const grd = g.createLinearGradient(0, 0, 0, 64);
+  grd.addColorStop(0, '#bfd9ee');
+  grd.addColorStop(0.62, '#dcebf5');
+  grd.addColorStop(1, '#c8d4dc');
+  g.fillStyle = grd; g.fillRect(0, 0, 64, 64);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 export function buildMap(scene, physics) {
   const statics = new THREE.Group();
   scene.add(statics);
-  const tex = terrazzoTexture();
+  const tex = tileTexture();
 
-  const asphalt = new THREE.Mesh(new THREE.PlaneGeometry(100, 80), mat(0x9aa1ab));
+  const asphalt = new THREE.Mesh(new THREE.PlaneGeometry(100, 80), mat(0x8f979f));
   asphalt.rotation.x = -Math.PI / 2;
   asphalt.position.set(-8, -0.012, -2);
   asphalt.receiveShadow = true;
@@ -58,13 +95,14 @@ export function buildMap(scene, physics) {
     stripe.position.set(-31.6 - i * 0.9, 0.006, 10);
     statics.add(stripe);
   }
-  // zone-tinted terrazzo: warm lobby, cool ward, mint lab wing, lilac discharge
-  const FLOOR_TINTS = [0xeadfc2, 0xc6d8e8, 0xc8e0d0, 0xd8cde6];
+  // zone-tinted tile: warm lobby, cool ward, mint lab wing, lilac discharge —
+  // pale enough to read as one polished floor, tinted enough to wayfind
+  const FLOOR_TINTS = [0xf1ebdd, 0xdfe7f1, 0xdfece5, 0xe8e1f0];
   ZONES.forEach((s, zi) => {
     const w = s.x2 - s.x1, d = s.z2 - s.z1;
-    const m = new THREE.MeshStandardMaterial({ map: tex.clone(), roughness: 0.85, metalness: 0.08 });
+    const m = new THREE.MeshStandardMaterial({ map: tex.clone(), roughness: 0.5, metalness: 0.06 });
     m.color.setHex(FLOOR_TINTS[zi]);
-    m.map.repeat.set(w / 4, d / 4);
+    m.map.repeat.set(w / 4.8, d / 4.8);
     const top = new THREE.Mesh(new THREE.PlaneGeometry(w, d), m);
     top.rotation.x = -Math.PI / 2;
     top.position.set((s.x1 + s.x2) / 2, 0.006, (s.z1 + s.z2) / 2);
@@ -82,10 +120,14 @@ export function buildMap(scene, physics) {
   };
 
   // ---- walls ----
+  // opts: tall (full height), win (window band — exterior tall walls only),
+  // fade (can hide the player from the chase cam → Game fades it), glass
+  // (cutaway wall gets the transparent upper), jambs (wood door posts at gaps)
   const wallSegs = [];
-  const hwall = (z, x1, x2, gaps = []) => addWall(true, z, x1, x2, gaps);
-  const vwall = (x, z1, z2, gaps = []) => addWall(false, x, z1, z2, gaps);
-  function addWall(horiz, at, a, b, gaps) {
+  const jambSpots = [];   // [x, z] wood posts at cutaway doorways
+  const hwall = (z, x1, x2, gaps = [], opts = {}) => addWall(true, z, x1, x2, gaps, opts);
+  const vwall = (x, z1, z2, gaps = [], opts = {}) => addWall(false, x, z1, z2, gaps, opts);
+  function addWall(horiz, at, a, b, gaps, opts) {
     let spans = [[a, b]];
     for (const gp of gaps) {
       const next = [];
@@ -97,55 +139,293 @@ export function buildMap(scene, physics) {
       }
       spans = next;
     }
-    for (const [s, e] of spans) if (e - s > 0.01) wallSegs.push({ horiz, at, s, e });
+    for (const [s, e] of spans) if (e - s > 0.01) wallSegs.push({ horiz, at, s, e, ...opts });
+    if (opts.jambs) {
+      for (const gp of gaps) {
+        for (const side of [-1, 1]) {
+          const j = gp.at + side * (gp.w / 2 + 0.09);
+          jambSpots.push(horiz ? [j, at] : [at, j]);
+        }
+      }
+    }
   }
 
-  // Z1 triage
+  // Z1 triage — z=20 is the camera-side face: cutaway (no glass here — the
+  // camera often sits behind it, and tinted panes in the lens get old fast)
   hwall(20, -30, -2);
-  vwall(-30, 2, 20, [{ at: 10, w: 3.4 }]);                        // ENTRANCE
-  hwall(2, -30, -2, [{ at: -14.5, w: 5 }]);                       // Z1/Z2 door
-  vwall(-2, 2, 20);
+  vwall(-30, 2, 20, [{ at: 10, w: 3.4 }], { tall: true, win: true, face: 1 });   // ENTRANCE
+  hwall(2, -30, -2, [{ at: -14.5, w: 5 }], { jambs: true });                     // Z1/Z2 door
+  vwall(-2, 2, 20, [], { tall: true, win: true, face: -1 });
   // Z2 rooms 1–6 (doors face south into the corridor)
-  hwall(-12, -30, -6);
-  vwall(-30, -12, 2);
-  hwall(-7, -30, -6, [-28, -24, -20, -16, -12, -8].map((x) => ({ at: x, w: 2.2 }))); // wider doors — tows snag less
-  [-26, -22, -18, -14, -10].forEach((x) => vwall(x, -12, -7));
-  vwall(-6, -12, 2, [{ at: -5.5, w: 2.6 }]);                      // Z2/Z3 corridor door
+  hwall(-12, -30, -6, [], { tall: true, win: true, face: 1 });                   // rooms' window wall
+  vwall(-30, -12, 2, [], { tall: true, win: true, face: 1 });
+  hwall(-7, -30, -6, [-28, -24, -20, -16, -12, -8].map((x) => ({ at: x, w: 2.2 })), { glass: true, jambs: true });
+  [-26, -22, -18, -14, -10].forEach((x) => vwall(x, -12, -7, [], { tall: true }));
+  vwall(-6, -12, 2, [{ at: -5.5, w: 2.6 }], { tall: true, header: { at: -5.5, w: 2.6 } });
   // Z3 rooms 7–10 + lab + diagnostics
-  hwall(-12, -6, 14, [{ at: 8.5, w: 4.4 }]);                      // to discharge
-  hwall(-7, -6, 14, [-3.5, 1.5, 6.5, 11.5].map((x) => ({ at: x, w: 2.2 })));
-  [-1, 4, 9].forEach((x) => vwall(x, -12, -7));
+  hwall(-12, -6, 2, [], { tall: true, win: true, face: 1 });                     // rooms 7–8 window wall
+  hwall(-12, 2, 14, [{ at: 8.5, w: 4.4 }], { tall: true, fade: true, header: { at: 8.5, w: 4.4 } }); // fronts Z4 — fades
+  hwall(-7, -6, 14, [-3.5, 1.5, 6.5, 11.5].map((x) => ({ at: x, w: 2.2 })), { glass: true, jambs: true });
+  [-1, 4, 9].forEach((x) => vwall(x, -12, -7, [], { tall: true }));
   hwall(2, -6, 14);
-  vwall(14, -12, 2);
-  hwall(-4, -6, 14, [{ at: -2, w: 2.2 }, { at: 8, w: 2.6 }]);     // lab + diagnostics doors
-  vwall(2, -4, 2);                                                 // lab | diagnostics divider
+  vwall(14, -12, 2, [], { tall: true, win: true, face: -1 });
+  hwall(-4, -6, 14, [{ at: -2, w: 2.2 }, { at: 8, w: 2.6 }], { glass: true, jambs: true }); // lab + diagnostics doors
+  vwall(2, -4, 2, [], { tall: true });                                           // lab | diagnostics divider
   // Z4 discharge
-  hwall(-24, 2, 14, [{ at: 5, w: 3 }]);                           // the GATE
-  vwall(2, -24, -12);
-  vwall(14, -24, -12);
+  hwall(-24, 2, 14, [{ at: 5, w: 3 }], { tall: true, win: true, face: 1, header: { at: 5, w: 3 } }); // the GATE
+  vwall(2, -24, -12, [], { tall: true, win: true, face: 1 });
+  vwall(14, -24, -12, [], { tall: true, win: true, face: -1 });
 
   const wallMat = mat(0xf2f1ee);
   const bandMat = mat(0x5d99b0);
   const wainsMat = mat(0xc2d0da);
   const wallGeo = new THREE.BoxGeometry(1, 1, 1);
+  const fadeWalls = { meshes: [], mats: [] };
+  // fading segments need their own (transparent-capable) material clones
+  const fadeMatOf = (base) => {
+    const m = base.clone();
+    m.transparent = true;
+    fadeWalls.mats.push(m);
+    return m;
+  };
   for (const w of wallSegs) {
     const len = w.e - w.s, mid = (w.s + w.e) / 2;
-    const m = new THREE.Mesh(wallGeo, wallMat);
-    const band = new THREE.Mesh(wallGeo, bandMat);
-    const wains = new THREE.Mesh(wallGeo, wainsMat); // lower wainscot panel
+    const H = w.tall ? TALL_H : WALL_H;
+    const m = new THREE.Mesh(wallGeo, w.fade ? fadeMatOf(wallMat) : wallMat);
+    const band = new THREE.Mesh(wallGeo, w.fade ? fadeMatOf(bandMat) : bandMat);
+    const wains = new THREE.Mesh(wallGeo, w.fade ? fadeMatOf(wainsMat) : wainsMat); // lower wainscot panel
     if (w.horiz) {
-      m.scale.set(len, WALL_H, 0.3); m.position.set(mid, WALL_H / 2, w.at);
+      m.scale.set(len, H, 0.3); m.position.set(mid, H / 2, w.at);
       band.scale.set(len, 0.1, 0.34); band.position.set(mid, 0.64, w.at);
       wains.scale.set(len, 0.46, 0.35); wains.position.set(mid, 0.24, w.at);
-      physics.staticBox(mid, WALL_H / 2, w.at, len / 2, WALL_H / 2, 0.15);
+      physics.staticBox(mid, H / 2, w.at, len / 2, H / 2, 0.15);
     } else {
-      m.scale.set(0.3, WALL_H, len); m.position.set(w.at, WALL_H / 2, mid);
+      m.scale.set(0.3, H, len); m.position.set(w.at, H / 2, mid);
       band.scale.set(0.34, 0.1, len); band.position.set(w.at, 0.64, mid);
       wains.scale.set(0.35, 0.46, len); wains.position.set(w.at, 0.24, mid);
-      physics.staticBox(w.at, WALL_H / 2, mid, 0.15, WALL_H / 2, len / 2);
+      physics.staticBox(w.at, H / 2, mid, 0.15, H / 2, len / 2);
     }
     m.castShadow = true;
     statics.add(m, band, wains);
+    if (w.fade) fadeWalls.meshes.push(m, band, wains);
+  }
+
+  // wall caps: white rail on the cutaway tier, ceiling-line soffit on the tall
+  // tier — one InstancedMesh each, so the whole trim package is two draw calls
+  {
+    const lows = wallSegs.filter((w) => !w.tall);
+    const talls = wallSegs.filter((w) => w.tall && !w.fade);
+    const capOf = (list, color, h, y, wide) => {
+      if (!list.length) return null;
+      const im = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), mat(color), list.length);
+      const m4 = new THREE.Matrix4();
+      list.forEach((w, i) => {
+        const len = w.e - w.s + (w.horiz ? 0 : 0), mid = (w.s + w.e) / 2;
+        if (w.horiz) m4.makeScale(len + 0.1, h, wide), m4.setPosition(mid, y, w.at);
+        else m4.makeScale(wide, h, len + 0.1), m4.setPosition(w.at, y, mid);
+        im.setMatrixAt(i, m4);
+      });
+      statics.add(im);
+      return im;
+    };
+    capOf(lows, 0xf8f8f5, 0.1, WALL_H + 0.04, 0.42);
+    capOf(talls, 0x8fa3b2, 0.16, TALL_H + 0.06, 0.4);
+    // the fading segment's soffit joins the fade group
+    for (const w of wallSegs.filter((s) => s.tall && s.fade)) {
+      const len = w.e - w.s, mid = (w.s + w.e) / 2;
+      const cap = new THREE.Mesh(wallGeo, fadeMatOf(mat(0x8fa3b2)));
+      if (w.horiz) { cap.scale.set(len + 0.1, 0.16, 0.4); cap.position.set(mid, TALL_H + 0.06, w.at); }
+      else { cap.scale.set(0.4, 0.16, len + 0.1); cap.position.set(w.at, TALL_H + 0.06, mid); }
+      statics.add(cap);
+      fadeWalls.meshes.push(cap);
+    }
+  }
+
+  // door headers over the tall-wall gaps → real doorways, not missing teeth
+  const headerMat = mat(0xf2f1ee);
+  for (const w0 of [
+    { horiz: false, at: -30, gap: { at: 10, w: 3.4 } },
+    { horiz: false, at: -6, gap: { at: -5.5, w: 2.6 } },
+    { horiz: true, at: -12, gap: { at: 8.5, w: 4.4 }, fade: true },
+    { horiz: true, at: -24, gap: { at: 5, w: 3 } },
+  ]) {
+    const h = TALL_H - 2.05;
+    const head = new THREE.Mesh(wallGeo, w0.fade ? fadeMatOf(headerMat) : headerMat);
+    if (w0.horiz) { head.scale.set(w0.gap.w + 0.2, h, 0.32); head.position.set(w0.gap.at, 2.05 + h / 2, w0.at); }
+    else { head.scale.set(0.32, h, w0.gap.w + 0.2); head.position.set(w0.at, 2.05 + h / 2, w0.gap.at); }
+    head.castShadow = true;
+    statics.add(head);
+    if (w0.fade) fadeWalls.meshes.push(head);
+  }
+
+  // glowing wayfinding signs on the doorways
+  const signText = (txt, bg, fg = '#eafff2') => {
+    const c = document.createElement('canvas');
+    c.width = 256; c.height = 64;
+    const g = c.getContext('2d');
+    g.fillStyle = bg; g.fillRect(0, 0, 256, 64);
+    g.fillStyle = fg;
+    g.font = 'bold 30px system-ui, sans-serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(txt, 128, 34);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return new THREE.MeshBasicMaterial({ map: t });
+  };
+  const addSign = (x, y, z, rotY, txt, bg, wdt = 1.7, fade = false, fg = '#eafff2') => {
+    const bgMat = fade ? fadeMatOf(mat(0x2c3540)) : mat(0x2c3540);
+    const bgMesh = new THREE.Mesh(new THREE.BoxGeometry(wdt + 0.08, 0.5, 0.08), bgMat);
+    bgMesh.position.set(x, y, z); bgMesh.rotation.y = rotY;
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(wdt, 0.42), signText(txt, bg, fg));
+    face.position.set(x, y, z).add(new THREE.Vector3(Math.sin(rotY) * 0.05, 0, Math.cos(rotY) * 0.05));
+    face.rotation.y = rotY;
+    statics.add(bgMesh, face);
+    if (fade) { fadeWalls.meshes.push(bgMesh, face); face.material.transparent = true; fadeWalls.mats.push(face.material); }
+  };
+  addSign(-29.78, 2.5, 10, Math.PI / 2, '＋ EMERGENCY', '#a03028', 2.6, false, '#ffe9e6');
+  addSign(-6 + 0.18, 2.42, -5.5, Math.PI / 2, 'LAB · IMAGING →', '#1f5f56');
+  addSign(8.5, 2.42, -11.8, 0, 'DISCHARGE →', '#2e6e3e', 1.9, true);
+  addSign(5, 2.42, -23.8, 0, 'EXIT', '#2e6e3e', 1.2);
+
+  // wood door jambs at every cutaway doorway (single InstancedMesh)
+  {
+    const im = new THREE.InstancedMesh(new THREE.BoxGeometry(0.18, 1.62, 0.18), mat(0xb98d5f), jambSpots.length);
+    const m4 = new THREE.Matrix4();
+    jambSpots.forEach(([x, z], i) => {
+      m4.makeTranslation(x, 0.81, z);
+      im.setMatrixAt(i, m4);
+    });
+    im.castShadow = true;
+    statics.add(im);
+  }
+
+  // glass uppers over the cutaway walls — one merged transparent mesh, plus a
+  // single InstancedMesh of white mullion posts. Architecture reads full
+  // height; the camera sees straight through.
+  {
+    const pos = [], idx = [];
+    const trims = []; // {x, z, sx, sz, sy, y}
+    for (const w of wallSegs) {
+      if (!w.glass) continue;
+      const y0 = WALL_H + 0.1, y1 = GLASS_TOP;
+      const b = pos.length / 3;
+      if (w.horiz) pos.push(w.s, y0, w.at, w.e, y0, w.at, w.e, y1, w.at, w.s, y1, w.at);
+      else pos.push(w.at, y0, w.s, w.at, y0, w.e, w.at, y1, w.e, w.at, y1, w.s);
+      idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+      const len = w.e - w.s, mid = (w.s + w.e) / 2;
+      const postH = GLASS_TOP - WALL_H - 0.04;
+      for (const t of [w.s + 0.05, w.e - 0.05]) { // end posts only — they read as door trim
+        trims.push(w.horiz
+          ? { x: t, z: w.at, sx: 0.09, sy: postH, sz: 0.09, y: (WALL_H + GLASS_TOP) / 2 + 0.03 }
+          : { x: w.at, z: t, sx: 0.09, sy: postH, sz: 0.09, y: (WALL_H + GLASS_TOP) / 2 + 0.03 });
+      }
+      trims.push(w.horiz
+        ? { x: mid, z: w.at, sx: len, sy: 0.09, sz: 0.09, y: GLASS_TOP + 0.02 }
+        : { x: w.at, z: mid, sx: 0.09, sy: 0.09, sz: len, y: GLASS_TOP + 0.02 });
+    }
+    const glassGeo = new THREE.BufferGeometry();
+    glassGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    glassGeo.setIndex(idx);
+    const glass = new THREE.Mesh(glassGeo, new THREE.MeshBasicMaterial({
+      color: 0xcfe4ef, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false,
+    }));
+    glass.renderOrder = 3;
+    statics.add(glass);
+    const im = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), mat(0xf5f6f3), trims.length);
+    const m4 = new THREE.Matrix4();
+    trims.forEach((t, i) => {
+      m4.makeScale(t.sx, t.sy, t.sz);
+      m4.setPosition(t.x, t.y, t.z);
+      im.setMatrixAt(i, m4);
+    });
+    statics.add(im);
+  }
+
+  // windows in the tall exterior walls: sky panes + white mullion frames —
+  // one merged pane mesh + one InstancedMesh of frame bars
+  {
+    const skyMat = new THREE.MeshBasicMaterial({ map: skyTexture() });
+    const panes = [];       // {x,z,rotY,w,h}
+    const WIN_W = 1.5, WIN_H = 0.95, WIN_Y = 1.78, STRIDE = 2.2;
+    for (const w of wallSegs) {
+      if (!w.win) continue;
+      const len = w.e - w.s;
+      const n = Math.floor(len / STRIDE);
+      if (n < 1) continue;
+      const start = (w.s + w.e) / 2 - ((n - 1) * STRIDE) / 2;
+      for (let i = 0; i < n; i++) {
+        const t = start + i * STRIDE;
+        if (w.horiz) panes.push({ x: t, z: w.at + 0.17 * (w.face ?? 1), rotY: (w.face ?? 1) > 0 ? 0 : Math.PI });
+        else panes.push({ x: w.at + 0.17 * (w.face ?? 1), z: t, rotY: (w.face ?? 1) > 0 ? Math.PI / 2 : -Math.PI / 2 });
+      }
+    }
+    const paneGeo = new THREE.PlaneGeometry(WIN_W, WIN_H);
+    const merged = [];
+    const frameIM = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), mat(0xf5f6f3), panes.length * 4);
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), eul = new THREE.Euler();
+    let fi = 0;
+    for (const p of panes) {
+      const g = paneGeo.clone();
+      g.rotateY(p.rotY);
+      g.translate(p.x, WIN_Y, p.z);
+      merged.push(g);
+      eul.set(0, p.rotY, 0); q.setFromEuler(eul);
+      const bars = [
+        [WIN_W + 0.14, 0.1, 0.1, 0, WIN_H / 2 + 0.04],   // header
+        [WIN_W + 0.14, 0.12, 0.14, 0, -WIN_H / 2 - 0.05], // sill
+        [0.1, WIN_H + 0.12, 0.1, -WIN_W / 2 - 0.04, 0],
+        [0.1, WIN_H + 0.12, 0.1, WIN_W / 2 + 0.04, 0],
+      ];
+      for (const [sx, sy, sz, ox, oy] of bars) {
+        const off = new THREE.Vector3(ox, oy, 0.01).applyQuaternion(q);
+        m4.compose(new THREE.Vector3(p.x + off.x, WIN_Y + oy, p.z + off.z), q, new THREE.Vector3(
+          p.rotY === 0 || p.rotY === Math.PI ? sx : sz, sy, p.rotY === 0 || p.rotY === Math.PI ? sz : sx));
+        frameIM.setMatrixAt(fi++, m4);
+      }
+    }
+    frameIM.count = fi;
+    statics.add(frameIM);
+    if (merged.length) {
+      // manual merge: concat positions/uvs/indices
+      const tot = new THREE.BufferGeometry();
+      let vt = 0;
+      const ps = [], uvs = [], ix = [];
+      for (const g of merged) {
+        const pa = g.getAttribute('position'), ua = g.getAttribute('uv');
+        for (let i = 0; i < pa.count; i++) { ps.push(pa.getX(i), pa.getY(i), pa.getZ(i)); uvs.push(ua.getX(i), ua.getY(i)); }
+        const gi = g.getIndex();
+        for (let i = 0; i < gi.count; i++) ix.push(gi.getX(i) + vt);
+        vt += pa.count;
+      }
+      tot.setAttribute('position', new THREE.Float32BufferAttribute(ps, 3));
+      tot.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+      tot.setIndex(ix);
+      statics.add(new THREE.Mesh(tot, skyMat));
+    }
+  }
+
+  // the city outside — pale flat silhouettes past the windows, far enough
+  // that they read as skyline, not floating crates on the glass
+  {
+    const N = 26;
+    const im = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1),
+      new THREE.MeshBasicMaterial({ color: 0xffffff }), N); // unlit — hazy backdrop
+    const m4 = new THREE.Matrix4();
+    const col = new THREE.Color();
+    const spots = [];
+    for (let i = 0; i < 9; i++) spots.push([-46 - (i % 3) * 8, -30 + i * 7]);         // west block
+    for (let i = 0; i < 9; i++) spots.push([-38 + i * 8.5, -44 - (i % 3) * 8]);       // north block
+    for (let i = 0; i < 8; i++) spots.push([28 + (i % 3) * 8, -26 + i * 7]);          // east block
+    spots.slice(0, N).forEach(([x, z], i) => {
+      const h = 5 + ((i * 37) % 10);
+      const w = 5 + ((i * 13) % 7);
+      m4.makeScale(w, h, w);
+      m4.setPosition(x, h / 2 - 0.2, z);
+      im.setMatrixAt(i, m4);
+      col.setHex(i % 3 === 0 ? 0xb4c2cd : i % 3 === 1 ? 0xc0ccd6 : 0xccd6de);
+      im.setColorAt(i, col);
+    });
+    statics.add(im);
   }
 
   // baseboard + wall-base contact shading — ONE merged mesh each, so the
@@ -238,10 +518,15 @@ export function buildMap(scene, physics) {
     statics.add(matt);
     physics.staticBox(cx - 0.7, 0.25, -9.9, 0.5, 0.25, 1.05);
     beds.push({ x: cx - 0.7, z: -9.9, y: 0, room: 'room', roomNo: i + 1, occupant: null, index: i });
-    const desk = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.78, 0.6), mat(0xd9c6a8));
-    desk.position.set(cx + 1.05, 0.39, -10.6);
-    desk.castShadow = true;
-    statics.add(desk);
+    // bedside cabinet: white body, wood top, drawer line — not a crate
+    const cabBody = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.7, 0.55), mat(0xe9e6dd));
+    cabBody.position.set(cx + 1.05, 0.35, -10.6);
+    cabBody.castShadow = true;
+    const cabTop = new THREE.Mesh(new THREE.BoxGeometry(1.03, 0.06, 0.62), mat(0xb98d5f));
+    cabTop.position.set(cx + 1.05, 0.75, -10.6);
+    const cabLine = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.03, 0.02), mat(0x8a8f98));
+    cabLine.position.set(cx + 1.05, 0.42, -10.31);
+    statics.add(cabBody, cabTop, cabLine);
     physics.staticBox(cx + 1.05, 0.39, -10.6, 0.5, 0.39, 0.3);
     roomDesks.push({ x: cx + 1.05, z: -10.6, y: 0.82, roomNo: i + 1, clipboard: null });
     // wall monitor: a REAL screen — canvas texture the Monitors system paints
@@ -250,8 +535,8 @@ export function buildMap(scene, physics) {
     const monTex = new THREE.CanvasTexture(monCanvas);
     monTex.colorSpace = THREE.SRGBColorSpace;
     const monG = new THREE.Group();
-    monG.position.set(cx - 0.7, 0.88, -11.72);
-    monG.rotation.x = -0.52; // tilted mount, angled at the top-down camera
+    monG.position.set(cx - 0.7, 1.02, -11.72);
+    monG.rotation.x = -0.46; // tilted mount, angled at the chase camera
     const monFrame = new THREE.Mesh(new THREE.BoxGeometry(1.26, 0.84, 0.06), mat(0x232d3a));
     const monScreen = new THREE.Mesh(new THREE.PlaneGeometry(1.14, 0.72),
       new THREE.MeshBasicMaterial({ map: monTex }));
@@ -259,12 +544,21 @@ export function buildMap(scene, physics) {
     monG.add(monFrame, monScreen);
     statics.add(monG);
     roomMonitors.push({ index: i, roomNo: i + 1, canvas: monCanvas, tex: monTex, screen: monScreen, standby: false });
-    // status light over the door (unique material — per-room color control)
+    // status light over the door — on a stem so it reads as a fixture
     const lightMat = new THREE.MeshStandardMaterial({ color: 0x8a94a4, emissive: 0x8a94a4, emissiveIntensity: 0.25, roughness: 0.4 });
+    const stem = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.26, 0.06), mat(0x5b6874));
+    stem.position.set(cx, WALL_H + 0.12, -7);
     const light = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), lightMat);
-    light.position.set(cx, 1.5, -7.35);
-    statics.add(light);
+    light.position.set(cx, WALL_H + 0.34, -7);
+    statics.add(stem, light);
     roomLights.push({ mesh: light, mat: lightMat });
+    // status board over the bed (reference's check-board) — shares the door
+    // light's material, so it flips green/orange/red in sync for free
+    const boardFrame = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.42, 0.05), mat(0xf5f6f3));
+    boardFrame.position.set(cx - 0.7, 2.0, -11.8);
+    const board = new THREE.Mesh(new THREE.PlaneGeometry(0.36, 0.28), lightMat);
+    board.position.set(cx - 0.7, 2.0, -11.77);
+    statics.add(boardFrame, board);
   });
 
   // ---- triage: reception + waiting + KNOCKABLE props ----
@@ -276,10 +570,16 @@ export function buildMap(scene, physics) {
     statics.add(c);
     seats.push({ x, z, taken: null });
   }
-  // ---- reception: a REAL front desk — counter run + side return, stone top
-  // with an overhang, accent kick, work surface with monitor/keyboard/papers,
-  // and a receptionist parked behind it (rig added by the Game).
-  const counterBase = mat(0x8fa8bd), counterTop = mat(0xe8e4da), kick = mat(0x51677c);
+  // wood gang-beams under the chair rows — reference waiting rows
+  for (const rz of [10.2, 12.4]) {
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(7.6, 0.09, 0.14), mat(0x8a6742));
+    beam.position.set(-20.35, 0.16, rz + 0.1);
+    statics.add(beam);
+  }
+  // ---- reception: a REAL front desk — wood counter run + side return, stone
+  // top with an overhang, accent kick, work surface with monitor/keyboard/
+  // papers, and a receptionist parked behind it (rig added by the Game).
+  const counterBase = mat(0xb98d5f), counterTop = mat(0xefece2), kick = mat(0x8a6742);
   const counterSeg = (x, z, hx, hz) => {
     const base = new THREE.Mesh(new THREE.BoxGeometry(hx * 2, 1.02, hz * 2), counterBase);
     base.position.set(x, 0.51, z); base.castShadow = true;
@@ -340,6 +640,50 @@ export function buildMap(scene, physics) {
   shadowBlob(-26.6, 12.2, 1.1, 1.1, 0.26);
   shadowBlob(-20.4, 14.7, 2.6, 1.7, 0.24);
 
+  // departure-style ED status board high on the lobby's east wall + a self
+  // check-in kiosk under it — straight out of the reference lobby
+  {
+    const c = document.createElement('canvas');
+    c.width = 512; c.height = 192;
+    const g = c.getContext('2d');
+    g.fillStyle = '#101a26'; g.fillRect(0, 0, 512, 192);
+    g.fillStyle = '#1c2d40'; g.fillRect(0, 0, 512, 40);
+    g.fillStyle = '#ffd76a';
+    g.font = 'bold 24px monospace';
+    g.fillText('MEDTEAM GENERAL — ED STATUS', 16, 28);
+    const rows = [
+      ['TRIAGE', 'OPEN', '#59e07a'], ['WAIT TIME', '12 MIN', '#ffd76a'],
+      ['ROOMS', '10 · ALL WINGS', '#59e07a'], ['LAB / IMAGING', 'NORMAL', '#59e07a'],
+      ['TRAUMA', 'STAND BY', '#ff7a5c'],
+    ];
+    g.font = 'bold 19px monospace';
+    rows.forEach(([k, v, col], i) => {
+      const y = 66 + i * 26;
+      g.fillStyle = '#9fb4c8'; g.fillText(k, 24, y);
+      g.fillStyle = col; g.fillText(v, 280, y);
+      g.beginPath(); g.arc(262, y - 6, 5, 0, 7); g.fillStyle = col; g.fill();
+    });
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.24, 3.3), mat(0x232a36));
+    frame.position.set(-2.16, 2.0, 11);
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(3.16, 1.12),
+      new THREE.MeshBasicMaterial({ map: t }));
+    face.position.set(-2.22, 2.0, 11);
+    face.rotation.y = -Math.PI / 2;
+    statics.add(frame, face);
+    // kiosk
+    const kioskBody = new THREE.Mesh(new THREE.BoxGeometry(0.55, 1.35, 0.5), mat(0xeef1f5));
+    kioskBody.position.set(-4.4, 0.675, 12); kioskBody.castShadow = true;
+    const kioskScr = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.34), emat(0x8fd8c9, 0.7));
+    kioskScr.position.set(-4.68, 1.18, 12); kioskScr.rotation.y = -Math.PI / 2; kioskScr.rotation.z = 0;
+    const kioskBand = new THREE.Mesh(new THREE.BoxGeometry(0.57, 0.12, 0.52), mat(0x5d99b0));
+    kioskBand.position.set(-4.4, 1.41, 12);
+    statics.add(kioskBody, kioskScr, kioskBand);
+    physics.staticBox(-4.4, 0.675, 12, 0.3, 0.675, 0.28);
+    shadowBlob(-4.4, 12, 1.2, 1.1, 0.26);
+  }
+
   // rampage waypoints: the WHOLE waiting area — angry patients storm between
   // these and shove whatever physics props are in reach
   const knockSpots = [
@@ -356,6 +700,24 @@ export function buildMap(scene, physics) {
     bush.position.set(x, 0.85, z);
     bush.castShadow = true;
     statics.add(pot, bush);
+  }
+  // framed health posters on the tall walls
+  {
+    const posterAt = (x, y, z, rotY, color) => {
+      const fr = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.9, 0.04), mat(0xf5f6f3));
+      fr.position.set(x, y, z); fr.rotation.y = rotY;
+      const art = new THREE.Mesh(new THREE.PlaneGeometry(0.54, 0.78), mat(color));
+      art.position.set(x + Math.sin(rotY) * 0.03, y, z + Math.cos(rotY) * 0.03);
+      art.rotation.y = rotY;
+      const strip1 = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.05), mat(0xf5f6f3));
+      strip1.position.set(x + Math.sin(rotY) * 0.04, y - 0.18, z + Math.cos(rotY) * 0.04);
+      strip1.rotation.y = rotY;
+      statics.add(fr, art, strip1);
+    };
+    posterAt(-29.8, 1.75, 5.6, Math.PI / 2, 0x5d99b0);   // by the entrance
+    posterAt(-29.8, 1.75, 16.4, Math.PI / 2, 0xd8564a);
+    posterAt(-5.82, 1.8, -2.5, Math.PI / 2, 0x3f9d8a);   // corridor wall
+    posterAt(13.8, 1.8, -18, -Math.PI / 2, 0x4bb35f);    // discharge hall
   }
 
   // ---- pharmacy wall (Z1 south) ----
@@ -442,6 +804,34 @@ export function buildMap(scene, physics) {
   statics.add(scan);
   shadowBlob(8.6, 0.5, 3.2, 2.2, 0.28);
   physics.staticBox(8.6, 0.5, 0.9, 1.1, 0.5, 0.5);
+  // articulated surgical light over the dock — the reference's OR jewelry
+  {
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 2.6, 8), mat(0xdfe3ea));
+    pole.position.set(10.7, 1.3, 1.3); pole.castShadow = true;
+    const hub = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 8), mat(0xb9c2d4));
+    hub.position.set(10.7, 2.6, 1.3);
+    statics.add(pole, hub);
+    physics.staticBox(10.7, 1.3, 1.3, 0.09, 1.3, 0.09);
+    const headAt = (hx, hy, hz) => {
+      // arm from the hub to the head
+      const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 1, 6), mat(0xdfe3ea));
+      const from = new THREE.Vector3(10.7, 2.6, 1.3), to = new THREE.Vector3(hx, hy, hz);
+      const d = to.clone().sub(from);
+      arm.scale.y = d.length();
+      arm.position.copy(from).addScaledVector(d, 0.5);
+      arm.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.clone().normalize());
+      const head = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.19, 0.1, 14), mat(0xf5f6f3));
+      head.position.set(hx, hy, hz); head.castShadow = true;
+      const lamp = new THREE.Mesh(new THREE.CircleGeometry(0.16, 14), emat(0xfff6d8, 1.3));
+      lamp.position.set(hx, hy - 0.055, hz);
+      lamp.rotation.x = Math.PI / 2;
+      const glow = glowSprite(0xfff2c8, 1.2, 0.28);
+      glow.position.set(hx, hy - 0.28, hz);
+      statics.add(arm, head, lamp, glow);
+    };
+    headAt(9.15, 2.42, 0.2);
+    headAt(8.35, 2.3, -0.85);
+  }
   const diagnostics = {
     machine: { x: 8.6, z: 0.4 },
     dock: { x: 8.6, z: -1.2 },      // patient parks here during the scan
@@ -453,9 +843,6 @@ export function buildMap(scene, physics) {
   // ---- Z4: discharge + pit ----
   const discharge = { x: 5, z: -18, r: 2.3 };
   const gateOut = { x: 5, z: -26 };
-  const doorFrame = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.25, 0.7), mat(0x4dd07a));
-  doorFrame.position.set(5, WALL_H + 0.1, -24);
-  statics.add(doorFrame);
   const firePit = { x: 11.3, z: -18.5, r: 1.7 };
   const pitRim = new THREE.Mesh(new THREE.TorusGeometry(1.8, 0.22, 10, 28), mat(0x5a5148));
   pitRim.rotation.x = Math.PI / 2;
@@ -502,10 +889,14 @@ export function buildMap(scene, physics) {
   dropRing.material.fog = false;
   statics.add(dropRing);
 
+  // remember which fade-group meshes actually cast shadows, so the Game can
+  // switch them off while the wall is ghosted (no shadows from thin air)
+  for (const m of fadeWalls.meshes) m.userData.casts = m.castShadow;
+
   return {
     beds, seats, centrifuge, imagingPad, diagnostics, shelfUnits, rings, dropRing,
     roomDesks, roomLights, roomMonitors, knockSpots, triageDesk, receptionSeat, staffSeats, stationExit, medDoc, triagePC,
-    discharge, gateOut, firePit, fire,
+    discharge, gateOut, firePit, fire, fadeWalls,
     floorYAt: () => 0,
     zoneOf, zoneDoors: ZONE_DOORS,
     entrance: { x: -28.2, z: 10 },

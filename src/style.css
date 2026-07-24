@@ -198,6 +198,15 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0e1420; t
   border: 1px solid #c9bd9e; border-radius: 9px; background: #efe6cd; font-size: 17px; }
 #modal .chatline { font-size: 12px; color: #4a5468; background: #efe9d6;
   border-radius: 8px; padding: 7px 9px; margin: 5px 0; line-height: 1.4; }
+
+/* ---------- Escape menu / settings ---------- */
+#modal .setrow { display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 7px 4px; border-bottom: 1px dashed #c9bd9e; font-size: 14px; }
+#modal .setrow .opt.mini { display: inline-block; width: auto; min-width: 118px; margin: 0;
+  padding: 8px 12px; border: 1px solid #c9bd9e; border-bottom: 1px solid #c9bd9e; border-radius: 9px;
+  background: #efe6cd; color: #6b5a35; font-size: 12px; font-weight: 700; text-align: center; }
+#modal .setrow .keybtn { min-width: 64px; font-family: 'Courier New', monospace; font-size: 14px; }
+#modal .setrow input[type="range"] { flex: 1; max-width: 220px; accent-color: #a97b42; }
 #modal.rise { animation: clipRise .45s cubic-bezier(.2,1.4,.4,1); }
 @keyframes clipRise { from { transform: translateY(60vh) scale(.6) rotate(4deg); opacity: 0; } }
 
@@ -299,3 +308,18 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0e1420; t
 #modal.crtbox.blue .close { background: #0c1420; color: #7cb2e0; border: 1px solid #1e3a5c; }
 
 #btn-pager { left: 14px; bottom: 22px; width: 64px; height: 64px; background: #c95b84; }
+
+/* adrenaline: cartoon anxiety scribbles over your head */
+#anxiety { position: absolute; width: 96px; height: 48px; pointer-events: none; z-index: 58;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.55)); }
+#anxiety svg { width: 100%; height: 100%; }
+#anxiety .s1 { animation: scrib 0.5s infinite; }
+#anxiety .s2 { animation: scrib 0.42s infinite reverse; }
+#anxiety .s3 { animation: scrib 0.36s infinite; }
+#anxiety .s4 { animation: scrib 0.6s infinite reverse; }
+@keyframes scrib {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+  25% { transform: translate(2px, -3px) rotate(3deg); opacity: 0.75; }
+  50% { transform: translate(-2px, 2px) rotate(-2deg); opacity: 1; }
+  75% { transform: translate(3px, 1px) rotate(2deg); opacity: 0.8; }
+}

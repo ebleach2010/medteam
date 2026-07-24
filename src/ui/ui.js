@@ -65,6 +65,17 @@ export class UI {
       root.appendChild(el);
       this.arrows.push(el);
     }
+    // adrenaline scribble: classic cartoon panic squiggles over your head
+    this.anxiety = document.createElement('div');
+    this.anxiety.id = 'anxiety';
+    this.anxiety.innerHTML = `<svg viewBox="0 0 120 60" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round">
+      <path class="s1" d="M14 38 q6 -14 12 0 t12 0 t12 0"/>
+      <path class="s2" d="M64 26 q5 -12 10 0 t10 0"/>
+      <path class="s3" d="M92 44 q4 -10 8 0 t8 0"/>
+      <path class="s4" d="M30 14 q4 -9 8 0 t8 0"/>
+    </svg>`;
+    this.anxiety.style.display = 'none';
+    root.appendChild(this.anxiety);
     this.game = game;
   }
 
@@ -77,9 +88,20 @@ export class UI {
     this.monitors.update(t);
     this.hud.update();
     this._itemLabels();
+    this._anxiety();
     this._roomLabels();
     this._edgeArrows();
     this._urgencyDots();
+  }
+
+  _anxiety() {
+    const g = this.game;
+    if (!g.adrenaline || g.mode !== 'playing') { this.anxiety.style.display = 'none'; return; }
+    const p = g.active.pos;
+    const s = g.renderer.project({ x: p.x, y: p.y + 1.35, z: p.z });
+    if (!s) { this.anxiety.style.display = 'none'; return; }
+    this.anxiety.style.display = 'block';
+    this.anxiety.style.transform = `translate(${s.x | 0}px, ${s.y | 0}px) translate(-50%,-100%)`;
   }
 
   // triage-at-a-glance: a dot over every unresolved patient, colored by how
