@@ -327,6 +327,13 @@ export class Game {
     return this._routeTo(from, to);
   }
 
+  // fan clipboards across the desk so a lab result and an imaging report never
+  // land on the exact same spot (one hiding under the other)
+  _deskSlot(desk, kind) {
+    const dx = kind === 'imaging' ? 0.26 : kind === 'labs' ? -0.26 : 0;
+    return { x: desk.x + dx, z: desk.z + (kind === 'imaging' ? 0.06 : -0.06) };
+  }
+
   _routeToRoomBed(from, bed) {
     const door = this.map.roomDoor(bed.index);
     const r = this._routeTo(from, { x: door.x, z: door.z });
@@ -756,10 +763,11 @@ export class Game {
     }
     if (t.phase === 'deliver') {
       const desk = this.map.roomDesks[t.bed.roomNo - 1];
-      const paper = spawnCarryable(this, 'paper', desk.x, desk.y + 0.04, desk.z,
+      const spot = this._deskSlot(desk, 'labs');
+      const paper = spawnCarryable(this, 'paper', spot.x, desk.y + 0.05, spot.z,
         { patientId: t.patient.id, label: `Labs: ${sim.displayName}`, clip: 'labs' });
       paper.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
-      paper.body.setTranslation({ x: desk.x, y: desk.y + 0.04, z: desk.z }, true);
+      paper.body.setTranslation({ x: spot.x, y: desk.y + 0.05, z: spot.z }, true);
       this.ui.toast(`📋 Lab results on the desk — Room ${t.bed.roomNo}`, 'good');
       this.audio.good();
       t.phase = 'home';
@@ -865,10 +873,11 @@ export class Game {
       ch.dragging = null; t.patient.draggedBy = null;
       this.bedPatient(t.patient, t.bed);
       const desk = this.map.roomDesks[t.bed.roomNo - 1];
-      const clip = spawnCarryable(this, 'paper', desk.x, desk.y + 0.04, desk.z,
+      const spot = this._deskSlot(desk, 'imaging');
+      const clip = spawnCarryable(this, 'paper', spot.x, desk.y + 0.05, spot.z,
         { patientId: t.patient.id, label: `Imaging: ${sim.displayName}`, clip: 'imaging', report: t.report });
       clip.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
-      clip.body.setTranslation({ x: desk.x, y: desk.y + 0.04, z: desk.z }, true);
+      clip.body.setTranslation({ x: spot.x, y: desk.y + 0.05, z: spot.z }, true);
       this.ui.toast(`📋 Imaging report on the desk — Room ${t.bed.roomNo}`, 'good');
       this.audio.good();
       t.phase = 'home';

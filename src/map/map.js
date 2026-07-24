@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { mat, emat, glowSprite, GLOW_TEX, makeBed, makeChair, makeCentrifuge, makeScanner, makeShelf, makeDesk } from '../render/meshes.js';
+import { mat, emat, glowSprite, GLOW_TEX, makeBed, makeChair, makeOfficeChair, makeShelf, makeDesk } from '../render/meshes.js';
 import { SHELVES } from '../data/meds.js';
 
 // Single-player hospital: compact, sectioned, VERY recognizable.
@@ -164,9 +164,9 @@ export function buildMap(scene, physics) {
   vwall(-6, -12, 2, [], { tall: true });
   hwall(2, -6, -2);                                                              // caps the SE corner behind the ether wall
 
-  // invisible boundary so you can't wander far out the entrance lot and get lost
-  physics.staticBox(-31.4, 1.5, 4, 0.2, 1.5, 13);   // just west of the entrance lot
-  physics.staticBox(-33, 1.5, 10, 3, 1.5, 0.2);     // far west stop past the discharge walk
+  // far-west backstop only — well past the discharge/entrance lot so it never
+  // blocks the walk-in path (that lot at z~10 must stay open both ways)
+  physics.staticBox(-37, 1.5, 10, 0.2, 1.5, 16);    // x=-37, clear of spawn (-32.5) and gate (-33)
 
   const wallMat = mat(0xf2f1ee);
   const bandMat = mat(0x5d99b0);
@@ -731,20 +731,21 @@ export function buildMap(scene, physics) {
   statics.add(desk);
   physics.staticBox(-16, 0.45, -1.2, 1.6, 0.45, 0.55);
   shadowBlob(-16, -1.2, 4.0, 1.8, 0.26);
-  // the nurses' station: idle staff SIT here until dispatched
-  // tucked toward the west end of the desk — clear of the door funnel at
-  // (-14.5, 2) so a dragged patient never plows through the seated crew
+  // the nurses' station: idle staff SIT here (in wheeled office chairs) until
+  // dispatched. Evenly spaced across the desk, chairs aligned exactly under
+  // each seat so nobody clips or clusters, all facing the desk.
   const staffSeats = {
-    aide: { x: -18.6, z: -0.3, yaw: Math.PI },
-    surgeon: { x: -17.4, z: -0.3, yaw: Math.PI },
-    porter: { x: -16.2, z: -0.3, yaw: Math.PI },
-    tech: { x: -15.0, z: -0.3, yaw: Math.PI },
+    aide: { x: -17.5, z: -0.2, yaw: Math.PI },
+    surgeon: { x: -16.4, z: -0.2, yaw: Math.PI },
+    porter: { x: -15.3, z: -0.2, yaw: Math.PI },
+    tech: { x: -14.2, z: -0.2, yaw: Math.PI },
   };
   for (const key of ['aide', 'surgeon', 'porter', 'tech']) {
-    const c = makeChair();
-    c.position.set(staffSeats[key].x, 0, staffSeats[key].z + 0.15);
-    c.rotation.y = Math.PI;
+    const s = staffSeats[key];
+    const c = makeOfficeChair(Math.PI); // seat faces the desk
+    c.position.set(s.x, 0, s.z);
     statics.add(c);
+    shadowBlob(s.x, s.z, 0.8, 0.8, 0.24);
   }
   // MED-DOC 4000: green-phosphor consult terminal on the desk's east end
   const crt = new THREE.Group();

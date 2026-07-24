@@ -12,6 +12,7 @@ let LOADED = false;
 const FILES = {
   bed: 'models/bed.glb',
   chair: 'models/chair.glb',
+  officechair: 'models/officechair.glb',
   counter: 'models/counter.glb',
   monitor: 'models/monitor.glb',
   firstaid: 'models/firstaid.glb',
