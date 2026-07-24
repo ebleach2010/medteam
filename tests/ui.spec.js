@@ -62,6 +62,6 @@ test('contextual prompt button opens the med cabinet', async ({ page }) => {
   await page.locator('#prompt').dispatchEvent('pointerdown');
   await page.waitForFunction(() => window.__game.state().modal === 'cabinet');
   // pick a med through the real modal button
-  await page.locator('#modal .medbtn').first().dispatchEvent('pointerdown');
+  await page.locator('#modal .medbtn').first().click();
   await page.waitForFunction(() => !!window.__game.state().chars[1].carrying);
 });

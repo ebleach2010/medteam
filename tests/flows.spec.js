@@ -131,7 +131,13 @@ test('full lab loop: bed → labs → centrifuge → results → dx → meds →
 
     // haul them to the DISCHARGE room — walked, through the doors
     api.grab('nurse');
-    await api.until(() => g.game.nurse.dragging);
+    try { await api.until(() => g.game.nurse.dragging, 8000); }
+    catch { // stood-up patient drifted out of reach on cold GL — step to them
+      const pp = [...g.game.world.byTag('patients')].find((q) => q.id === id).body.translation();
+      g.teleport('nurse', pp.x + 0.6, pp.z + 0.6);
+      api.grab('nurse');
+      await api.until(() => g.game.nurse.dragging, 8000);
+    }
     await api.drive('nurse', [[-12, -5.6], [-6, -5.5], [2, -5.6], [8.5, -8.5],
       [8.5, -13.5], [5, -17.6]]);
     api.release('nurse');

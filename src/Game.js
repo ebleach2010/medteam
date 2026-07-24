@@ -376,29 +376,148 @@ export class Game {
     if (effect === 'helps') {
       sim.accel = Math.max(0.4, (sim.accel ?? 1) * 0.6);
       this.addScore(25, 'Good improvisation');
-      this.ui.toast(`✚ ${line}`, 'good', 4500);
+      this.ui.announce(`✚ ${line}`, 'good');
       sim._say?.('better');
     } else if (effect === 'nothing') {
       this.addScore(-5, 'Questionable order');
-      this.ui.toast(`🤷 ${line}`, '', 4200);
+      this.ui.announce(`🤷 ${line}`);
     } else if (effect === 'harms') {
       sim.accel = (sim.accel ?? 1) * 2;
       this.addScore(-40, 'Harmful intervention');
-      this.ui.toast(`⚠ ${line}`, 'bad', 4500);
+      this.ui.announce(`⚠ ${line}`, 'bad');
       sim._say?.('worse');
       if (sim.state === 'inbed' && this.rng.chance(0.35)) sim.agitate?.();
     } else if (effect === 'severe') {
       sim.accel = (sim.accel ?? 1) * 4;
       this.addScore(-120, 'That was assault, basically');
       sim._goCritical?.(); // its CRASHING toast fires first...
-      this.ui.toast(`🚨 ${line}`, 'bad', 5000); // ...so the narration stays on screen
+      this.ui.announce(`🚨 ${line}`, 'bad'); // ...so the narration stays on screen
     } else if (effect === 'lethal') {
       this.addScore(-250, 'Malpractice of legend');
-      this.ui.toast(`☠ ${line}`, 'bad', 5500);
+      this.ui.announce(`☠ ${line}`, 'bad');
       sim.critical = true;
       sim.accel = 10;
       this.timers.push({ at: this.timeReal + 4, fn: () => { if (sim.state !== 'dead') sim.die?.(`iatrogenic — ${label}`, true); } });
     }
+  }
+
+  // 📟 pager: the parsed order becomes a real nurse task. Returns her reply.
+  executePage(parsed, raw) {
+    const nurse = this.nurse;
+    if (this.activeIdx === 0) return 'You ARE the nurse right now, doctor. Swap back and page me.';
+    if (parsed.action === 'none') return parsed.reply ?? 'Say again?';
+    const pts = [...this.world.byTag('patients')];
+    let pt = null;
+    if (parsed.room != null) {
+      pt = pts.find((q) => q.sim.bed?.roomNo === parsed.room);
+      if (!pt) return `Room ${parsed.room} is empty, doctor.`;
+    } else if (parsed.action === 'assess') {
+      pt = pts.filter((q) => q.sim.bed && q.sim.state !== 'dead')
+        .sort((a, b) => (b.sim.critical - a.sim.critical) || (b.sim.alarming() - a.sim.alarming()))[0];
+      if (!pt) return 'Nobody is roomed right now.';
+    } else {
+      return 'Which room, doctor?';
+    }
+    const sim = pt.sim;
+    if (parsed.action === 'med') {
+      if (!parsed.medId) return 'Which med do you want them to have?';
+      const med = medById(parsed.medId);
+      if (this.tasks.has(nurse)) {
+        (nurse._jobQueue ??= []).push({ kind: 'nfetch', patientId: pt.id, medId: parsed.medId });
+        return `Still on your last order — ${med.name} to Room ${sim.bed.roomNo} is next in line.`;
+      }
+      this.dispatch(nurse, { type: 'fetch', phase: 'toPharmacy', patient: pt, medId: parsed.medId,
+        route: this._routeTo(nurse.pos, { x: -9.5, z: 17.4 }) });
+      this.ui.bubbles.say(nurse, `🫡 ROGER!! ${med.name} to Room ${sim.bed.roomNo}!`, { hold: 3 });
+      return parsed.reply ?? `ROGER — ${med.name} to Room ${sim.bed.roomNo}.`;
+    }
+    if (parsed.action === 'discharge') {
+      if (sim.state === 'dead') return `Room ${sim.bed.roomNo} is... beyond discharge, doctor.`;
+      if (!sim.treated) return `Room ${sim.bed.roomNo} is UNTREATED — walking them out now would kill them. Treat them first.`;
+      if (this.tasks.has(nurse)) {
+        (nurse._jobQueue ??= []).push({ kind: 'nescort', patientId: pt.id });
+        return `Queued — I'll walk Room ${sim.bed.roomNo} out after this.`;
+      }
+      this.dispatch(nurse, { type: 'escortOut', phase: 'toRoom', patient: pt,
+        route: this._routeToRoomBed(nurse.pos, sim.bed) });
+      this.ui.bubbles.say(nurse, `🫡 ROGER!! Walking Room ${sim.bed.roomNo} out!`, { hold: 3 });
+      return parsed.reply ?? `ROGER — taking Room ${sim.bed.roomNo} to discharge.`;
+    }
+    if (parsed.action === 'assess') {
+      if (this.tasks.has(nurse)) {
+        (nurse._jobQueue ??= []).push({ kind: 'nassess', patientId: pt.id });
+        return `Queued — I'll check Room ${sim.bed.roomNo} right after this.`;
+      }
+      this.dispatch(nurse, { type: 'assess', phase: 'toPatient', patient: pt,
+        route: this._routeToRoomBed(nurse.pos, sim.bed) });
+      this.ui.bubbles.say(nurse, `🫡 On my way to Room ${sim.bed.roomNo}!`, { hold: 3 });
+      return parsed.reply ?? `ROGER — eyes on Room ${sim.bed.roomNo}, report to follow.`;
+    }
+    return 'Say again?';
+  }
+
+  // nurse walks the treated patient to discharge and hands them off
+  _task_escortOut(ch, t, dt) {
+    const sim = t.patient?.sim;
+    if (!sim || sim.state === 'dead' || sim.resolved) {
+      if (ch.dragging) { ch.dragging.draggedBy = null; ch.dragging = null; }
+      this._done(ch); return;
+    }
+    if (t.phase === 'toRoom') {
+      // inbed OR standing by the bed stabilized (readyHome) — both escortable
+      if (!['inbed', 'readyHome'].includes(sim.state) || !sim.bed) {
+        this.ui.announce('📟 NURSE: Patient wasn\'t at their bed — order cancelled.', 'bad');
+        this._done(ch); return;
+      }
+      const rd = this.map.roomDoor(sim.bed.index); // capture BEFORE the grab frees the bed
+      sim.onGrabbed();
+      sim.state = 'transport';
+      ch.dragging = t.patient; t.patient.draggedBy = ch;
+      t.phase = 'toGate';
+      t.route = [
+        { x: rd.x, z: -6 },                                          // out the room door
+        ...this._routeTo({ x: rd.x, z: -5.6 }, { x: 2, z: -5.6 }),   // corridor east
+        { x: 8.5, z: -8.5 },                                         // angle through room 9's door
+        { x: 8.5, z: -13.5 },                                        // through the discharge arch
+        { x: this.map.discharge.x, z: this.map.discharge.z },
+      ];
+      return;
+    }
+    if (t.phase === 'toGate') {
+      const pt = t.patient;
+      ch.dragging = null; pt.draggedBy = null;
+      this._dischargeAttempt(pt);
+      t.phase = 'home';
+      t.route = this._routeTo(ch.pos, this.map.nurseSpawn);
+      return;
+    }
+    this._done(ch);
+  }
+
+  // nurse checks on a patient and radios back what she sees
+  _task_assess(ch, t, dt) {
+    const sim = t.patient?.sim;
+    if (!sim) { this._done(ch); return; }
+    if (t.phase === 'toPatient') { t.phase = 'look'; t.wait = 0; return; }
+    if (t.phase === 'look') {
+      t.wait += dt;
+      if (t.wait < 1.6) return;
+      const v = sim.vitals();
+      const where = sim.bed ? `ROOM ${sim.bed.roomNo}` : sim.displayName.toUpperCase();
+      let verdict;
+      if (sim.state === 'dead') verdict = "they're gone, doctor. I'm sorry.";
+      else if (sim.critical) verdict = 'CRITICAL — I need you here NOW, doctor!';
+      else if (sim.stabilized) verdict = 'stable and ready for dispo.';
+      else if (sim.treated) verdict = 'responding to treatment — keep them monitored.';
+      else if (sim.alarming()) verdict = 'looking rough and still untreated — recommend you see them.';
+      else verdict = 'holding steady, still untreated.';
+      this.ui.announce(`📟 NURSE: ${where} — HR ${v.hr}, BP ${v.sbp}/${v.dbp}, SpO₂ ${v.spo2}%. ${verdict}`,
+        sim.critical || sim.state === 'dead' ? 'bad' : 'good');
+      t.phase = 'home';
+      t.route = this._routeTo(ch.pos, this.map.nurseSpawn);
+      return;
+    }
+    this._done(ch);
   }
 
   _staffTick(dt) {
@@ -491,6 +610,9 @@ export class Game {
       else if (job.kind === 'labs') { if (sim.labState === 'queued') sim.labState = 'none'; this.orderLabs(pt, job.panels); }
       else if (job.kind === 'surgery') { sim._surgQueued = false; this.orderSurgery(pt); }
       else if (job.kind === 'fetch') { this.orderMedFetch(pt, job.medId); }
+      else if (job.kind === 'nfetch') { this.executePage({ action: 'med', room: sim.bed?.roomNo ?? null, medId: job.medId, reply: null }, ''); }
+      else if (job.kind === 'nescort') { this.executePage({ action: 'discharge', room: sim.bed?.roomNo ?? null, medId: null, reply: null }, ''); }
+      else if (job.kind === 'nassess') { this.executePage({ action: 'assess', room: sim.bed?.roomNo ?? null, medId: null, reply: null }, ''); }
     }
   }
 
@@ -1058,6 +1180,12 @@ export class Game {
       case INTENT.TACKLE: char.tackle(); break;
       case INTENT.SWAP_ROLE:
         this.activeIdx ^= 1;
+        if (this.activeIdx === 0 && this.tasks.has(this.nurse)) {
+          if (this.nurse.dragging) { this.nurse.dragging.draggedBy = null; this.nurse.dragging = null; }
+          this.tasks.delete(this.nurse);
+          this.nurse._jobQueue = [];
+          this.ui.toast('You took over from the nurse — her pager task is cancelled.');
+        }
         this.ui.toast(`You are now the ${this.active.role.toUpperCase()}`);
         break;
       case INTENT.ORDER: this._handleOrder(char, i.payload); break;
@@ -1178,8 +1306,12 @@ export class Game {
     {
       const md = this.map.medDoc;
       const pp = char.pos;
-      if (md && Math.hypot(pp.x - md.x, pp.z - md.z) < 1.7) {
+      if (md && Math.hypot(pp.x - md.x, pp.z - md.z) < 1.4) {
         return { ico: '🖥', label: 'MED-DOC 4000', color: '#2fae5f', run: () => this.ui.modals.medDoc() };
+      }
+      const tp = this.map.triagePC;
+      if (tp && Math.hypot(pp.x - tp.x, pp.z - tp.z) < 1.4) {
+        return { ico: '🗂', label: 'TRIAGE BOARD', color: '#3d8fd4', run: () => this.ui.modals.triageBoard() };
       }
     }
     // med cabinet: any pharmacy shelf is a face of the same tabbed cabinet
@@ -1290,7 +1422,7 @@ export class Game {
       this.setPatientDynamic(pt);
       sim.state = 'waiting';
       const left = Math.max(1, Math.ceil(({ discharge: 0, medsurge: 45, ob: 70, icu: 100 }[sim.case.treatment.dispo] ?? 0) - (this.clock.minutes - sim.tTreated)));
-      this.ui.toast(`📻 ROOM SAYS NOT YET, SIR — responding but needs ~${left} more min of monitoring.`, 'bad', 4500);
+      this.ui.announce(`📻 ROOM SAYS NOT YET, SIR — responding but needs ~${left} more min of monitoring.`, 'bad');
       sim._sayRaw('Hey, I was told to REST!', 'angry');
     } else {
       // discharged untreated: they flop over, no pulse. The pit awaits.
@@ -1303,6 +1435,7 @@ export class Game {
   bedPatient(pt, bed) {
     const sim = pt.sim;
     bed.occupant = pt; sim.bed = bed;
+    sim.everRoomed = true; // being seen resets the social contract — no walkouts
     pt.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
     pt.body.setTranslation({ x: bed.x, y: (bed.y ?? 0) + 1.05, z: bed.z + 0.15 }, true);
     pt.body.setLinvel({ x: 0, y: 0, z: 0 }, true);

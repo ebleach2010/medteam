@@ -266,3 +266,36 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0e1420; t
   color: #7a8aa8;
 }
 .llmchip.on { color: #59d98c; }
+
+/* center-screen teletype announcements */
+#announce {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  transform: translate(-50%, -50%);
+  max-width: 78vw;
+  text-align: center;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  line-height: 1.5;
+  color: #eef4ff;
+  text-shadow: 0 0 8px rgba(10, 16, 30, 0.95), 0 2px 4px rgba(0, 0, 0, 0.9), 0 0 22px rgba(70, 120, 255, 0.35);
+  z-index: 75;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+#announce.show { opacity: 1; }
+#announce.bad { color: #ffc9c9; text-shadow: 0 0 8px rgba(30, 8, 8, 0.95), 0 2px 4px rgba(0, 0, 0, 0.9), 0 0 22px rgba(255, 70, 70, 0.4); }
+#announce.good { color: #c8ffdd; text-shadow: 0 0 8px rgba(8, 24, 12, 0.95), 0 2px 4px rgba(0, 0, 0, 0.9), 0 0 22px rgba(60, 220, 130, 0.4); }
+
+/* triage board: MED-DOC's blue twin */
+#modal.crtbox.blue { border-color: #1e3a5c; box-shadow: 0 0 44px rgba(74, 168, 255, 0.22), inset 0 0 90px rgba(30, 80, 150, 0.14); color: #5db4ff; background: #060a10; }
+#modal.crtbox.blue h3 { color: #5db4ff; text-shadow: 0 0 7px rgba(93, 180, 255, 0.8); }
+#modal.crtbox.blue .crt-log { color: #58acf5; text-shadow: 0 0 5px rgba(88, 172, 245, 0.55); font-size: 11.5px; }
+#modal.crtbox.blue .close { background: #0c1420; color: #7cb2e0; border: 1px solid #1e3a5c; }
+
+#btn-pager { left: 14px; bottom: 22px; width: 64px; height: 64px; background: #c95b84; }

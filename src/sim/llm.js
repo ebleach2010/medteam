@@ -343,6 +343,63 @@ function consultLocal(game, patient, role) {
   return '...';
 }
 
+// ---------- 📟 the nurse's pager: freeform orders → structured task ----------
+const PAGE_ACTIONS = ['med', 'discharge', 'assess', 'none'];
+export async function parsePage(game, text) {
+  if (!llmEnabled()) return localPage(game, text);
+  try {
+    const meds = MEDS.map((m) => `${m.id} (${m.name})`).join(', ');
+    const pts = [...game.world.byTag('patients')];
+    const beds = game.map.beds.map((b) => {
+      const pt = pts.find((q) => q.sim.bed === b);
+      return `Room ${b.roomNo}: ${pt ? `${pt.sim.displayName} (${pt.sim.state}${pt.sim.critical ? ', CRITICAL' : ''}${pt.sim.treated ? ', treated' : ''})` : 'empty'}`;
+    }).join('; ');
+    const out = await jsonCall(
+      ['You parse the attending physician\'s pager message to their assistant NURSE in a hospital game into ONE structured task.',
+        'Actions: "med" = fetch a pharmacy med and give it to a patient (set medId from MED LIST); "discharge" = walk a patient out to discharge; "assess" = go check on a patient and report their status back; "none" = unparseable/other.',
+        'room: the room number the order concerns (null if none given — for assess, null means the sickest patient).',
+        'reply: the nurse\'s short in-character acknowledgment (≤80 chars), or for "none" a brief question asking what they meant.',
+        `MED LIST: ${meds}`,
+        `CURRENT ROOMS: ${beds}`].join('\n'),
+      text,
+      {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: PAGE_ACTIONS },
+          room: { anyOf: [{ type: 'integer' }, { type: 'null' }] },
+          medId: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+          reply: { type: 'string' },
+        },
+        required: ['action', 'room', 'medId', 'reply'],
+        additionalProperties: false,
+      },
+    );
+    _lastMode = 'live';
+    const medOk = out.medId && MEDS.some((m) => m.id === out.medId) ? out.medId : null;
+    if (!PAGE_ACTIONS.includes(out.action)) return localPage(game, text);
+    return { action: out.action, room: out.room ?? null, medId: medOk, reply: out.reply || null };
+  } catch (e) {
+    console.warn('Claude page failed — local fallback:', e?.message);
+    fellBack(game, e);
+    return localPage(game, text);
+  }
+}
+
+function localPage(game, text) {
+  const q = (text || '').toLowerCase();
+  const roomM = /room\s*(\d+)/.exec(q) ?? /\b(\d+)\b/.exec(q);
+  const room = roomM ? +roomM[1] : null;
+  if (/discharge|send.*home|walk.*out|take.*(to )?discharge/.test(q)) {
+    return { action: 'discharge', room, medId: null, reply: null };
+  }
+  const medId = matchTreatment(q);
+  if (medId) return { action: 'med', room, medId, reply: null };
+  if (/check|assess|report|attend|look|status|crash|eyes on/.test(q)) {
+    return { action: 'assess', room, medId: null, reply: null };
+  }
+  return { action: 'none', room, medId: null, reply: 'Say again? Try "give amoxicillin to room 3", "discharge room 2", or "check on room 5".' };
+}
+
 export async function judgeDx(sim, text) {
   if (!llmEnabled()) return { ok: judgeDiagnosis(sim, text) };
   try {

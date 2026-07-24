@@ -19,6 +19,12 @@ export class Buttons {
     this.orders = mk('btn-action', '📋', 'ORDERS');
     this.tackle = mk('btn-tackle', '💥', 'TACKLE');
     this.swap = mk('btn-swap', '🔄', 'SWAP');
+    this.pager = mk('btn-pager', '📟', 'PAGE RN');
+    this.pager.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      game.ui.modals.pager();
+      game.audio.tap();
+    });
 
     // the contextual clipboard, peeking up from the bottom edge — tap it and
     // the full board rises onto the screen with whatever it's offering
@@ -41,10 +47,22 @@ export class Buttons {
     };
     this.grab.addEventListener('pointerdown', (e) => { e.preventDefault(); toggleGrab(); });
     window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { game.ui.modals.close(); return; } // works even while typing
       if (typing()) return; // typing in a text box must never fire game keys
       if (e.code === 'Space' && !e.repeat) toggleGrab();
       if (e.code === 'KeyE') game.enqueue(make(INTENT.ACTION, game.active.id));
+      if (e.code === 'KeyQ' && !e.repeat) game.enqueue(make(INTENT.SWAP_ROLE, 0));
+      if (e.code === 'KeyT' && !e.repeat) game.enqueue(make(INTENT.TACKLE, game.active.id));
+      if (e.code === 'KeyP' && !e.repeat) game.ui.modals.pager();
     });
+    // MacBook players get the key map on the buttons themselves
+    if (matchMedia('(hover: hover) and (pointer: fine)').matches) {
+      const hint = (btn, k) => { const l = btn.querySelector('.lbl'); if (l) l.textContent += ` (${k})`; };
+      hint(this.grab, 'SPACE');
+      hint(this.swap, 'Q');
+      hint(this.tackle, 'T');
+      hint(this.pager, 'P');
+    }
 
     this.swap.addEventListener('pointerdown', (e) => {
       e.preventDefault();
@@ -67,6 +85,7 @@ export class Buttons {
   }
 
   update() {
+    this.pager.classList.toggle('disabled', this.game.activeIdx === 0);
     const g = this.game;
     const ctx = g.actionContext(g.active);
     if (ctx) {

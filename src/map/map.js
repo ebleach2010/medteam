@@ -108,12 +108,12 @@ export function buildMap(scene, physics) {
   // Z2 rooms 1–6 (doors face south into the corridor)
   hwall(-12, -30, -6);
   vwall(-30, -12, 2);
-  hwall(-7, -30, -6, [-28, -24, -20, -16, -12, -8].map((x) => ({ at: x, w: 1.9 })));
+  hwall(-7, -30, -6, [-28, -24, -20, -16, -12, -8].map((x) => ({ at: x, w: 2.2 }))); // wider doors — tows snag less
   [-26, -22, -18, -14, -10].forEach((x) => vwall(x, -12, -7));
   vwall(-6, -12, 2, [{ at: -5.5, w: 2.6 }]);                      // Z2/Z3 corridor door
   // Z3 rooms 7–10 + lab + diagnostics
   hwall(-12, -6, 14, [{ at: 8.5, w: 4.4 }]);                      // to discharge
-  hwall(-7, -6, 14, [-3.5, 1.5, 6.5, 11.5].map((x) => ({ at: x, w: 1.9 })));
+  hwall(-7, -6, 14, [-3.5, 1.5, 6.5, 11.5].map((x) => ({ at: x, w: 2.2 })));
   [-1, 4, 9].forEach((x) => vwall(x, -12, -7));
   hwall(2, -6, 14);
   vwall(14, -12, 2);
@@ -270,7 +270,7 @@ export function buildMap(scene, physics) {
   // ---- triage: reception + waiting + KNOCKABLE props ----
   const seats = [];
   for (let i = 0; i < 8; i++) {
-    const x = -23.5 + (i % 4) * 2.1, z = 13.6 + Math.floor(i / 4) * 2.2;
+    const x = -23.5 + (i % 4) * 2.1, z = 10.2 + Math.floor(i / 4) * 2.2; // pulled toward the door — less hiking
     const c = makeChair();
     c.position.set(x, 0, z);
     statics.add(c);
@@ -405,6 +405,21 @@ export function buildMap(scene, physics) {
   statics.add(crt);
   const medDoc = { x: -14.75, z: -2.6 }; // stand here → MED-DOC prompt
 
+  // TRIAGE terminal: MED-DOC's blue twin on the desk's west end
+  const crt2 = new THREE.Group();
+  const crt2Case = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.48, 0.5), mat(0xc9cfd8));
+  crt2Case.position.y = 0.24;
+  crt2Case.castShadow = true;
+  const crt2Screen = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.3), emat(0x4aa8ff, 0.75));
+  crt2Screen.position.set(0, 0.26, 0.258);
+  const crt2Keys = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.05, 0.2), mat(0xb2b8c2));
+  crt2Keys.position.set(0, 0.03, 0.42);
+  crt2.add(crt2Case, crt2Screen, crt2Keys);
+  crt2.position.set(-17.25, 0.9, -1.2);
+  crt2.rotation.y = Math.PI;
+  statics.add(crt2);
+  const triagePC = { x: -17.25, z: -2.6 }; // stand here → TRIAGE BOARD prompt
+
   // when dispatched they round the desk via a fixed lane, then sprint
   // lanes bow NORTH around the seated row first, then round the desk end —
   // running along the row itself just body-checks your seated colleagues
@@ -489,13 +504,13 @@ export function buildMap(scene, physics) {
 
   return {
     beds, seats, centrifuge, imagingPad, diagnostics, shelfUnits, rings, dropRing,
-    roomDesks, roomLights, roomMonitors, knockSpots, triageDesk, receptionSeat, staffSeats, stationExit, medDoc,
+    roomDesks, roomLights, roomMonitors, knockSpots, triageDesk, receptionSeat, staffSeats, stationExit, medDoc, triagePC,
     discharge, gateOut, firePit, fire,
     floorYAt: () => 0,
     zoneOf, zoneDoors: ZONE_DOORS,
     entrance: { x: -28.2, z: 10 },
     spawnOutside: { x: -32.5, z: 10 },
-    insideWaypoint: { x: -27, z: 13.4 },
+    insideWaypoint: { x: -26.5, z: 11 },
     nurseSpawn: { x: -17.5, z: -2.8 },
     doctorSpawn: { x: -14, z: -2.8 },
     porterSpawn: { x: -14.8, z: -0.2 },

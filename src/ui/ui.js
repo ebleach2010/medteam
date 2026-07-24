@@ -30,7 +30,7 @@ export class UI {
     // sign plates over each area, like the reference cutaway (navy; ER red)
     this.roomLabels = [
       ['TRIAGE', -24.5, 8.8, 1.6, '#3a4a5e'],
-      ['WAITING', -21, 14.6, 1.4, '#3a4a5e'],
+      ['WAITING', -21, 11.2, 1.4, '#3a4a5e'],
       ['PHARMACY', -9.5, 18.2, 1.6, '#7d5ba6'],
       ['STAFF STN', -16, -1.2, 1.5, '#3a4a5e'],
       ['LAB', -2.4, 0.4, 1.6, '#2f7f78'],
@@ -69,6 +69,7 @@ export class UI {
   }
 
   toast(msg, cls, ms) { this.hud.toast(msg, cls, ms); }
+  announce(msg, cls) { this.hud.announce(msg, cls); }
 
   update(dt, t) {
     this.bubbles.update(dt);
