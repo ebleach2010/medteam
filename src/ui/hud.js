@@ -18,6 +18,28 @@ export class HUD {
     this.toastEl.id = 'toast';
     root.appendChild(this.toastEl);
     this._toastT = null;
+    this.announceEl = document.createElement('div');
+    this.announceEl.id = 'announce';
+    root.appendChild(this.announceEl);
+  }
+
+  // center-screen mission text: typed letter by letter, gone 7s after the
+  // last character. THE channel for treatment results and staff reports.
+  announce(msg, cls = '') {
+    clearInterval(this._annT);
+    clearTimeout(this._annHide);
+    const el = this.announceEl;
+    el.className = cls ? `show ${cls}` : 'show';
+    el.textContent = '';
+    let i = 0;
+    this._annT = setInterval(() => {
+      i += 2; // two chars a tick — brisk teletype
+      el.textContent = msg.slice(0, i);
+      if (i >= msg.length) {
+        clearInterval(this._annT);
+        this._annHide = setTimeout(() => (el.className = ''), 7000);
+      }
+    }, 33);
   }
 
   toast(msg, cls = '', ms = 2600) {

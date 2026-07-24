@@ -17,7 +17,7 @@ export function dayConfig(day) {
       d === 5 ? [0.4, 0.9, 1, 0.5, 0.15] :
       d === 6 ? [0.3, 0.7, 1, 0.7, 0.3] :
                 [0.2, 0.6, 1, 0.9, 0.5],
-    timeScale: d <= 2 ? 2.4 : 2.0,
+    timeScale: d === 1 ? 1.2 : d === 2 ? 2.4 : 2.0, // day 1 runs at HALF pace — learn the building
     edCapacity: 6,
     // guaranteed lookalike pair from day 4: punishes CT skippers
     forceCases: d >= 4 ? ['stroke_isch', 'stroke_sah'] : d === 3 ? ['stroke_isch'] : [],

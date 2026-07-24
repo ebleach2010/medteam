@@ -118,8 +118,9 @@ export class PatientSim {
       if (this.state === 'dead') return;
     }
 
-    // waiting-room patience → anger → walkout
-    if (this.state === 'waiting' || this.state === 'angry') {
+    // waiting-room patience → anger → walkout. Once they've been ROOMED the
+    // clock stops for good — nobody storms out of a bed over athlete's foot.
+    if ((this.state === 'waiting' || this.state === 'angry') && !this.everRoomed) {
       const waited = now - this.tArrive;
       const overCap = g.edOverCapacity();
       if (this.state === 'waiting' && (waited > this.case.patienceMin || (overCap && waited > 25))) {
@@ -243,8 +244,20 @@ export class PatientSim {
       if ((this.state === 'walkout' || this.state === 'leaving') && d < 1.2) g.removePatient(this.ent);
       return;
     }
-    this.yaw = Math.atan2(dx, dz);
-    body.setLinvel({ x: (dx / d) * speed, y: body.linvel().y, z: (dz / d) * speed }, true);
+    // corner awareness: commanded to move but going nowhere → slide along
+    // the obstacle for a beat instead of grinding into it forever
+    const act = body.linvel();
+    if (Math.hypot(act.x, act.z) < speed * 0.25) this._stuckT = (this._stuckT ?? 0) + dtReal;
+    else if ((this._dodgeT ?? 0) <= 0) this._stuckT = 0;
+    if (this._stuckT > 0.5) { this._dodgeDir = -(this._dodgeDir ?? -1); this._dodgeT = 0.7; this._stuckT = 0; }
+    let mx = dx / d, mz = dz / d;
+    if ((this._dodgeT ?? 0) > 0) {
+      this._dodgeT -= dtReal;
+      const sgn = this._dodgeDir;
+      const t0 = mx; mx = mz * sgn; mz = -t0 * sgn;
+    }
+    this.yaw = Math.atan2(mx, mz);
+    body.setLinvel({ x: mx * speed, y: body.linvel().y, z: mz * speed }, true);
   }
 
   // ---------------- transitions ----------------

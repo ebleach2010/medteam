@@ -1,5 +1,5 @@
 import { generateScan } from '../render/xray.js';
-import { askPatient, talkDown, orderTreatment, judgeDx, medDocConsult, consultStaff, CONSULT_ROLES, llmEnabled, getKey, setKey, getModel, setModel, MODELS } from '../sim/llm.js';
+import { askPatient, talkDown, orderTreatment, judgeDx, medDocConsult, consultStaff, CONSULT_ROLES, parsePage, llmEnabled, getKey, setKey, getModel, setModel, MODELS } from '../sim/llm.js';
 import { MEDS, SHELVES } from '../data/meds.js';
 import { PANELS, filterLabs } from '../data/labs.js';
 import { spawnCarryable } from '../entities/Carryable.js';
@@ -87,15 +87,15 @@ export class Modals {
     this.box.innerHTML = body;
     this.veil.style.display = 'flex';
     this.box.querySelectorAll('.ptoggle').forEach((b) =>
-      b.addEventListener('pointerdown', () => {
+      b.addEventListener('click', () => {
         b.classList.toggle('on');
         b.querySelector('.tick').textContent = b.classList.contains('on') ? '☑' : '☐';
       }));
-    this.box.querySelector('#sendlabs').addEventListener('pointerdown', () => {
+    this.box.querySelector('#sendlabs').addEventListener('click', () => {
       const panels = [...this.box.querySelectorAll('.ptoggle.on')].map((b) => b.dataset.p);
       this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'labs_order', choice: panels } });
     });
-    this.box.querySelector('.close').addEventListener('pointerdown', () => this.close());
+    this.box.querySelector('.close').addEventListener('click', () => this.close());
   }
 
   // 📟 fullscreen vitals — opened by tapping a room's wall monitor card
@@ -115,7 +115,7 @@ export class Modals {
         </div>
         <div class="paper">COMPLAINT: "${sim.case.complaint[0]}"\nSTATE: ${sim.state}${sim.treated ? ' · treated' : ''}${sim.critical ? ' · <b>CRITICAL</b>' : ''}</div>
         <button class="close">Close</button>`;
-      this.box.querySelector('.close').addEventListener('pointerdown', () => this.close());
+      this.box.querySelector('.close').addEventListener('click', () => this.close());
     };
     render();
     this.veil.style.display = 'flex';
@@ -148,11 +148,11 @@ export class Modals {
       <button class="close">Close</button>`;
     this.veil.style.display = 'flex';
     this.box.querySelectorAll('.tab').forEach((b) =>
-      b.addEventListener('pointerdown', () => this.cabinet(b.dataset.tab)));
+      b.addEventListener('click', () => this.cabinet(b.dataset.tab)));
     this.box.querySelectorAll('.medbtn').forEach((b) =>
-      b.addEventListener('pointerdown', () =>
+      b.addEventListener('click', () =>
         this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'cabinet', choice: b.dataset.med } })));
-    this.box.querySelector('.close').addEventListener('pointerdown', () => this.close());
+    this.box.querySelector('.close').addEventListener('click', () => this.close());
   }
 
   // the clipboard: chart + bedside workups (EKG / physical / neuro) + diagnose
@@ -184,7 +184,7 @@ export class Modals {
       <button class="close">Close</button>`;
     this.veil.style.display = 'flex';
     this.box.querySelectorAll('.opt').forEach((b) =>
-      b.addEventListener('pointerdown', (ev) => {
+      b.addEventListener('click', (ev) => {
         const w2 = b.dataset.w;
         if (w2 === 'ask' || w2 === 'treat') {
           ev.preventDefault();
@@ -200,7 +200,7 @@ export class Modals {
       this._wireTyped(sel, null, (text) => // button taps handled by the .opt loop above
         this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'workup', choice: w, text } }));
     }
-    this.box.querySelector('.close').addEventListener('pointerdown', () => this.close());
+    this.box.querySelector('.close').addEventListener('click', () => this.close());
   }
 
   // the tech's board: every study on the menu, or type what you want and
@@ -217,11 +217,11 @@ export class Modals {
     this.box.innerHTML = body;
     this.veil.style.display = 'flex';
     this.box.querySelectorAll('.opt[data-m]').forEach((b) =>
-      b.addEventListener('pointerdown', () =>
+      b.addEventListener('click', () =>
         this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'study', choice: b.dataset.m } })));
     this._wireTyped('#studybar', '#studygo', (text) =>
       this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'study', text } }));
-    this.box.querySelector('.close').addEventListener('pointerdown', () => this.close());
+    this.box.querySelector('.close').addEventListener('click', () => this.close());
   }
 
   // the surgeon's board — same deal, sharper consequences
@@ -237,11 +237,11 @@ export class Modals {
     this.box.innerHTML = body;
     this.veil.style.display = 'flex';
     this.box.querySelectorAll('.opt[data-s]').forEach((b) =>
-      b.addEventListener('pointerdown', () =>
+      b.addEventListener('click', () =>
         this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'surgery', choice: b.dataset.s } })));
     this._wireTyped('#surgbar', '#surggo', (text) =>
       this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'surgery', text } }));
-    this.box.querySelector('.close').addEventListener('pointerdown', () => this.close());
+    this.box.querySelector('.close').addEventListener('click', () => this.close());
   }
 
   // text bars submit ONLY via their ✅ button (or a deliberate Enter);
@@ -249,7 +249,7 @@ export class Modals {
   _wireTyped(inputSel, btnSel, submit) {
     const input = this.box.querySelector(inputSel);
     const go = () => { const t = input?.value ?? ''; if (t.trim()) submit(t); };
-    if (btnSel) this.box.querySelector(btnSel)?.addEventListener('pointerdown', go);
+    if (btnSel) this.box.querySelector(btnSel)?.addEventListener('click', go);
     input?.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); e.stopPropagation(); });
   }
 
@@ -264,7 +264,7 @@ export class Modals {
     this.box.classList.add('rise');
     setTimeout(() => this.box.classList.remove('rise'), 500);
     this.veil.style.display = 'flex';
-    this.box.querySelector('.close').addEventListener('pointerdown', () => this.close());
+    this.box.querySelector('.close').addEventListener('click', () => this.close());
   }
 
   // typed de-escalation for the angry
@@ -278,7 +278,7 @@ export class Modals {
     this.veil.style.display = 'flex';
     this._wireTyped('#talkbar', '[data-t]', (text) =>
       this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'talk', text } }));
-    this.box.querySelector('.close').addEventListener('pointerdown', () => this.close());
+    this.box.querySelector('.close').addEventListener('click', () => this.close());
   }
 
   diagnose(patient) {
@@ -306,11 +306,11 @@ export class Modals {
     this.box.innerHTML = body;
     this.veil.style.display = 'flex';
     this.box.querySelectorAll('.opt[data-i]').forEach((b) =>
-      b.addEventListener('pointerdown', () =>
+      b.addEventListener('click', () =>
         this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'dx', choice: +b.dataset.i } })));
     this._wireTyped('#dxbar', '#dxgo', (text) =>
       this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'dx', text } }));
-    this.box.querySelector('.close').addEventListener('pointerdown', () => this.close());
+    this.box.querySelector('.close').addEventListener('click', () => this.close());
   }
 
   _show({ type, patient, options, html, closable }) {
@@ -321,9 +321,9 @@ export class Modals {
     this.box.innerHTML = body;
     this.veil.style.display = 'flex';
     this.box.querySelectorAll('.opt').forEach((b) =>
-      b.addEventListener('pointerdown', () =>
+      b.addEventListener('click', () =>
         this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: type, choice: +b.dataset.i } })));
-    this.box.querySelector('.close')?.addEventListener('pointerdown', () => this.close());
+    this.box.querySelector('.close')?.addEventListener('click', () => this.close());
   }
 
   // 🗣 curbside consult: pick which staff member to grill about this patient.
@@ -344,7 +344,7 @@ export class Modals {
       <button class="close">Done</button>`;
     this.veil.style.display = 'flex';
     this.box.querySelectorAll('.tab').forEach((b) =>
-      b.addEventListener('pointerdown', () => this.consult(patient, b.dataset.role)));
+      b.addEventListener('click', () => this.consult(patient, b.dataset.role)));
     const logEl = this.box.querySelector('#clog');
     const paint = () => {
       logEl.innerHTML = patient._consultLog.map((l) =>
@@ -365,7 +365,81 @@ export class Modals {
       if (this.current?.type === 'consult') paint();
     });
     setTimeout(() => input?.focus(), 50);
-    this.box.querySelector('.close').addEventListener('pointerdown', () => this.close());
+    this.box.querySelector('.close').addEventListener('click', () => this.close());
+  }
+
+  // 📟 page the nurse: freeform orders — meds to a room, walk someone to
+  // discharge, go assess and report back. Parsed live by Claude when keyed.
+  pager() {
+    const g = this.game;
+    this.current = { type: 'pager', patient: null, options: [] };
+    g.pagerLog ??= [{ who: 'nurse', text: 'Pager\'s on, doctor. Tell me what you need — meds to a room, walk someone out, or eyes on a patient.' }];
+    this.box.innerHTML = `<h3>📟 Page the nurse</h3>
+      <div class="paper" id="plog" style="max-height:32vh;overflow-y:auto"></div>
+      <p style="color:#6e7f9e;font-size:11px;margin:4px 0 6px">e.g. "give amoxicillin to room 3" · "discharge room 2" · "check on room 5 and report back"</p>
+      <div class="txrow"><input id="pagebar" autocomplete="off" placeholder="Page her anything..." /><button class="opt go-mini" id="pagego">📟</button></div>
+      <button class="close">Close</button>`;
+    this.veil.style.display = 'flex';
+    const logEl = this.box.querySelector('#plog');
+    const paint = () => {
+      logEl.innerHTML = g.pagerLog.slice(-6).map((l) =>
+        l.who === 'you' ? `<b>YOU:</b> ${esc(l.text)}` : `<b>RN:</b> ${esc(l.text)}`).join('\n');
+      logEl.scrollTop = logEl.scrollHeight;
+    };
+    paint();
+    const input = this.box.querySelector('#pagebar');
+    this._wireTyped('#pagebar', '#pagego', async (text) => {
+      const t = text.trim();
+      if (!t) return;
+      input.value = '';
+      g.pagerLog.push({ who: 'you', text: t });
+      const pending = { who: 'nurse', text: '...' };
+      g.pagerLog.push(pending);
+      paint();
+      const parsed = await parsePage(g, t);
+      pending.text = g.executePage(parsed, t);
+      if (this.current?.type === 'pager') paint();
+    });
+    setTimeout(() => input?.focus(), 50);
+    this.box.querySelector('.close').addEventListener('click', () => this.close());
+  }
+
+  // 🗂 TRIAGE BOARD — the blue CRT: every room, who's in it, how long
+  // they've been in the ED, and their basic vitals. Refreshes live.
+  triageBoard() {
+    const g = this.game;
+    this.current = { type: 'triage', patient: null, options: [] };
+    this.box.classList.add('crtbox', 'blue');
+    const render = () => {
+      const now = g.clock.minutes;
+      const pts = [...g.world.byTag('patients')];
+      const rows = g.map.beds.map((bed) => {
+        const p = pts.find((q) => q.sim.bed === bed);
+        if (!p) return `R${String(bed.roomNo).padStart(2)}  — empty —`;
+        const sim = p.sim, v = sim.vitals();
+        const mins = Math.max(0, Math.round(now - sim.tArrive));
+        const st = sim.state === 'dead' ? '☠ DECEASED'
+          : sim.critical ? '‼ CRITICAL'
+          : sim.stabilized ? '✔ STABLE'
+          : sim.treated ? '↗ RESPONDING'
+          : sim.imagingOrder?.phase === 'queued' || sim.labState === 'queued' ? '◔ QUEUED'
+          : sim.labsPending ? '… LABS OUT'
+          : '• WORKUP';
+        return `R${String(bed.roomNo).padStart(2)}  ${sim.displayName.padEnd(12).slice(0, 12)} ${st.padEnd(12)} ${String(mins).padStart(3)}min  HR ${String(v.hr).padStart(3)}  ${String(v.sbp).padStart(3)}/${String(v.dbp).padEnd(3)}  ${v.spo2}%`;
+      });
+      const waiting = pts.filter((q) => !q.sim.bed && !q.sim.resolved && q.sim.state !== 'dead').length;
+      this.box.innerHTML = `<h3>🗂 TRIAGE BOARD</h3>
+        <div class="crt-log" style="max-height:56vh">${rows.map(esc).join('\n')}\n\nWAITING ROOM: ${waiting} not yet roomed</div>
+        <button class="close">CLOSE</button>`;
+      this.box.querySelector('.close').addEventListener('click', () => this.close());
+    };
+    render();
+    this.veil.style.display = 'flex';
+    clearInterval(this._vfT);
+    this._vfT = setInterval(() => {
+      if (this.current?.type === 'triage') render();
+      else clearInterval(this._vfT);
+    }, 1000);
   }
 
   // 🖥 MED-DOC 4000 — the green-phosphor consult terminal at the station.
@@ -415,7 +489,7 @@ TYPE A QUESTION · "LOOKUP <DX>" · "CENSUS" · "CLEAR"`,
       if (this.current?.type === 'meddoc') paint();
     });
     setTimeout(() => input?.focus(), 50);
-    this.box.querySelector('.close').addEventListener('pointerdown', () => this.close());
+    this.box.querySelector('.close').addEventListener('click', () => this.close());
   }
 
   // 🔑 connect the player's own Anthropic API key (stored in localStorage,
@@ -447,13 +521,13 @@ Your key stays in this browser only.</div>
       this.apiSettings();
     });
     this.box.querySelectorAll('[data-model]').forEach((b) =>
-      b.addEventListener('pointerdown', () => { setModel(b.dataset.model); this.apiSettings(); }));
-    this.box.querySelector('#keyoff')?.addEventListener('pointerdown', () => {
+      b.addEventListener('click', () => { setModel(b.dataset.model); this.apiSettings(); }));
+    this.box.querySelector('#keyoff')?.addEventListener('click', () => {
       setKey('');
       this.game.ui.toast('Key forgotten');
       this.apiSettings();
     });
-    this.box.querySelector('.close').addEventListener('pointerdown', () => this.close());
+    this.box.querySelector('.close').addEventListener('click', () => this.close());
   }
 
   // called by Game when a SELECT intent lands
@@ -597,5 +671,5 @@ Your key stays in this browser only.</div>
     this.close();
   }
 
-  close() { clearInterval(this._vfT); this.current = null; this.veil.style.display = 'none'; this.box.classList.remove('crtbox'); }
+  close() { clearInterval(this._vfT); this.current = null; this.veil.style.display = 'none'; this.box.classList.remove('crtbox', 'blue'); }
 }

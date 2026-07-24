@@ -6,8 +6,8 @@ import { medById } from '../data/meds.js';
 function radioReport(game, sim, med, responded, rec, tone) {
   const where = sim.bed ? `ROOM ${sim.bed.roomNo}` : sim.displayName.toUpperCase();
   setTimeoutTicks(game, 3.5, () => {
-    if (sim.state === 'dead') { game.ui.toast(`📻 ${where} LOST DESPITE ${med.name.toUpperCase()} — SORRY, SIR.`, 'bad', 5500); return; }
-    game.ui.toast(`📻 ${where} ${responded ? 'RESPONDED' : 'DID NOT RESPOND'} TO ${med.name.toUpperCase()} — ${rec}, SIR!`, tone, 5500);
+    if (sim.state === 'dead') { game.ui.announce(`📻 ${where} LOST DESPITE ${med.name.toUpperCase()} — SORRY, SIR.`, 'bad'); return; }
+    game.ui.announce(`📻 ${where} ${responded ? 'RESPONDED' : 'DID NOT RESPOND'} TO ${med.name.toUpperCase()} — ${rec}, SIR!`, tone);
     game.audio?.blip?.();
   });
 }
