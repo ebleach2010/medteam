@@ -397,7 +397,7 @@ export class Game {
       this.ui.toast(`☠ ${line}`, 'bad', 5500);
       sim.critical = true;
       sim.accel = 10;
-      this.timers.push({ at: this.timeReal + 4, fn: () => { if (sim.state !== 'dead') sim.die?.(`iatrogenic — ${label}`); } });
+      this.timers.push({ at: this.timeReal + 4, fn: () => { if (sim.state !== 'dead') sim.die?.(`iatrogenic — ${label}`, true); } });
     }
   }
 
@@ -1284,10 +1284,17 @@ export class Game {
       sim._say('better');
       sim.route = [{ ...this.map.gateOut }];
       sim.walkTarget = { x: this.map.discharge.x, z: this.map.discharge.z - 3 };
+    } else if (sim.treated) {
+      // responding but not through the monitoring window yet — send them back,
+      // don't kill them. Treatment earned them that much.
+      this.setPatientDynamic(pt);
+      sim.state = 'waiting';
+      const left = Math.max(1, Math.ceil(({ discharge: 0, medsurge: 45, ob: 70, icu: 100 }[sim.case.treatment.dispo] ?? 0) - (this.clock.minutes - sim.tTreated)));
+      this.ui.toast(`📻 ROOM SAYS NOT YET, SIR — responding but needs ~${left} more min of monitoring.`, 'bad', 4500);
+      sim._sayRaw('Hey, I was told to REST!', 'angry');
     } else {
-      // discharged unstable: they flop over, no pulse. The pit awaits.
+      // discharged untreated: they flop over, no pulse. The pit awaits.
       this.ui.toast(`☠ ${sim.displayName} was NOT stable. They're down — no pulse.`, 'bad');
-      sim.rescueChance = 0; // no miracle saves on the discharge floor
       sim.treated = false;
       sim.die('discharged before stabilization');
     }

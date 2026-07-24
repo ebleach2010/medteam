@@ -135,7 +135,18 @@ test('full lab loop: bed → labs → centrifuge → results → dx → meds →
     await api.drive('nurse', [[-12, -5.6], [-6, -5.5], [2, -5.6], [8.5, -8.5],
       [8.5, -13.5], [5, -17.6]]);
     api.release('nurse');
-    await api.until(() => g.state().stats.treated >= 1, 12000);
+    try {
+      await api.until(() => g.state().stats.treated >= 1, 8000);
+    } catch {
+      // walked haul released outside the discharge ring — re-grab and drop
+      // them dead-center like a player would
+      api.grab('nurse');
+      await api.until(() => g.game.nurse.dragging, 5000);
+      const dis = g.game.map.discharge;
+      await api.dragTo('nurse', dis.x, dis.z, Math.max(1.2, dis.r - 0.4));
+      api.release('nurse');
+      await api.until(() => g.state().stats.treated >= 1, 10000);
+    }
     return { score: g.state().score, stats: g.state().stats };
   });
 

@@ -257,10 +257,11 @@ export class PatientSim {
     this.game.audio?.alarm();
   }
 
-  die(cause) {
+  die(cause, force = false) {
     if (this.state === 'dead') return;
-    // last-second save chance if correct meds were already flowing
-    if (this.treated && this.game.rng.chance(this.case.rescueChance ?? 0.5)) return;
+    // successful treatment is a SHIELD: a responding patient cannot be killed
+    // by their disease — only by force (poisoning, violence, bad discharge)
+    if (this.treated && !force) return;
     this.state = 'dead'; this.deadCause = cause;
     this.ent.setFace('dead');
     this.ent.escortedBy = null;
