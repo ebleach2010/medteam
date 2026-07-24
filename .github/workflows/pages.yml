@@ -4,7 +4,7 @@
 name: Deploy to GitHub Pages
 on:
   push:
-    branches: [main, claude/ed-triage-physics-game-o6x8al]
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
