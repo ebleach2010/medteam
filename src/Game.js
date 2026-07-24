@@ -113,6 +113,10 @@ export class Game {
     this._spawnLobbyProps();
     this.ui.screens.fade(false);
     this.ui.toast(`Day ${this.clock.day} — 12:00 AM. Here they come.`);
+    // first-ever shift: teach the loop before the clock bites (pauses the sim)
+    let seen = false;
+    try { seen = localStorage.getItem('medteam.seenTutorial') === '1'; } catch { /* private */ }
+    if (!seen && day === 1) setTimeout(() => { if (this.mode === 'playing' && !this.ui.modals.open) this.ui.modals.howToPlay(false); }, 400);
   }
 
   // waiting-room physics props, reset fresh each day — angry patients shove
@@ -310,6 +314,17 @@ export class Game {
     task.wait = 0;
     this.tasks.set(char, task);
     return true;
+  }
+
+  // a patient LEAVING a bed must thread their room door before any zone
+  // routing — otherwise self-navigation walks them into the room's front wall
+  _routeLeaving(sim, to) {
+    const from = sim.ent.body.translation();
+    if (sim.bed) {
+      const door = this.map.roomDoor(sim.bed.index);
+      return [{ x: door.x, z: -6.4 }, ...this._routeTo({ x: door.x, z: -5.6 }, to)];
+    }
+    return this._routeTo(from, to);
   }
 
   _routeToRoomBed(from, bed) {
@@ -1145,15 +1160,18 @@ export class Game {
 
     animateRig(this.receptionist, dt, now, 0, { sitting: true }); // typing away forever
 
-    // the discharge wing shares a wall with rooms 9–10: it drops to a ghost
-    // whenever you're behind it so the chase cam never loses you
-    const fw = this.map.fadeWalls;
-    if (fw?.mats.length) {
-      const behind = this.active.pos.z < -11.6;
-      fw._t = (fw._t ?? 1) + ((behind ? 0.18 : 1) - (fw._t ?? 1)) * Math.min(1, dt * 8);
-      for (const m of fw.mats) m.opacity = fw._t;
-      const solid = fw._t > 0.95;
-      for (const mesh of fw.meshes) mesh.castShadow = solid && !!mesh.userData.casts;
+    // walls that can stand between the chase cam and the player drop to a
+    // ghost while you're behind them (discharge wing wall, the EXIT wall)
+    const ap1 = this.active.pos;
+    for (const fg of this.map.fadeWalls) {
+      const behind = fg.when(ap1);
+      const t0 = fg._t ?? 1;
+      const t1 = t0 + ((behind ? 0.18 : 1) - t0) * Math.min(1, dt * 8);
+      fg._t = t1;
+      if (Math.abs(t1 - t0) < 0.0005 && !behind && t1 > 0.999) continue; // settled solid — skip the writes
+      for (const m of fg.mats) m.opacity = t1;
+      const solid = t1 > 0.95;
+      for (const mesh of fg.meshes) mesh.castShadow = solid && !!mesh.userData.casts;
     }
 
     // FX fades: skids over 5s (oldest first), dust puffs fast
@@ -1170,6 +1188,11 @@ export class Game {
       const sc = 0.35 + (1 - f.life) * 0.8;
       f.sp.scale.set(sc, sc, 1);
       f.sp.material.opacity = f.life * 0.4;
+    }
+
+    // consult-terminal LEDs blink so the stations read as live & interactive
+    for (const s of this.map.stationLights) {
+      s.mat.emissiveIntensity = 0.5 + Math.max(0, Math.sin(now * 3 + s.phase)) * 1.6;
     }
 
     // the pit flickers; flares when fed
@@ -1248,10 +1271,11 @@ export class Game {
         this.dayStats.treated += 1;
         this.addScore(Math.round(sim.case.score * (sim.dxPicked === 0 ? 1 : 0.55)), 'Discharged well');
         this.ui.toast(`🏠 ${sim.displayName} walking home!`, 'good');
+        const leaveRoute = this._routeLeaving(sim, this.map.discharge); // door-first, BEFORE freeing the bed
         if (sim.bed) this.freeBed(sim);
         this.setPatientDynamic(pt);
         sim.state = 'leaving';
-        sim.route = this._routeTo(pt.body.translation(), this.map.discharge).concat([{ ...this.map.gateOut }]);
+        sim.route = leaveRoute.concat([{ ...this.map.gateOut }]);
         sim.walkTarget = sim.route.shift();
       } else {
         this.ui.toast('They are NOT stable yet — monitor them longer.', 'bad');

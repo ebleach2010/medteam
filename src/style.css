@@ -167,6 +167,20 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0e1420; t
 #screen .go { padding: 14px 44px; font-size: 18px; font-weight: 800; color: #fff; border: none;
   border-radius: 999px; background: linear-gradient(#2f80ff, #1b5fd0); box-shadow: 0 6px 18px rgba(47,128,255,.4); }
 #screen .go:active { transform: scale(.96); }
+/* title-screen API key box */
+#keybox { width: min(460px, 90vw); background: rgba(20,30,52,.72); border: 1px solid #33518a;
+  border-radius: 14px; padding: 13px 15px; display: flex; flex-direction: column; gap: 8px; }
+#keybox .klabel { font-size: 14px; font-weight: 800; color: #cfe0ff; display: flex; align-items: center; gap: 8px; }
+#keybox .kpill { font-size: 11px; font-weight: 800; padding: 2px 9px; border-radius: 999px; letter-spacing: .5px; }
+#keybox .kpill.on { background: rgba(53,224,106,.18); color: #6dffab; border: 1px solid #35e06a; }
+#keybox .kpill.off { background: rgba(150,164,184,.15); color: #aab8cc; border: 1px solid #5b6b84; }
+#keybox .krow { display: flex; gap: 7px; }
+#keybox #titlekey { flex: 1; padding: 11px 13px; border-radius: 10px; border: 1px solid #33518a;
+  background: #0e1626; color: #e8eefc; font-size: 14px; }
+#keybox #titlekeygo { padding: 0 18px; border: none; border-radius: 10px; font-weight: 800; font-size: 13px;
+  color: #fff; background: linear-gradient(#2f80ff,#1b5fd0); }
+#keybox #titlekeygo:active { transform: scale(.96); }
+#keybox .khint { font-size: 11px; color: #8fa0bd; line-height: 1.35; text-align: left; }
 
 /* ---------- navigability ---------- */
 .room-label { position: absolute; color: #fff; font-weight: 700; font-size: 10px;
@@ -207,6 +221,13 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0e1420; t
   background: #efe6cd; color: #6b5a35; font-size: 12px; font-weight: 700; text-align: center; }
 #modal .setrow .keybtn { min-width: 64px; font-family: 'Courier New', monospace; font-size: 14px; }
 #modal .setrow input[type="range"] { flex: 1; max-width: 220px; accent-color: #a97b42; }
+
+/* ---------- How-to-play card ---------- */
+#modal .howto { display: flex; flex-direction: column; gap: 9px; margin: 6px 0 12px; }
+#modal .hstep { display: flex; gap: 11px; align-items: flex-start; font-size: 13.5px; line-height: 1.4; color: #2c3a4f; }
+#modal .hstep > span { flex: none; width: 24px; height: 24px; border-radius: 50%; background: #7a4d1c;
+  color: #fff; font-weight: 800; font-size: 13px; display: flex; align-items: center; justify-content: center; }
+#modal .hstep b { color: #7a4d1c; }
 #modal.rise { animation: clipRise .45s cubic-bezier(.2,1.4,.4,1); }
 @keyframes clipRise { from { transform: translateY(60vh) scale(.6) rotate(4deg); opacity: 0; } }
 

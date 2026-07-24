@@ -672,24 +672,66 @@ Your key stays in this browser only.</div>
     this.close();
   }
 
+  // abandon any half-finished "PRESS KEY…" capture — otherwise the window
+  // listener leaks and silently rebinds (and persists!) the next keypress
+  _cancelRebind() {
+    if (this._grabKeyFn) {
+      window.removeEventListener('keydown', this._grabKeyFn, { capture: true });
+      this._grabKeyFn = null;
+    }
+    this._rebinding = false;
+  }
+
+  // 📖 first-run (and on-demand) how-to-play: the whole loop in one card, in
+  // order, so a brand-new player can act without a 30-minute fumble
+  howToPlay(fromPause = false) {
+    const g = this.game;
+    this.current = { type: 'howto', patient: null, options: [] };
+    if (!fromPause) g.paused = true;
+    const dt = matchMedia('(hover: hover) and (pointer: fine)').matches;
+    const move = dt ? 'WASD / arrows' : 'left-thumb stick';
+    const grab = dt ? 'E' : 'the ✋ GRAB button';
+    const act = dt ? 'F / Space' : 'the 📋 prompt at the bottom';
+    const wheel = dt ? 'R' : 'the 📋 ORDERS button';
+    this.box.innerHTML = `<h3>🏥 How to run the ED</h3>
+      <div class="howto">
+        <div class="hstep"><span>1</span><div><b>Meet them at the door.</b> Patients walk into the waiting room. ${dt ? 'Move with ' + move : 'Move with the ' + move}.</div></div>
+        <div class="hstep"><span>2</span><div><b>Grab &amp; drag to a bed.</b> Walk up to a patient, ${grab} to grab, haul them into any open numbered room, let go on the bed.</div></div>
+        <div class="hstep"><span>3</span><div><b>Work them up.</b> Stand at the bed and use ${act} to talk to them, draw labs, or open orders. Ask what's wrong — they answer like a real person.</div></div>
+        <div class="hstep"><span>4</span><div><b>Order tests &amp; treatment.</b> Open the wheel with ${wheel}: call labs, imaging, surgery, or a consult. In the workup, the <b>💊 "Order ANYTHING"</b> bar treats — type "give fluids", "splint the ankle", anything.</div></div>
+        <div class="hstep"><span>5</span><div><b>Diagnose, then discharge.</b> Once they're stable (green light over the door), pick 🏠 on the wheel or page the nurse to walk them out. Hit the day's quota before midnight.</div></div>
+        <div class="hstep"><span>💡</span><div>Glowing floor rings mark the machines &amp; terminals. The green ⬤ terminal is <b>MED-DOC</b> — ask Claude for help. Tap 📟 to send your nurse on errands.</div></div>
+      </div>
+      <button class="close">${fromPause ? '◀ Back' : "LET'S GO"}</button>`;
+    this.veil.style.display = 'flex';
+    this.box.querySelector('.close').addEventListener('click', () => {
+      try { localStorage.setItem('medteam.seenTutorial', '1'); } catch { /* private mode */ }
+      if (fromPause) this.pauseMenu(); else this.close();
+    });
+  }
+
   // ⏸ the Escape menu: freeze the ED, offer a do-over, open settings
   pauseMenu() {
+    this._cancelRebind();
     const g = this.game;
     this.current = { type: 'pause', patient: null, options: [] };
     g.paused = true;
     this.box.innerHTML = `<h3>⏸ PAUSED</h3>
       <p style="color:#6e7f9e;font-size:11px;margin:2px 0 10px">The whole ED is frozen. Nobody is dying right now. Enjoy it.</p>
       <button class="opt" id="p-resume">▶ RESUME (ESC)</button>
+      <button class="opt" id="p-howto">📖 HOW TO PLAY</button>
       <button class="opt" id="p-restart">🔁 RESTART DAY ${g.clock.day}</button>
       <button class="opt" id="p-settings">⚙️ SETTINGS</button>`;
     this.veil.style.display = 'flex';
     this.box.querySelector('#p-resume').addEventListener('click', () => this.close());
+    this.box.querySelector('#p-howto').addEventListener('click', () => this.howToPlay(true));
     this.box.querySelector('#p-restart').addEventListener('click', () => this.game.restartDay());
     this.box.querySelector('#p-settings').addEventListener('click', () => this.settingsPanel());
   }
 
   // ⚙️ audio, control feel, and fully rebindable keys
   settingsPanel() {
+    this._cancelRebind();
     const g = this.game;
     this.current = { type: 'settings', patient: null, options: [] };
     g.paused = true;
@@ -741,14 +783,14 @@ Your key stays in this browser only.</div>
         const grab = (e) => {
           e.preventDefault();
           e.stopPropagation();
-          window.removeEventListener('keydown', grab, { capture: true });
-          this._rebinding = false;
+          this._cancelRebind();
           if (e.key === 'Escape') { b.textContent = old; return; } // cancel
           settings.keys[b.dataset.bind] = e.code;
           saveSettings();
           b.textContent = keyLabel(e.code);
           g.ui.buttons.refreshHints();
         };
+        this._grabKeyFn = grab;
         window.addEventListener('keydown', grab, { capture: true });
       });
     });
@@ -767,6 +809,7 @@ Your key stays in this browser only.</div>
 
   close() {
     clearInterval(this._vfT);
+    this._cancelRebind();
     this.current = null;
     this.veil.style.display = 'none';
     this.box.classList.remove('crtbox', 'blue');

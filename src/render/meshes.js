@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { useModel } from './models.js';
 
 // Shared material caches (mobile draw-call diet). MeshStandardMaterial +
 // emissives, matching the tether rec-room look (warm key light + neon accents).
@@ -100,6 +101,8 @@ export function setFace(patientMesh, face) {
 
 // ---------- props ----------
 export function makeBed(accent = 0x76a9ea) {
+  const m = useModel('bed', { size: 2.15, ry: 0 });
+  if (m) return m;
   // proper hospital bed: casters, white frame, thick mattress, side rails,
   // head/foot boards — the reference ward bed, not a painted box
   const g = new THREE.Group();
@@ -134,6 +137,8 @@ export function makeBed(accent = 0x76a9ea) {
 }
 
 export function makeChair() {
+  const m = useModel('chair', { size: 0.72, ry: 0 });
+  if (m) return m;
   // waiting-room chair off the reference: beige cushions, wood arms + sides
   const g = new THREE.Group();
   const seat = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.11, 0.54), mat(0xcbbfa4));
