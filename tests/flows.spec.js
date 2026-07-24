@@ -5,6 +5,9 @@ import { test, expect } from '@playwright/test';
 const url = '/?seed=7&lite=1'; // lite: CI's software GL can't afford shadows
 
 async function boot(page) {
+  // skip the first-run how-to card (it pauses the sim, which would freeze the
+  // scripted staff mid-route)
+  await page.addInitScript(() => { try { localStorage.setItem('medteam.seenTutorial', '1'); } catch { /* private */ } });
   await page.goto(url);
   await page.waitForFunction(() => window.__game?.ready, null, { timeout: 20000 });
   await page.evaluate(() => window.__game.start());
@@ -63,7 +66,7 @@ const helpers = `
   };
 `;
 
-test('full lab loop: bed → labs → centrifuge → results → dx → meds → discharge', async ({ page }) => {
+test('full loop: bed → dx → labs (ether) → meds → stabilize → discharge', async ({ page }) => {
   test.setTimeout(160000); // longest E2E — walked drags on cold software GL need slack
   await boot(page);
   await page.evaluate(helpers);
@@ -99,21 +102,14 @@ test('full lab loop: bed → labs → centrifuge → results → dx → meds →
     g.inject({ type: 'SELECT', actorId: g.game.nurse.id, payload: { modal: 'dx', choice: 0 } });
     await api.until(() => api.patient(id).dx === 0);
 
-    api.act('nurse');                         // draw blood → the panel board opens
+    api.act('nurse');                         // ORDER LABS → the panel board opens
     await api.until(() => g.state().modal === 'labs_order');
     g.inject({ type: 'SELECT', actorId: g.game.nurse.id, payload: { modal: 'labs_order', choice: ['CBC', 'CHEM', 'INFECT'] } });
-    await api.until(() => g.state().chars[0].carrying?.startsWith('Blood'));
-    g.teleport('nurse', -2.4, 0);             // lab feeds itself
-    await api.until(() => g.state().centrifuge.busy, 8000);
-    g.centrifugeFastForward();
-    await api.until(() => g.state().items.some((i) => i.kind === 'paper'));
-    g.teleport('nurse', -1.6, -1.5);
-    api.grab('nurse');
-    await api.until(() => g.state().chars[0].carrying?.startsWith('Results'));
-    api.act('nurse');
-    await api.until(() => g.state().modal === 'labs');
-    g.game.ui.modals.close();
-    api.release('nurse');
+    // the phlebotomist draws at the bedside then runs the sample through the
+    // ether door — you never touch blood. Fast-forward the offstage processing.
+    await api.until(() => g.taskPhases().includes('labs:processing'), 60000);
+    g.etherFastForward();
+    await api.until(() => g.state().items.some((i) => i.kind === 'paper' && (i.label || '').startsWith('Labs')), 40000);
 
     // med cabinet → amoxicillin → bedside dwell
     g.teleport('nurse', -9.5, 17.7);
@@ -129,30 +125,9 @@ test('full lab loop: bed → labs → centrifuge → results → dx → meds →
       return p?.sim.stabilized;
     }, 60000);
 
-    // haul them to the DISCHARGE room — walked, through the doors
-    api.grab('nurse');
-    try { await api.until(() => g.game.nurse.dragging, 8000); }
-    catch { // stood-up patient drifted out of reach on cold GL — step to them
-      const pp = [...g.game.world.byTag('patients')].find((q) => q.id === id).body.translation();
-      g.teleport('nurse', pp.x + 0.6, pp.z + 0.6);
-      api.grab('nurse');
-      await api.until(() => g.game.nurse.dragging, 8000);
-    }
-    await api.drive('nurse', [[-12, -5.6], [-6, -5.5], [2, -5.6], [8.5, -8.5],
-      [8.5, -13.5], [5, -17.6]]);
-    api.release('nurse');
-    try {
-      await api.until(() => g.state().stats.treated >= 1, 8000);
-    } catch {
-      // walked haul released outside the discharge ring — re-grab and drop
-      // them dead-center like a player would
-      api.grab('nurse');
-      await api.until(() => g.game.nurse.dragging, 5000);
-      const dis = g.game.map.discharge;
-      await api.dragTo('nurse', dis.x, dis.z, Math.max(1.2, dis.r - 0.4));
-      api.release('nurse');
-      await api.until(() => g.state().stats.treated >= 1, 10000);
-    }
+    // discharge via the ORDERS wheel — they walk themselves out the front
+    g.inject({ type: 'ORDER', actorId: g.game.nurse.id, payload: { order: 'discharge', patientId: id } });
+    await api.until(() => g.state().stats.treated >= 1, 8000);
     return { score: g.state().score, stats: g.state().stats };
   });
 
@@ -168,13 +143,13 @@ test('radiology pipeline: order CT, porter round-trip, clipboard on the desk', a
     const g = window.__game, api = window.__api;
     const id = g.spawnCase('stroke_sah', -20, 8);
     await api.sleep(300);
-    g.bedPatientTo(id, 7);                    // Room 8
+    g.bedPatientTo(id, 5);                    // Room 6
     g.orderImaging(id, 'CT');
-    // porter hauls them to diagnostics, scan runs, hauls them back
+    // porter wheels them through the ether door, scan runs, wheels them back
     await api.until(() => [...g.game.tasks.values()].some((t) => t.phase === 'scanning'), 40000);
     g.fastForwardImaging();
     await api.until(() => api.patient(id)?.state === 'inbed' &&
-      g.state().items.some((i) => i.label.startsWith('Imaging:')), 40000);
+      g.state().items.some((i) => (i.label || '').startsWith('Imaging:')), 40000);
     await api.until(() => api.patient(id).imagingDone);
     return { done: true };
   });
@@ -182,7 +157,7 @@ test('radiology pipeline: order CT, porter round-trip, clipboard on the desk', a
   await page.screenshot({ path: 'test-results/shots/radiology.png' });
 });
 
-test('phlebotomist drags the patient to the lab, spins, drags them back with results', async ({ page }) => {
+test('phlebotomist draws at the bedside, runs it through the ether, returns results', async ({ page }) => {
   await boot(page);
   await page.evaluate(helpers);
   const res = await page.evaluate(async () => {
@@ -191,34 +166,36 @@ test('phlebotomist drags the patient to the lab, spins, drags them back with res
     await api.sleep(300);
     g.bedPatientTo(id, 1);                    // Room 2
     g.orderLabs(id);
-    await api.until(() => g.taskPhases().includes('labs:waitSpin'), 60000);
-    g.centrifugeFastForward();
+    await api.until(() => g.taskPhases().includes('labs:processing'), 60000);
+    g.etherFastForward();
+    // patient never left the bed; results land on the room desk
     await api.until(() => api.patient(id)?.state === 'inbed' &&
-      g.state().items.some((i) => i.kind === 'paper' && !i.held), 60000);
+      g.state().items.some((i) => i.kind === 'paper' && !i.held && (i.label || '').startsWith('Labs')), 60000);
     return { done: true, lab: api.patient(id).lab };
   });
   expect(res.done).toBe(true);
   expect(res.lab).toBe('ready');
 });
 
-test('tech waits at the machine; you show up, pick CT from the board, scan runs', async ({ page }) => {
+test('imaging: tech asks at the bedside, you pick CT, patient wheels through the ether', async ({ page }) => {
   await boot(page);
   await page.evaluate(helpers);
   const res = await page.evaluate(async () => {
     const g = window.__game, api = window.__api;
     const id = g.spawnCase('stroke_sah', -20, 8);
     await api.sleep(300);
-    g.bedPatientTo(id, 7);
-    g.orderImaging(id);                       // NO modality — chosen at the machine
+    g.bedPatientTo(id, 3);                    // Room 4
+    g.orderImaging(id);                       // NO modality — chosen at the bedside
     await api.until(() => g.taskPhases().includes('imaging:awaitChoice'), 40000);
-    // walk of shame: teleport the nurse to the machine; the tech should ask
-    g.teleport('nurse', 7.2, -1.2);
+    // walk to the bedside; the tech asks which study to run
+    const bed = g.game.map.beds[3];
+    g.teleport('nurse', bed.x + 1.0, bed.z + 1.1);
     await api.until(() => g.state().modal === 'study', 8000);
     g.inject({ type: 'SELECT', actorId: g.game.nurse.id, payload: { modal: 'study', choice: 'CT' } });
-    await api.until(() => g.taskPhases().includes('imaging:scanning'), 8000);
+    await api.until(() => g.taskPhases().includes('imaging:scanning'), 20000);
     g.fastForwardImaging();
     await api.until(() => api.patient(id)?.state === 'inbed' &&
-      g.state().items.some((i) => i.label.startsWith('Imaging:')), 40000);
+      g.state().items.some((i) => (i.label || '').startsWith('Imaging:')), 40000);
     return { done: true };
   });
   expect(res.done).toBe(true);
@@ -239,7 +216,7 @@ test('surgery team: waits at the bedside, you pick the right op, patient treated
     await api.until(() => g.state().modal === 'surgery', 8000);
     // type it in and confirm — the typed path, not the tap path
     g.inject({ type: 'SELECT', actorId: g.game.nurse.id, payload: { modal: 'surgery', text: 'appendectomy' } });
-    await api.until(() => g.taskPhases().includes('surgery:operating'), 8000);
+    await api.until(() => g.taskPhases().includes('surgery:operating'), 20000); // wheels to the ether OR first
     g.fastForwardSurgery();
     await api.until(() => api.patient(id)?.treated, 10000);
     return { done: true };

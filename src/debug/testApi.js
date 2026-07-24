@@ -28,7 +28,7 @@ export function installTestApi(game) {
           kind: i.itemKind, label: i.label, held: !!i.heldBy, pos: i.body.translation(),
         })).slice(0, 60),
         modal: game.ui.modals.current?.type ?? null,
-        centrifuge: { busy: !!game.map.centrifuge.busy, timer: game.map.centrifuge.timer },
+        etherBusy: game._etherBusy ?? 0,
       };
     },
     spawnCase(id, x, z) {
@@ -57,7 +57,8 @@ export function installTestApi(game) {
     },
     skipMinutes(m) { game.clock.minutes += m; },
     setTimeScale(s) { game.clock.timeScale = s; },
-    centrifugeFastForward() { if (game.map.centrifuge.busy) game.map.centrifuge.timer = 0.05; },
+    // fast-forward any staffer currently offstage in the ether (labs/imaging/surgery)
+    etherFastForward() { for (const [, t] of game.tasks) if (['processing', 'scanning', 'operating'].includes(t.phase)) t.wait = 0.05; },
     bedPatientTo(id, bedIdx) {
       const p = [...game.world.byTag('patients')].find((q) => q.id === id);
       if (p) game.bedPatient(p, game.map.beds[bedIdx]);

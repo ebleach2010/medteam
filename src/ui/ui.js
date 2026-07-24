@@ -33,11 +33,10 @@ export class UI {
       ['WAITING', -21, 11.2, 1.4, '#3a4a5e'],
       ['PHARMACY', -9.5, 18.2, 1.6, '#7d5ba6'],
       ['STAFF STN', -16, -1.2, 1.5, '#3a4a5e'],
-      ['LAB', -2.4, 0.4, 1.6, '#2f7f78'],
-      ['DIAGNOSTICS', 8.5, 0.6, 1.7, '#4a5ba6'],
-      ['DISCHARGE', 5, -20.5, 1.6, '#2e7d4f'],
-      ['INCINERATOR', 11.3, -16.4, 1.5, '#a04a2c'],
-      ...[-28, -24, -20, -16, -12, -8, -3.5, 1.5, 6.5, 11.5].map((x, i) =>
+      ['LAB · IMAGING · OR ⟶', -6.6, -3.6, 1.7, '#4a4f5e'],
+      ['DISCHARGE', -26.5, 4.4, 1.6, '#2e7d4f'],
+      ['INCINERATOR', -8.2, 1.9, 1.5, '#a04a2c'],
+      ...[-28, -24, -20, -16, -12, -8].map((x, i) =>
         [`ROOM ${i + 1}`, x, -7.2, 1.55, '#c0392b']),
     ].map(([text, x, z, y, bg]) => {
       const el = document.createElement('div');

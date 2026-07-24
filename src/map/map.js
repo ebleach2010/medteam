@@ -20,13 +20,11 @@ const WALL_H = 1.3;         // cutaway tier
 const TALL_H = 2.75;        // full tier
 const GLASS_TOP = 2.0;      // glass uppers rise to here (below the camera ray at bedside)
 const ZONES = [
-  { x1: -30, z1: 2, x2: -2, z2: 20 },
-  { x1: -30, z1: -12, x2: -6, z2: 2 },
-  { x1: -6, z1: -12, x2: 14, z2: 2 },
-  { x1: 2, z1: -24, x2: 14, z2: -12 },
+  { x1: -30, z1: 2, x2: -2, z2: 20 },   // lobby: entrance · reception · waiting · pharmacy · DISCHARGE
+  { x1: -30, z1: -12, x2: -6, z2: 2 },  // ward: 6 rooms · corridor · staff station · ETHER door
 ];
 export const zoneOf = (x, z) => ZONES.findIndex((s) => x >= s.x1 - 0.6 && x <= s.x2 + 0.6 && z >= s.z1 - 0.6 && z <= s.z2 + 0.6);
-export const ZONE_DOORS = [{ x: -14.5, z: 2 }, { x: -6, z: -5.5 }, { x: 8.5, z: -12 }];
+export const ZONE_DOORS = [{ x: -14.5, z: 2 }];
 
 // big pale porcelain tiles with thin grout — the polished-hospital floor
 function tileTexture() {
@@ -156,32 +154,19 @@ export function buildMap(scene, physics) {
   vwall(-30, 2, 20, [{ at: 10, w: 3.4 }], { tall: true, win: true, face: 1 });   // ENTRANCE
   hwall(2, -30, -2, [{ at: -14.5, w: 5 }], { jambs: true });                     // Z1/Z2 door
   vwall(-2, 2, 20, [], { tall: true, win: true, face: -1 });
-  // Z2 rooms 1–6 (doors face south into the corridor)
-  hwall(-12, -30, -6, [], { tall: true, win: true, face: 1 });                   // rooms' window wall
-  vwall(-30, -12, 2, [], { tall: true, win: true, face: 1 });
+  // Z2 rooms 1–6 (doors face south into the corridor) + the ETHER wall east
+  hwall(-12, -30, -6, [], { tall: true, win: true, face: 1 });                   // rooms' north window wall
+  vwall(-30, -12, 2, [], { tall: true, win: true, face: 1 });                    // west exterior wall
   hwall(-7, -30, -6, [-28, -24, -20, -16, -12, -8].map((x) => ({ at: x, w: 2.2 })), { glass: true, jambs: true });
-  [-26, -22, -18, -14, -10].forEach((x) => vwall(x, -12, -7, [], { tall: true }));
-  vwall(-6, -12, 2, [{ at: -5.5, w: 2.6 }], { tall: true, header: { at: -5.5, w: 2.6 } });
-  // Z3 rooms 7–10 + lab + diagnostics
-  hwall(-12, -6, 2, [], { tall: true, win: true, face: 1 });                     // rooms 7–8 window wall
-  hwall(-12, 2, 14, [{ at: 8.5, w: 4.4 }], { tall: true, fade: 'z4wall', header: { at: 8.5, w: 4.4 } }); // fronts Z4 — fades
-  hwall(-7, -6, 14, [-3.5, 1.5, 6.5, 11.5].map((x) => ({ at: x, w: 2.2 })), { glass: true, jambs: true });
-  [-1, 4, 9].forEach((x) => vwall(x, -12, -7, [], { tall: true }));
-  hwall(2, -6, 14);
-  vwall(14, -12, 2, [], { tall: true, win: true, face: -1 });
-  hwall(-4, -6, 14, [{ at: -2, w: 2.2 }, { at: 8, w: 2.6 }], { glass: true, jambs: true }); // lab + diagnostics doors
-  vwall(2, -4, 2, [], { tall: true });                                           // lab | diagnostics divider
-  // Z4 discharge — the gate wall fades when you step outside it, so it can't
-  // carry windows (the merged panes wouldn't fade with it)
-  hwall(-24, 2, 14, [{ at: 5, w: 3 }], { tall: true, fade: 'gate', header: { at: 5, w: 3 } }); // the GATE
-  vwall(2, -24, -12, [], { tall: true, win: true, face: 1 });
-  vwall(14, -24, -12, [], { tall: true, win: true, face: -1 });
+  [-26, -22, -18, -14, -10].forEach((x) => vwall(x, -12, -7, [], { tall: true })); // room dividers
+  // east wall of the ward: SOLID (no physics gap) so you can't follow staff
+  // into the ether — the automatic double-door is rendered on it (see below)
+  vwall(-6, -12, 2, [], { tall: true });
+  hwall(2, -6, -2);                                                              // caps the SE corner behind the ether wall
 
-  // invisible yard fences: the strip behind the rooms' window walls is the
-  // one outdoor place the never-rotating camera could lose you — keep it
-  // unreachable (everywhere else outside stays open and visible)
-  physics.staticBox(-31.2, 1.5, -12.25, 0.2, 1.5, 13.75); // west face, below the entrance lot
-  physics.staticBox(-14.6, 1.5, -25.2, 16.6, 1.5, 0.2);   // south of the back yard, west of the gate
+  // invisible boundary so you can't wander far out the entrance lot and get lost
+  physics.staticBox(-31.4, 1.5, 4, 0.2, 1.5, 13);   // just west of the entrance lot
+  physics.staticBox(-33, 1.5, 10, 3, 1.5, 0.2);     // far west stop past the discharge walk
 
   const wallMat = mat(0xf2f1ee);
   const bandMat = mat(0x5d99b0);
@@ -295,9 +280,8 @@ export function buildMap(scene, physics) {
     if (fade) { fadeGroups[fade].meshes.push(bgMesh, face); face.material.transparent = true; fadeGroups[fade].mats.push(face.material); }
   };
   addSign(-29.78, 2.5, 10, Math.PI / 2, '＋ EMERGENCY', '#a03028', 2.6, false, '#ffe9e6');
-  addSign(-6 + 0.18, 2.42, -5.5, Math.PI / 2, 'LAB · IMAGING →', '#1f5f56');
-  addSign(8.5, 2.42, -11.8, 0, 'DISCHARGE →', '#2e6e3e', 1.9, 'z4wall');
-  addSign(5, 2.42, -23.8, 0, 'EXIT', '#2e6e3e', 1.2, 'gate');
+  addSign(-6.18, 2.3, -5.5, -Math.PI / 2, '⚕ STAFF ONLY', '#4a4f5e', 1.9); // over the ether door
+  addSign(-29.78, 2.2, 6.5, Math.PI / 2, '🏠 DISCHARGE', '#2e6e3e', 2.0); // west wall by the entrance
 
   // wood door jambs at every cutaway doorway (single InstancedMesh)
   {
@@ -501,12 +485,10 @@ export function buildMap(scene, physics) {
       sm.renderOrder = 2;
       statics.add(sm);
     };
-    stripe(-8, -5.05, 42, 0.16, 0xd8564a);  // red — exam rooms
-    stripe(-8, -5.5, 42, 0.16, 0x3f9d8a);   // teal — lab & diagnostics
-    stripe(-6.5, -5.95, 39, 0.16, 0x4bb35f); // green — discharge
-    stripe(8.5, -9.5, 0.16, 5.0, 0x4bb35f);  // green turns south through the arch
+    stripe(-18, -5.3, 24, 0.16, 0xd8564a);   // red guide line down the room fronts
+    stripe(-7.2, -5.5, 0.16, 3.0, 0x4a4f5e); // grey turns to the STAFF-ONLY ether door
     stripe(-14.5, -1.5, 0.16, 7.1, 0xd8564a); // red feeds up through the triage door
-    stripe(-16.5, 2.8, 4.16, 0.16, 0xd8564a);
+    stripe(-20, 4.6, 0.16, 5.0, 0x4bb35f);   // green leads to the discharge exit
   }
 
   // ---- the ten patient rooms: bed + desk each, numbered ----
@@ -514,7 +496,7 @@ export function buildMap(scene, physics) {
   const roomMonitors = [];
   const roomDesks = [];
   const roomLights = [];
-  const ROOM_X = [-28, -24, -20, -16, -12, -8, -3.5, 1.5, 6.5, 11.5];
+  const ROOM_X = [-28, -24, -20, -16, -12, -8];
   const BLANKETS = [0x9fc4e8, 0x8fceb4, 0xe8c49f];
   ROOM_X.forEach((cx, i) => {
     const g = makeBed(BLANKETS[i % 3]);
@@ -810,78 +792,55 @@ export function buildMap(scene, physics) {
     east: [{ x: -13.6, z: 0.9 }, { x: -13.6, z: -2.7 }],
   };
 
-  // ---- LAB (Z3 south-west) ----
-  const centMesh = makeCentrifuge();
-  centMesh.position.set(-3.6, 0, 0.6);
-  statics.add(centMesh);
-  shadowBlob(-3.6, 0.6, 2.4, 1.6, 0.28);
-  physics.staticBox(-3.6, 0.4, 0.6, 0.8, 0.4, 0.5);
-  const centrifuge = { x: -2.4, z: 0, y: 0, mesh: centMesh, busy: null, timer: 0, outX: -1.6, outZ: -0.9 };
-
-  // ---- DIAGNOSTICS (Z3 south-east): the one machine ----
-  const scan = makeScanner();
-  scan.position.set(8.6, 0, 0.4);
-  statics.add(scan);
-  shadowBlob(8.6, 0.5, 3.2, 2.2, 0.28);
-  physics.staticBox(8.6, 0.5, 0.9, 1.1, 0.5, 0.5);
-  // articulated surgical light over the dock — the reference's OR jewelry
+  // ---- THE ETHER DOOR (east wall of the ward) ----
+  // Labs, imaging and surgery no longer have rooms on the floor. Staff run
+  // through this automatic double-door into the back-of-house "ether" (which
+  // you can't enter) and return with results — or with the patient, scanned.
+  // Frame + two sliding leaves; the Game slides them open as staff approach.
+  const etherDoor = { x: -6, z: -5.5, w: 2.6 };            // the door's spot on the x=-6 wall
+  const etherHold = { x: -4.0, z: -5.5 };                  // offstage parking (east of the wall, hidden)
   {
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 2.6, 8), mat(0xdfe3ea));
-    pole.position.set(10.7, 1.3, 1.3); pole.castShadow = true;
-    const hub = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 8), mat(0xb9c2d4));
-    hub.position.set(10.7, 2.6, 1.3);
-    statics.add(pole, hub);
-    physics.staticBox(10.7, 1.3, 1.3, 0.09, 1.3, 0.09);
-    const headAt = (hx, hy, hz) => {
-      // arm from the hub to the head
-      const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 1, 6), mat(0xdfe3ea));
-      const from = new THREE.Vector3(10.7, 2.6, 1.3), to = new THREE.Vector3(hx, hy, hz);
-      const d = to.clone().sub(from);
-      arm.scale.y = d.length();
-      arm.position.copy(from).addScaledVector(d, 0.5);
-      arm.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.clone().normalize());
-      const head = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.19, 0.1, 14), mat(0xf5f6f3));
-      head.position.set(hx, hy, hz); head.castShadow = true;
-      const lamp = new THREE.Mesh(new THREE.CircleGeometry(0.16, 14), emat(0xfff6d8, 1.3));
-      lamp.position.set(hx, hy - 0.055, hz);
-      lamp.rotation.x = Math.PI / 2;
-      const glow = glowSprite(0xfff2c8, 1.2, 0.28);
-      glow.position.set(hx, hy - 0.28, hz);
-      statics.add(arm, head, lamp, glow);
-    };
-    headAt(9.15, 2.42, 0.2);
-    headAt(8.35, 2.3, -0.85);
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.2, 2.15, etherDoor.w + 0.5), mat(0x3a4250));
+    frame.position.set(-6, 1.07, -5.5); statics.add(frame);
+    const lintel = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.3, etherDoor.w + 0.6), mat(0x2c3340));
+    lintel.position.set(-6, 2.05, -5.5); statics.add(lintel);
+    const leaves = [];
+    for (const s of [-1, 1]) {
+      const leaf = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.95, etherDoor.w / 2), mat(0xcdd6e0));
+      leaf.userData.base = -5.5 + s * (etherDoor.w / 4);
+      leaf.userData.dir = s;
+      leaf.position.set(-6.02, 1.0, leaf.userData.base);
+      statics.add(leaf);
+      leaves.push(leaf);
+    }
+    // hazard chevrons + a red "in use" lamp so it reads as a working airlock
+    const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), emat(0xff4a4a, 0.4).clone());
+    lamp.position.set(-6.14, 1.95, -5.5); statics.add(lamp);
+    var etherFx = { leaves, lamp: lamp.material, openT: 0 };
   }
-  const diagnostics = {
-    machine: { x: 8.6, z: 0.4 },
-    dock: { x: 8.6, z: -1.2 },      // patient parks here during the scan
-    tech: { x: 6.6, z: -0.6 },      // rad tech's post
-    door: { x: 8, z: -4 },
-  };
-  const imagingPad = { x: diagnostics.dock.x, z: diagnostics.dock.z, y: 0 }; // legacy alias
 
-  // ---- Z4: discharge + pit ----
-  const discharge = { x: 5, z: -18, r: 2.3 };
-  const gateOut = { x: 5, z: -26 };
-  const firePit = { x: 11.3, z: -18.5, r: 1.7 };
-  const pitRim = new THREE.Mesh(new THREE.TorusGeometry(1.8, 0.22, 10, 28), mat(0x5a5148));
+  // ---- DISCHARGE + INCINERATOR (compact, by the entrance / ward corner) ----
+  const discharge = { x: -26.5, z: 6.2, r: 2.0 };          // walk them out the front
+  const gateOut = { x: -33, z: 10 };                        // through the entrance, gone
+  const firePit = { x: -8.2, z: 0.4, r: 1.3 };              // tucked in the ward's SE corner
+  const pitRim = new THREE.Mesh(new THREE.TorusGeometry(1.35, 0.2, 10, 28), mat(0x5a5148));
   pitRim.rotation.x = Math.PI / 2;
   pitRim.position.set(firePit.x, 0.12, firePit.z);
   statics.add(pitRim);
-  const pitHole = new THREE.Mesh(new THREE.CircleGeometry(1.7, 28), new THREE.MeshBasicMaterial({ color: 0x160a04 }));
+  const pitHole = new THREE.Mesh(new THREE.CircleGeometry(1.25, 28), new THREE.MeshBasicMaterial({ color: 0x160a04 }));
   pitHole.rotation.x = -Math.PI / 2;
   pitHole.position.set(firePit.x, 0.02, firePit.z);
   statics.add(pitHole);
   const flames = [];
-  const flameGeo = new THREE.ConeGeometry(0.34, 1.2, 7);
+  const flameGeo = new THREE.ConeGeometry(0.3, 1.05, 7);
   for (let i = 0; i < 5; i++) {
     const f = new THREE.Mesh(flameGeo, emat(i % 2 ? 0xff8a3c : 0xffb43c, 1.4));
     const a = (i / 5) * Math.PI * 2;
-    f.position.set(firePit.x + Math.cos(a) * 0.7, 0.55, firePit.z + Math.sin(a) * 0.7);
+    f.position.set(firePit.x + Math.cos(a) * 0.52, 0.5, firePit.z + Math.sin(a) * 0.52);
     statics.add(f);
     flames.push(f);
   }
-  const fireGlow = glowSprite(0xff7a2c, 6, 0.5);
+  const fireGlow = glowSprite(0xff7a2c, 4.4, 0.5);
   fireGlow.position.set(firePit.x, 1.2, firePit.z);
   statics.add(fireGlow);
   const fire = { flames, glow: fireGlow, flare: 0 };
@@ -897,11 +856,10 @@ export function buildMap(scene, physics) {
     statics.add(ring);
     rings.push({ mesh: ring, x, z });
   };
-  floorRing(centrifuge.x, centrifuge.z, 0x36e0d6);
-  floorRing(diagnostics.dock.x, diagnostics.dock.z, 0xb083ff, 1.6);
-  floorRing(-9.5, 17.6, 0xff5db0, 1.7);
+  floorRing(-9.5, 17.6, 0xff5db0, 1.7);           // pharmacy
   floorRing(discharge.x, discharge.z, 0x4dd07a, 2.0);
-  floorRing(firePit.x, firePit.z, 0xff6a2c, 1.9);
+  floorRing(firePit.x, firePit.z, 0xff6a2c, 1.35);
+  floorRing(etherDoor.x - 0.9, etherDoor.z, 0x8aa0c0, 1.1); // the staff ether door
   floorRing(medDoc.x, medDoc.z, 0x39ff6e, 1.0);   // stand-here spot for the green consult terminal
   floorRing(triagePC.x, triagePC.z, 0x4aa8ff, 1.0); // …and the blue triage board
 
@@ -917,9 +875,10 @@ export function buildMap(scene, physics) {
   for (const g of fadeWalls) for (const m of g.meshes) m.userData.casts = m.castShadow;
 
   return {
-    beds, seats, centrifuge, imagingPad, diagnostics, shelfUnits, rings, dropRing,
+    beds, seats, shelfUnits, rings, dropRing,
     roomDesks, roomLights, roomMonitors, knockSpots, triageDesk, receptionSeat, staffSeats, stationExit, medDoc, triagePC,
     discharge, gateOut, firePit, fire, fadeWalls, stationLights,
+    etherDoor, etherHold, etherFx,
     floorYAt: () => 0,
     zoneOf, zoneDoors: ZONE_DOORS,
     entrance: { x: -28.2, z: 10 },
@@ -928,7 +887,6 @@ export function buildMap(scene, physics) {
     nurseSpawn: { x: -17.5, z: -2.8 },
     doctorSpawn: { x: -14, z: -2.8 },
     porterSpawn: { x: -14.8, z: -0.2 },
-    labDoor: { x: -2, z: -4.8 },
     roomDoor: (i) => ({ x: ROOM_X[i], z: -6 }),
   };
 }

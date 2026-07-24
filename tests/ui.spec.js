@@ -6,6 +6,7 @@ import { test, expect } from '@playwright/test';
 const url = '/?seed=11&lite=1';
 
 async function boot(page) {
+  await page.addInitScript(() => { try { localStorage.setItem('medteam.seenTutorial', '1'); } catch { /* private */ } });
   await page.goto(url);
   await page.waitForFunction(() => window.__game?.ready, null, { timeout: 20000 });
 }
