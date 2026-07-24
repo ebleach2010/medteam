@@ -12,8 +12,13 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       workbox: {
-        globPatterns: ['**/*.{js,css,html,wasm,png,webmanifest}'],
+        globPatterns: ['**/*.{js,css,html,wasm,png,webmanifest,glb}'],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+        // a stale precache that points at a deleted bundle hash = white screen
+        // on an installed PWA. Sweep old caches and take over immediately.
+        cleanupOutdatedCaches: true,
+        skipWaiting: true,
+        clientsClaim: true,
       },
       manifest: {
         name: 'MedTeam — ED Chaos',

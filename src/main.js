@@ -36,3 +36,6 @@ const game = new Game(document.getElementById('game'), physics, {
 });
 installTestApi(game);
 game.start();
+// we're up: drop the boot splash and clear the self-heal latch
+document.getElementById('boot')?.classList.add('gone');
+try { sessionStorage.removeItem('medteam.selfheal'); } catch { /* private mode */ }

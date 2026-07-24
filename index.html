@@ -12,6 +12,47 @@
 <body>
   <canvas id="game"></canvas>
   <div id="ui"></div>
+  <div id="boot">
+    <div class="bootlogo">MED<span>TEAM</span></div>
+    <div class="bootmsg">Loading…</div>
+  </div>
+  <!-- Boot watchdog. If the module script never runs (classic PWA failure: a
+       cached index.html pointing at a bundle hash that no longer exists), the
+       page would just sit blank. Detect that, drop the service worker + caches
+       once, and reload clean. Inline + non-module so it runs regardless. -->
+  <script>
+  (function () {
+    var KEY = 'medteam.selfheal';
+    setTimeout(function () {
+      if (window.__game) { try { sessionStorage.removeItem(KEY); } catch (e) {} return; }
+      var msg = document.querySelector('#boot .bootmsg');
+      var tried = false;
+      try { tried = sessionStorage.getItem(KEY) === '1'; } catch (e) {}
+      if (tried) {
+        if (msg) msg.innerHTML = "Couldn't start.<br>Close the app fully and reopen,<br>or delete the icon and re-add it.";
+        return;
+      }
+      try { sessionStorage.setItem(KEY, '1'); } catch (e) {}
+      if (msg) msg.textContent = 'Updating…';
+      var reload = function () { location.reload(); };
+      try {
+        var jobs = [];
+        if (window.caches && caches.keys) {
+          jobs.push(caches.keys().then(function (ks) {
+            return Promise.all(ks.map(function (k) { return caches.delete(k); }));
+          }));
+        }
+        if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+          jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) {
+            return Promise.all(rs.map(function (r) { return r.unregister(); }));
+          }));
+        }
+        Promise.all(jobs).then(reload, reload);
+        setTimeout(reload, 3000); // belt and braces
+      } catch (e) { reload(); }
+    }, 8000);
+  })();
+  </script>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>
