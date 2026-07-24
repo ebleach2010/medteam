@@ -220,12 +220,19 @@ export class Modals {
       <button class="opt" data-w="ekg">🫀 Run EKG ${w.ekg ? '✓' : ''}</button>
       <button class="opt" data-w="phys">🩺 Physical exam ${w.phys ? '✓' : ''}</button>
       <button class="opt" data-w="neuro">🧠 Neuro exam ${w.neuro ? '✓' : ''}</button>
+      ${sim.case.labs ? `<button class="opt" data-w="labs">🩸 Order labs ${
+        sim.labState === 'read' || sim.labState === 'ready' ? '✓'
+        : sim.labState !== 'none' ? '…drawing' : ''}</button>` : ''}
+      ${(sim.labState === 'ready' || sim.labState === 'read' || sim.imagingReport || (sim.consultReports ?? []).length)
+        ? '<button class="opt" data-w="chart">🗂 Open chart folder (labs · imaging · consults)</button>' : ''}
       <button class="opt" data-w="dx">✅ Diagnose</button>
       <button class="close">Close</button>`;
     this.veil.style.display = 'flex';
     this.box.querySelectorAll('.opt').forEach((b) =>
       b.addEventListener('click', (ev) => {
         const w2 = b.dataset.w;
+        if (w2 === 'labs') { ev.preventDefault(); this.labPick({ patient }); return; }
+        if (w2 === 'chart') { ev.preventDefault(); this.reports(patient); return; }
         if (w2 === 'ask' || w2 === 'treat') {
           ev.preventDefault();
           const input = this.box.querySelector(w2 === 'ask' ? '#askbar' : '#treatbar');

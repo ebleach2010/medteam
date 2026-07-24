@@ -39,6 +39,7 @@ function C(tier, id, name, complaint, hx, dx, meds, dispo, o = {}) {
     ] : [];
   return {
     id, name, tier,
+    fail: o.fail ?? 'shock', // exposed so the sim can react (bleeders pool blood)
     ambulatory: o.amb ?? true,
     complaint: Array.isArray(complaint) ? complaint : [complaint],
     history: hx,

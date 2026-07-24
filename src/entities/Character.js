@@ -196,6 +196,15 @@ export class Character {
     }
   }
 
+  // wipe out on a wet floor: legs go, you skid, you land on your face
+  slip() {
+    this.sprawlTimer = 1.5;
+    const v = this.body.linvel();
+    this.body.applyImpulse({ x: v.x * 26 + 40, y: 95, z: v.z * 26 }, true);
+    this.body.applyTorqueImpulse({ x: 70, y: 22, z: 45 }, true);
+    if (this.dragging) this.release(); // you let go of whoever you were towing
+  }
+
   tackle() {
     if (this.tackleTimer > 0) return;
     this.tackleTimer = 0.55;
