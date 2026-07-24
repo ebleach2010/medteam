@@ -61,6 +61,9 @@ export class Wheel {
   }
 
   commit() {
+    // a modal opened on top of us (pager, workup, pause…) — the wheel is
+    // hidden and stale, so just fold quietly instead of firing an ORDER
+    if (this.game.ui.modals.open) { this.close(); return; }
     const sel = this.hot >= 0 ? this.sectors[this.hot]?.dataset.id : null;
     this.close();
     if (!sel) return;
@@ -75,9 +78,13 @@ export class Wheel {
   // the next click (anywhere) commits — or closes if nothing is hot
   stay() {
     if (!this.isOpen) return;
-    this._onMove = (e) => this.track(e.clientX, e.clientY);
+    this._onMove = (e) => {
+      if (this.game.ui.modals.open) return; // wheel is buried under a modal
+      this.track(e.clientX, e.clientY);
+    };
     this._onDown = (e) => {
       if (e.target.closest?.('#btn-action')) return; // ORDERS button handles itself
+      if (this.game.ui.modals.open) { this.close(); return; } // let the click reach the modal
       e.stopPropagation();
       e.preventDefault();
       this.commit();

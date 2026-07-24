@@ -141,7 +141,8 @@ export function deescalate(sim, text) {
 const ALIASES = {
   wrap: 'nsaid', splint: 'nsaid', bandage: 'nsaid', ice: 'nsaid', advil: 'nsaid', ibuprofen: 'nsaid',
   o2: 'oxygen', oxygen: 'oxygen', 'nasal cannula': 'oxygen',
-  saline: 'fluids', bolus: 'fluids', 'iv fluids': 'fluids', hydrate: 'fluids', fluids: 'fluids',
+  saline: 'fluids', bolus: 'fluids', 'iv fluids': 'fluids', hydrate: 'fluids', hydration: 'fluids',
+  rehydrate: 'fluids', rehydration: 'fluids', fluid: 'fluids', fluids: 'fluids', ivf: 'fluids',
   sedate: 'sedative', 'calm them': 'sedative', versed: 'sedative',
   blood: 'prbc', transfuse: 'prbc', transfusion: 'prbc',
   sugar: 'd50', glucose: 'd50', dextrose: 'd50',

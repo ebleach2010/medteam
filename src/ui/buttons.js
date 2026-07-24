@@ -46,14 +46,24 @@ export class Buttons {
       const holding = a.carrying || a.dragging || a.grabHeld;
       game.enqueue(make(holding ? INTENT.RELEASE : INTENT.GRAB, a.id));
     };
+    // hold mode bookkeeping: remember WHO grabbed at press time, so the
+    // release always reaches that character — even after a swap, a pause, a
+    // drag off the button, or a cancelled touch
     this.grab.addEventListener('pointerdown', (e) => {
       e.preventDefault();
-      if (settings.grabMode === 'hold') game.enqueue(make(INTENT.GRAB, game.active.id));
-      else toggleGrab();
+      if (settings.grabMode === 'hold') {
+        this._btnGrabber = game.active;
+        try { this.grab.setPointerCapture(e.pointerId); } catch { /* synthetic */ }
+        game.enqueue(make(INTENT.GRAB, game.active.id));
+      } else toggleGrab();
     });
-    this.grab.addEventListener('pointerup', () => {
-      if (settings.grabMode === 'hold') game.enqueue(make(INTENT.RELEASE, game.active.id));
-    });
+    const btnRelease = () => {
+      if (!this._btnGrabber) return;
+      game.enqueue(make(INTENT.RELEASE, this._btnGrabber.id));
+      this._btnGrabber = null;
+    };
+    this.grab.addEventListener('pointerup', btnRelease);
+    this.grab.addEventListener('pointercancel', btnRelease);
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') { // works even while typing
         if (game.ui.modals.open) game.ui.modals.close();
@@ -65,8 +75,10 @@ export class Buttons {
       if (game.paused || e.repeat) return;
       const k = settings.keys;
       if (e.code === k.grab) {
-        if (settings.grabMode === 'hold') game.enqueue(make(INTENT.GRAB, game.active.id));
-        else toggleGrab();
+        if (settings.grabMode === 'hold') {
+          this._keyGrabber = game.active;
+          game.enqueue(make(INTENT.GRAB, game.active.id));
+        } else toggleGrab();
       }
       if (e.code === k.action || e.code === 'Space') game.enqueue(make(INTENT.ACTION, game.active.id));
       if (e.code === k.wheel) {
@@ -83,10 +95,18 @@ export class Buttons {
       if (e.code === k.pager) game.ui.modals.pager();
     });
     window.addEventListener('keyup', (e) => {
-      if (typing() || game.paused) return;
       const k = settings.keys;
-      if (e.code === k.grab && settings.grabMode === 'hold') game.enqueue(make(INTENT.RELEASE, game.active.id));
+      // a held grab must ALWAYS let go on keyup — even if a pause menu or a
+      // text box swallowed the moment, and aimed at whoever pressed the key
+      if (e.code === k.grab && this._keyGrabber) {
+        game.enqueue(make(INTENT.RELEASE, this._keyGrabber.id));
+        this._keyGrabber = null;
+      }
+      if (typing() || game.paused) return;
       if (e.code === k.wheel && settings.wheelMode === 'hold' && game.ui.wheel.isOpen) game.ui.wheel.commit();
+    });
+    window.addEventListener('blur', () => { // cmd-tab mid-hold: let go
+      if (this._keyGrabber) { game.enqueue(make(INTENT.RELEASE, this._keyGrabber.id)); this._keyGrabber = null; }
     });
     // MacBook players get the (rebindable) key map on the buttons themselves
     this._hints = matchMedia('(hover: hover) and (pointer: fine)').matches;

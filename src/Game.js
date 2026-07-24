@@ -1145,15 +1145,18 @@ export class Game {
 
     animateRig(this.receptionist, dt, now, 0, { sitting: true }); // typing away forever
 
-    // the discharge wing shares a wall with rooms 9–10: it drops to a ghost
-    // whenever you're behind it so the chase cam never loses you
-    const fw = this.map.fadeWalls;
-    if (fw?.mats.length) {
-      const behind = this.active.pos.z < -11.6;
-      fw._t = (fw._t ?? 1) + ((behind ? 0.18 : 1) - (fw._t ?? 1)) * Math.min(1, dt * 8);
-      for (const m of fw.mats) m.opacity = fw._t;
-      const solid = fw._t > 0.95;
-      for (const mesh of fw.meshes) mesh.castShadow = solid && !!mesh.userData.casts;
+    // walls that can stand between the chase cam and the player drop to a
+    // ghost while you're behind them (discharge wing wall, the EXIT wall)
+    const ap1 = this.active.pos;
+    for (const fg of this.map.fadeWalls) {
+      const behind = fg.when(ap1);
+      const t0 = fg._t ?? 1;
+      const t1 = t0 + ((behind ? 0.18 : 1) - t0) * Math.min(1, dt * 8);
+      fg._t = t1;
+      if (Math.abs(t1 - t0) < 0.0005 && !behind && t1 > 0.999) continue; // settled solid — skip the writes
+      for (const m of fg.mats) m.opacity = t1;
+      const solid = t1 > 0.95;
+      for (const mesh of fg.meshes) mesh.castShadow = solid && !!mesh.userData.casts;
     }
 
     // FX fades: skids over 5s (oldest first), dust puffs fast

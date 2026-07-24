@@ -672,8 +672,19 @@ Your key stays in this browser only.</div>
     this.close();
   }
 
+  // abandon any half-finished "PRESS KEY…" capture — otherwise the window
+  // listener leaks and silently rebinds (and persists!) the next keypress
+  _cancelRebind() {
+    if (this._grabKeyFn) {
+      window.removeEventListener('keydown', this._grabKeyFn, { capture: true });
+      this._grabKeyFn = null;
+    }
+    this._rebinding = false;
+  }
+
   // ⏸ the Escape menu: freeze the ED, offer a do-over, open settings
   pauseMenu() {
+    this._cancelRebind();
     const g = this.game;
     this.current = { type: 'pause', patient: null, options: [] };
     g.paused = true;
@@ -690,6 +701,7 @@ Your key stays in this browser only.</div>
 
   // ⚙️ audio, control feel, and fully rebindable keys
   settingsPanel() {
+    this._cancelRebind();
     const g = this.game;
     this.current = { type: 'settings', patient: null, options: [] };
     g.paused = true;
@@ -741,14 +753,14 @@ Your key stays in this browser only.</div>
         const grab = (e) => {
           e.preventDefault();
           e.stopPropagation();
-          window.removeEventListener('keydown', grab, { capture: true });
-          this._rebinding = false;
+          this._cancelRebind();
           if (e.key === 'Escape') { b.textContent = old; return; } // cancel
           settings.keys[b.dataset.bind] = e.code;
           saveSettings();
           b.textContent = keyLabel(e.code);
           g.ui.buttons.refreshHints();
         };
+        this._grabKeyFn = grab;
         window.addEventListener('keydown', grab, { capture: true });
       });
     });
@@ -767,6 +779,7 @@ Your key stays in this browser only.</div>
 
   close() {
     clearInterval(this._vfT);
+    this._cancelRebind();
     this.current = null;
     this.veil.style.display = 'none';
     this.box.classList.remove('crtbox', 'blue');

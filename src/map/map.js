@@ -164,36 +164,48 @@ export function buildMap(scene, physics) {
   vwall(-6, -12, 2, [{ at: -5.5, w: 2.6 }], { tall: true, header: { at: -5.5, w: 2.6 } });
   // Z3 rooms 7–10 + lab + diagnostics
   hwall(-12, -6, 2, [], { tall: true, win: true, face: 1 });                     // rooms 7–8 window wall
-  hwall(-12, 2, 14, [{ at: 8.5, w: 4.4 }], { tall: true, fade: true, header: { at: 8.5, w: 4.4 } }); // fronts Z4 — fades
+  hwall(-12, 2, 14, [{ at: 8.5, w: 4.4 }], { tall: true, fade: 'z4wall', header: { at: 8.5, w: 4.4 } }); // fronts Z4 — fades
   hwall(-7, -6, 14, [-3.5, 1.5, 6.5, 11.5].map((x) => ({ at: x, w: 2.2 })), { glass: true, jambs: true });
   [-1, 4, 9].forEach((x) => vwall(x, -12, -7, [], { tall: true }));
   hwall(2, -6, 14);
   vwall(14, -12, 2, [], { tall: true, win: true, face: -1 });
   hwall(-4, -6, 14, [{ at: -2, w: 2.2 }, { at: 8, w: 2.6 }], { glass: true, jambs: true }); // lab + diagnostics doors
   vwall(2, -4, 2, [], { tall: true });                                           // lab | diagnostics divider
-  // Z4 discharge
-  hwall(-24, 2, 14, [{ at: 5, w: 3 }], { tall: true, win: true, face: 1, header: { at: 5, w: 3 } }); // the GATE
+  // Z4 discharge — the gate wall fades when you step outside it, so it can't
+  // carry windows (the merged panes wouldn't fade with it)
+  hwall(-24, 2, 14, [{ at: 5, w: 3 }], { tall: true, fade: 'gate', header: { at: 5, w: 3 } }); // the GATE
   vwall(2, -24, -12, [], { tall: true, win: true, face: 1 });
   vwall(14, -24, -12, [], { tall: true, win: true, face: -1 });
+
+  // invisible yard fences: the strip behind the rooms' window walls is the
+  // one outdoor place the never-rotating camera could lose you — keep it
+  // unreachable (everywhere else outside stays open and visible)
+  physics.staticBox(-31.2, 1.5, -12.25, 0.2, 1.5, 13.75); // west face, below the entrance lot
+  physics.staticBox(-14.6, 1.5, -25.2, 16.6, 1.5, 0.2);   // south of the back yard, west of the gate
 
   const wallMat = mat(0xf2f1ee);
   const bandMat = mat(0x5d99b0);
   const wainsMat = mat(0xc2d0da);
   const wallGeo = new THREE.BoxGeometry(1, 1, 1);
-  const fadeWalls = { meshes: [], mats: [] };
+  // fade groups: each wall that can stand between the chase cam and the
+  // player gets its own {meshes, mats, when} — Game ghosts it when when(pos)
+  const fadeGroups = {
+    z4wall: { meshes: [], mats: [], when: (p) => p.z < -11.6 && p.x > 1.7 }, // rooms 9-10 / discharge shared wall
+    gate: { meshes: [], mats: [], when: (p) => p.z < -23.6 },                // the EXIT wall, if you wander out
+  };
   // fading segments need their own (transparent-capable) material clones
-  const fadeMatOf = (base) => {
+  const fadeMatOf = (groupKey, base) => {
     const m = base.clone();
     m.transparent = true;
-    fadeWalls.mats.push(m);
+    fadeGroups[groupKey].mats.push(m);
     return m;
   };
   for (const w of wallSegs) {
     const len = w.e - w.s, mid = (w.s + w.e) / 2;
     const H = w.tall ? TALL_H : WALL_H;
-    const m = new THREE.Mesh(wallGeo, w.fade ? fadeMatOf(wallMat) : wallMat);
-    const band = new THREE.Mesh(wallGeo, w.fade ? fadeMatOf(bandMat) : bandMat);
-    const wains = new THREE.Mesh(wallGeo, w.fade ? fadeMatOf(wainsMat) : wainsMat); // lower wainscot panel
+    const m = new THREE.Mesh(wallGeo, w.fade ? fadeMatOf(w.fade, wallMat) : wallMat);
+    const band = new THREE.Mesh(wallGeo, w.fade ? fadeMatOf(w.fade, bandMat) : bandMat);
+    const wains = new THREE.Mesh(wallGeo, w.fade ? fadeMatOf(w.fade, wainsMat) : wainsMat); // lower wainscot panel
     if (w.horiz) {
       m.scale.set(len, H, 0.3); m.position.set(mid, H / 2, w.at);
       band.scale.set(len, 0.1, 0.34); band.position.set(mid, 0.64, w.at);
@@ -207,7 +219,7 @@ export function buildMap(scene, physics) {
     }
     m.castShadow = true;
     statics.add(m, band, wains);
-    if (w.fade) fadeWalls.meshes.push(m, band, wains);
+    if (w.fade) fadeGroups[w.fade].meshes.push(m, band, wains);
   }
 
   // wall caps: white rail on the cutaway tier, ceiling-line soffit on the tall
@@ -230,14 +242,14 @@ export function buildMap(scene, physics) {
     };
     capOf(lows, 0xf8f8f5, 0.1, WALL_H + 0.04, 0.42);
     capOf(talls, 0x8fa3b2, 0.16, TALL_H + 0.06, 0.4);
-    // the fading segment's soffit joins the fade group
+    // the fading segments' soffits join their fade groups
     for (const w of wallSegs.filter((s) => s.tall && s.fade)) {
       const len = w.e - w.s, mid = (w.s + w.e) / 2;
-      const cap = new THREE.Mesh(wallGeo, fadeMatOf(mat(0x8fa3b2)));
+      const cap = new THREE.Mesh(wallGeo, fadeMatOf(w.fade, mat(0x8fa3b2)));
       if (w.horiz) { cap.scale.set(len + 0.1, 0.16, 0.4); cap.position.set(mid, TALL_H + 0.06, w.at); }
       else { cap.scale.set(0.4, 0.16, len + 0.1); cap.position.set(w.at, TALL_H + 0.06, mid); }
       statics.add(cap);
-      fadeWalls.meshes.push(cap);
+      fadeGroups[w.fade].meshes.push(cap);
     }
   }
 
@@ -246,16 +258,16 @@ export function buildMap(scene, physics) {
   for (const w0 of [
     { horiz: false, at: -30, gap: { at: 10, w: 3.4 } },
     { horiz: false, at: -6, gap: { at: -5.5, w: 2.6 } },
-    { horiz: true, at: -12, gap: { at: 8.5, w: 4.4 }, fade: true },
-    { horiz: true, at: -24, gap: { at: 5, w: 3 } },
+    { horiz: true, at: -12, gap: { at: 8.5, w: 4.4 }, fade: 'z4wall' },
+    { horiz: true, at: -24, gap: { at: 5, w: 3 }, fade: 'gate' },
   ]) {
     const h = TALL_H - 2.05;
-    const head = new THREE.Mesh(wallGeo, w0.fade ? fadeMatOf(headerMat) : headerMat);
+    const head = new THREE.Mesh(wallGeo, w0.fade ? fadeMatOf(w0.fade, headerMat) : headerMat);
     if (w0.horiz) { head.scale.set(w0.gap.w + 0.2, h, 0.32); head.position.set(w0.gap.at, 2.05 + h / 2, w0.at); }
     else { head.scale.set(0.32, h, w0.gap.w + 0.2); head.position.set(w0.at, 2.05 + h / 2, w0.gap.at); }
     head.castShadow = true;
     statics.add(head);
-    if (w0.fade) fadeWalls.meshes.push(head);
+    if (w0.fade) fadeGroups[w0.fade].meshes.push(head);
   }
 
   // glowing wayfinding signs on the doorways
@@ -273,19 +285,19 @@ export function buildMap(scene, physics) {
     return new THREE.MeshBasicMaterial({ map: t });
   };
   const addSign = (x, y, z, rotY, txt, bg, wdt = 1.7, fade = false, fg = '#eafff2') => {
-    const bgMat = fade ? fadeMatOf(mat(0x2c3540)) : mat(0x2c3540);
+    const bgMat = fade ? fadeMatOf(fade, mat(0x2c3540)) : mat(0x2c3540);
     const bgMesh = new THREE.Mesh(new THREE.BoxGeometry(wdt + 0.08, 0.5, 0.08), bgMat);
     bgMesh.position.set(x, y, z); bgMesh.rotation.y = rotY;
     const face = new THREE.Mesh(new THREE.PlaneGeometry(wdt, 0.42), signText(txt, bg, fg));
     face.position.set(x, y, z).add(new THREE.Vector3(Math.sin(rotY) * 0.05, 0, Math.cos(rotY) * 0.05));
     face.rotation.y = rotY;
     statics.add(bgMesh, face);
-    if (fade) { fadeWalls.meshes.push(bgMesh, face); face.material.transparent = true; fadeWalls.mats.push(face.material); }
+    if (fade) { fadeGroups[fade].meshes.push(bgMesh, face); face.material.transparent = true; fadeGroups[fade].mats.push(face.material); }
   };
   addSign(-29.78, 2.5, 10, Math.PI / 2, '＋ EMERGENCY', '#a03028', 2.6, false, '#ffe9e6');
   addSign(-6 + 0.18, 2.42, -5.5, Math.PI / 2, 'LAB · IMAGING →', '#1f5f56');
-  addSign(8.5, 2.42, -11.8, 0, 'DISCHARGE →', '#2e6e3e', 1.9, true);
-  addSign(5, 2.42, -23.8, 0, 'EXIT', '#2e6e3e', 1.2);
+  addSign(8.5, 2.42, -11.8, 0, 'DISCHARGE →', '#2e6e3e', 1.9, 'z4wall');
+  addSign(5, 2.42, -23.8, 0, 'EXIT', '#2e6e3e', 1.2, 'gate');
 
   // wood door jambs at every cutaway doorway (single InstancedMesh)
   {
@@ -378,8 +390,8 @@ export function buildMap(scene, physics) {
       ];
       for (const [sx, sy, sz, ox, oy] of bars) {
         const off = new THREE.Vector3(ox, oy, 0.01).applyQuaternion(q);
-        m4.compose(new THREE.Vector3(p.x + off.x, WIN_Y + oy, p.z + off.z), q, new THREE.Vector3(
-          p.rotY === 0 || p.rotY === Math.PI ? sx : sz, sy, p.rotY === 0 || p.rotY === Math.PI ? sz : sx));
+        // q already swings local-x along the wall — scale stays in local axes
+        m4.compose(new THREE.Vector3(p.x + off.x, WIN_Y + oy, p.z + off.z), q, new THREE.Vector3(sx, sy, sz));
         frameIM.setMatrixAt(fi++, m4);
       }
     }
@@ -891,7 +903,8 @@ export function buildMap(scene, physics) {
 
   // remember which fade-group meshes actually cast shadows, so the Game can
   // switch them off while the wall is ghosted (no shadows from thin air)
-  for (const m of fadeWalls.meshes) m.userData.casts = m.castShadow;
+  const fadeWalls = Object.values(fadeGroups);
+  for (const g of fadeWalls) for (const m of g.meshes) m.userData.casts = m.castShadow;
 
   return {
     beds, seats, centrifuge, imagingPad, diagnostics, shelfUnits, rings, dropRing,
