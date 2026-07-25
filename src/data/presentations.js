@@ -17,6 +17,8 @@
 // esi — Emergency Severity Index 1 (resuscitation) … 5 (nonurgent). Drives the
 // triage nurse's ordering of the waiting room.
 
+const SYSTEM_OF = {'abdo_pain': 'gi', 'chest_pain_atyp': 'cardiac', 'uri': 'infect', 'lowback': 'msk', 'headache_tension': 'neuro', 'migraine': 'neuro', 'gastro': 'gi', 'uti': 'gu', 'sprain': 'msk', 'laceration': 'msk', 'rash_allergic': 'derm', 'dental': 'infect', 'cellulitis': 'infect', 'conjunctivitis': 'eye', 'constipation': 'gi', 'asthma': 'resp', 'copd': 'resp', 'pneumonia': 'resp', 'renal_colic': 'gu', 'anxiety_insomnia': 'psych', 'panic': 'psych', 'etoh_withdrawal': 'psych', 'opioid_od': 'tox', 'paracetamol_od': 'tox', 'suicidal': 'psych', 'psychosis': 'psych', 'syncope': 'cardiac', 'afib_rvr': 'cardiac', 'hypoglycemia': 'endo', 'appendicitis': 'gi', 'anaphylaxis': 'resp', 'sepsis': 'infect', 'stemi': 'cardiac', 'gi_bleed': 'gi', 'dka': 'endo', 'stroke_isch': 'neuro', 'sah': 'neuro', 'pneumothorax': 'resp', 'ectopic': 'gu', 'meningitis': 'infect', 'hyperkalemia': 'endo', 'status_epilepticus': 'neuro'};
+
 const P = (id, name, esi, w, complaint, o = {}) => ({
   id, name, esi, w,
   complaint: Array.isArray(complaint) ? complaint : [complaint],
@@ -33,6 +35,7 @@ const P = (id, name, esi, w, complaint, o = {}) => ({
   agit: o.agit ?? 0,
   psych: o.psych ?? false,
   tags: o.tags ?? [],
+  sys: o.sys ?? SYSTEM_OF[id] ?? 'gi',
 });
 
 export const PRESENTATIONS = [
@@ -353,3 +356,38 @@ export function pickPresentation(rng, bias) {
 }
 
 export const presentationById = (id) => PRESENTATIONS.find((p) => p.id === id);
+
+// Plausible near-misses grouped by body system. A differential should be ten
+// things that could genuinely explain the same complaint — not one right
+// answer and three obviously-wrong ones.
+export const DDX_POOL = {
+  cardiac: ['Acute coronary syndrome', 'Unstable angina', 'Pericarditis', 'Myocarditis', 'Aortic dissection',
+    'Atrial fibrillation', 'SVT', 'Heart failure', 'Cardiac tamponade', 'Costochondritis',
+    'Hypertensive emergency', 'Takotsubo cardiomyopathy'],
+  resp: ['Pneumonia', 'Asthma exacerbation', 'COPD exacerbation', 'Pulmonary embolism', 'Pneumothorax',
+    'Bronchitis', 'Pleural effusion', 'Influenza', 'COVID-19', 'Pulmonary oedema', 'Croup', 'Foreign body aspiration'],
+  gi: ['Appendicitis', 'Gastroenteritis', 'Cholecystitis', 'Pancreatitis', 'Diverticulitis', 'Bowel obstruction',
+    'Peptic ulcer disease', 'GERD', 'Constipation', 'Mesenteric ischaemia', 'Hernia', 'Upper GI bleed',
+    'Gastritis', 'Irritable bowel', 'C. difficile colitis'],
+  neuro: ['Ischaemic stroke', 'Intracranial haemorrhage', 'Subarachnoid haemorrhage', 'Migraine',
+    'Tension headache', 'Meningitis', 'Encephalitis', 'Seizure', 'Bell palsy', 'Vertigo',
+    'Transient ischaemic attack', 'Temporal arteritis', 'Idiopathic intracranial hypertension'],
+  gu: ['UTI / cystitis', 'Pyelonephritis', 'Renal colic', 'Testicular torsion', 'Ovarian torsion',
+    'Ectopic pregnancy', 'Pelvic inflammatory disease', 'Urinary retention', 'Epididymitis', 'Ovarian cyst'],
+  msk: ['Fracture', 'Sprain', 'Dislocation', 'Septic arthritis', 'Gout', 'Cellulitis', 'Tendon rupture',
+    'Compartment syndrome', 'Mechanical back pain', 'Disc herniation', 'Cauda equina syndrome', 'Bursitis'],
+  psych: ['Panic attack', 'Generalised anxiety', 'Major depression', 'Bipolar mania', 'Acute psychosis',
+    'Alcohol withdrawal', 'Stimulant intoxication', 'Opioid withdrawal', 'Delirium', 'Somatic symptom disorder',
+    'Insomnia disorder', 'Adjustment disorder'],
+  tox: ['Opioid overdose', 'Benzodiazepine overdose', 'Paracetamol overdose', 'Salicylate overdose',
+    'Alcohol intoxication', 'Sympathomimetic toxicity', 'Anticholinergic toxicity', 'Carbon monoxide poisoning',
+    'Serotonin syndrome', 'Neuroleptic malignant syndrome', 'Tricyclic overdose'],
+  endo: ['Diabetic ketoacidosis', 'Hypoglycaemia', 'Hyperosmolar hyperglycaemic state', 'Thyroid storm',
+    'Myxoedema coma', 'Adrenal crisis', 'Hyperkalaemia', 'Hyponatraemia', 'Hypercalcaemia', 'Dehydration'],
+  infect: ['Sepsis', 'Cellulitis', 'Abscess', 'Meningitis', 'Pneumonia', 'Pyelonephritis', 'Dental abscess',
+    'Necrotising fasciitis', 'Endocarditis', 'Viral URI', 'Strep pharyngitis', 'Influenza'],
+  derm: ['Urticaria', 'Contact dermatitis', 'Cellulitis', 'Shingles', 'Drug eruption', 'Stevens-Johnson syndrome',
+    'Eczema', 'Scabies', 'Fungal infection', 'Angio-oedema'],
+  eye: ['Conjunctivitis', 'Corneal abrasion', 'Iritis', 'Acute angle-closure glaucoma', 'Orbital cellulitis',
+    'Retinal detachment', 'Subconjunctival haemorrhage', 'Blepharitis'],
+};

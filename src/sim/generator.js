@@ -1,4 +1,4 @@
-import { pickPresentation, presentationById } from '../data/presentations.js';
+import { pickPresentation, presentationById, DDX_POOL } from '../data/presentations.js';
 import { MEDS, medsInClass } from '../data/meds.js';
 
 // Procedural health-problem engine.
@@ -105,7 +105,26 @@ export function generateCase(rng, day = 1, opts = {}) {
   // and occasionally someone is unusually sensitive — responds to an adjunct alone
   const easy = P.rx.adj.length > 0 && rng.chance(0.12);
 
-  const dxOptions = [...P.dx];
+  // --- the differential: TEN plausible options from the same body system ---
+  // The hand-picked near-misses come first, then we top up from that system's
+  // pool, so every choice is something that could actually explain the
+  // complaint rather than three obvious throwaways.
+  const truth = P.dx[0];
+  const ddx = [...new Set(P.dx)];
+  const pool = (DDX_POOL[P.sys] ?? []).filter((d) => !ddx.some((x) => x.toLowerCase() === d.toLowerCase()));
+  // shuffle the pool with the seeded rng, then fill to ten
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(rng.next() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  while (ddx.length < 10 && pool.length) ddx.push(pool.shift());
+  // shuffle the whole differential, then record where the truth landed
+  for (let i = ddx.length - 1; i > 0; i--) {
+    const j = Math.floor(rng.next() * (i + 1));
+    [ddx[i], ddx[j]] = [ddx[j], ddx[i]];
+  }
+  const dxOptions = ddx;
+  const correctDx = Math.max(0, ddx.indexOf(truth));
   const name = `${rng.pick(FIRST)} ${rng.pick(LAST)}`;
 
   const meds = [...new Set([...P.rx.first, ...P.rx.alt].map(exampleFor).filter(Boolean))].slice(0, 2);
@@ -126,7 +145,7 @@ export function generateCase(rng, day = 1, opts = {}) {
     labs: P.labs === null ? null : { CBC: 'normal', BMP: 'normal', ...(P.labs ?? {}) },
     imaging: P.img ? { ...P.img, correct: 0, required: true } : null,
     ekg: null, neuro: null, physical: null,
-    dxOptions, correctDx: 0,
+    dxOptions, correctDx,
     treatment: { meds, dispo: P.dispo },
     // the class-based prescription — what treatment.js actually judges against
     rx: { first: [...P.rx.first], alt: [...P.rx.alt], adj: [...P.rx.adj] },

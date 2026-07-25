@@ -41,7 +41,24 @@ export class PatientSim {
     game.ui.bubbles.say(ent, game.rng.pick(caseData.complaint), { hold: 5 });
   }
 
-  get elapsed() { return (this.game.clock.minutes - this.tArrive) * this.accel; }
+  // clockOffset is pushed forward by a stabilising (partial) treatment, which
+  // buys the patient more time before the next timeline step
+  get elapsed() { return (this.game.clock.minutes - this.tArrive - (this.clockOffset ?? 0)) * this.accel; }
+
+  // A partial/adjunct treatment stabilises them: the deterioration clock winds
+  // back to the start of the current stretch. ONCE per patient — the second
+  // paracetamol does not buy another hour.
+  stabiliseOnce() {
+    if (this.stabilisedOnce || this.treated || this.state === 'dead') return false;
+    this.stabilisedOnce = true;
+    // rewind to just before whichever timeline step is coming next
+    const next = this.case.timeline?.find((k) => !k.done);
+    const prev = [...(this.case.timeline ?? [])].filter((k) => k.done).pop();
+    const back = next ? this.elapsed - (prev ? prev.t : 0) : 0;
+    this.clockOffset = (this.clockOffset ?? 0) + Math.max(0, back / (this.accel || 1));
+    if (this.critical) { this.critical = false; this.ent.setFace('normal'); }
+    return true;
+  }
   isLying() { return ['inbed', 'sedated', 'dead', 'pinned', 'transport'].includes(this.state); }
 
   // discharge-safe? simple cases immediately; serious dispos need monitored
@@ -281,6 +298,7 @@ export class PatientSim {
     this.ent.escortedBy = null;
     if (this.ent.draggedBy) { this.ent.draggedBy.dragging = null; this.ent.draggedBy = null; }
     this._sayRaw('💀', 'critical');
+    this.game.audio?.death();
     this.game.barks?.say('death', true);
     this.game.onDeath(this, cause);
   }
@@ -294,6 +312,7 @@ export class PatientSim {
     if (this.labState === 'drawn') this.labState = 'none'; // yanked the IV, ruined the draw
     this.ent.setFace('angry');
     this._sayRaw('*RIPS OUT IV* FREEDOM!!', 'angry');
+    this.game.audio?.bad();
     this.game.ui.toast(`${this.displayName} is agitated — tackle them!`, 'bad');
   }
 
@@ -308,6 +327,7 @@ export class PatientSim {
     this.sedatedUntil = this.game.clock.minutes + 150;
     this.ent.setFace('normal');
     this._sayRaw('…nini 💤');
+    this.game.audio?.good();
     this.game.ui.toast(`${this.displayName} sedated. Back to bed with them.`, 'good');
   }
 

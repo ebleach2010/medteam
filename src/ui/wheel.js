@@ -43,6 +43,7 @@ export class Wheel {
     this.el.style.top = y - 130 + 'px';
     this.el.style.display = 'block';
     this.hot = -1;
+    this.game.audio?.wheel?.();
   }
 
   track(px, py) {
@@ -57,6 +58,7 @@ export class Wheel {
   _setHot(i) {
     if (i === this.hot) return;
     this.sectors.forEach((s, j) => s.classList.toggle('hot', j === i));
+    if (i >= 0) this.game.audio?.click?.();   // detent as the thumb crosses a sector
     this.hot = i;
   }
 
@@ -66,7 +68,8 @@ export class Wheel {
     if (this.game.ui.modals.open) { this.close(); return; }
     const sel = this.hot >= 0 ? this.sectors[this.hot]?.dataset.id : null;
     this.close();
-    if (!sel) return;
+    if (!sel) { this.game.audio?.back?.(); return; }
+    this.game.audio?.tap?.();
     const g = this.game;
     const target = g.nearestPatient(g.active, 6);
     g.enqueue(make(INTENT.ORDER, g.active.id, { order: sel, patientId: target?.id ?? null }));

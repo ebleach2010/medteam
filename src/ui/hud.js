@@ -29,6 +29,7 @@ export class HUD {
     clearInterval(this._annT);
     clearTimeout(this._annHide);
     const el = this.announceEl;
+    this.game.audio?.radio?.();   // squelch break — this is the radio channel
     el.className = cls ? `show ${cls}` : 'show';
     el.textContent = '';
     let i = 0;
@@ -43,6 +44,7 @@ export class HUD {
   }
 
   toast(msg, cls = '', ms = 2600) {
+    if (cls === 'bad') this.game.audio?.deny?.();
     this.toastEl.textContent = msg;
     this.toastEl.className = cls ? `show ${cls}` : 'show';
     clearTimeout(this._toastT);

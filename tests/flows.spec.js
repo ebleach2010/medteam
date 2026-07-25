@@ -148,7 +148,7 @@ test('radiology pipeline: order CT, porter round-trip, clipboard on the desk', a
     const id = g.spawnCase('stroke_sah', -20, 8);
     await api.sleep(300);
     g.bedPatientTo(id, 5);                    // Room 6
-    g.orderImaging(id, 'CT');
+    g.orderImaging(id, 'CT head');   // region-specific: "CT" alone is rejected
     // porter wheels them through the ether door, scan runs, wheels them back
     await api.until(() => [...g.game.tasks.values()].some((t) => t.phase === 'scanning'), 40000);
     g.fastForwardImaging();
@@ -195,7 +195,7 @@ test('imaging: tech asks at the bedside, you pick CT, patient wheels through the
     const bed = g.game.map.beds[3];
     g.teleport('nurse', bed.x + 1.0, bed.z + 1.1);
     await api.until(() => g.state().modal === 'study', 8000);
-    g.inject({ type: 'SELECT', actorId: g.game.nurse.id, payload: { modal: 'study', choice: 'CT' } });
+    g.inject({ type: 'SELECT', actorId: g.game.nurse.id, payload: { modal: 'study', text: 'CT head' } });
     await api.until(() => g.taskPhases().includes('imaging:scanning'), 20000);
     g.fastForwardImaging();
     await api.until(() => api.patient(id)?.state === 'inbed' &&

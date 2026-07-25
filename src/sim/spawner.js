@@ -46,6 +46,7 @@ export class Spawner {
       else route.push({ x: g.map.insideWaypoint.x + g.rng.range(-1, 3), z: g.map.insideWaypoint.z + g.rng.range(1, 3) });
       p.sim.route = route;
       p.sim.walkTarget = p.sim.route.shift();
+      g.audio?.arrive?.();       // the automatic doors announce another one
       g.ui.toast(`🚑 New patient: ${p.sim.displayName}`);
     }
   }

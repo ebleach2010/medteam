@@ -49,3 +49,61 @@ test('procedural engine: multiple valid treatments, variability, day curve', asy
   expect(res.resisters).toBeLessThan(40);           // ...but isn't the norm
   expect(res.hasSeroquel).toBe(true);
 });
+
+// Imaging orders are written the way a real request is: modality AND region.
+test('imaging orders: modality alone is rejected, regions and contrast parse', async ({ page }) => {
+  await page.addInitScript(() => { try { localStorage.setItem('medteam.seenTutorial','1'); } catch {} });
+  await page.goto('/?seed=5&lite=1');
+  await page.waitForFunction(() => window.__game?.ready);
+
+  const res = await page.evaluate(async () => {
+    const { parseStudy, studyMatches } = await import('/src/data/studies.js');
+    return {
+      bare: parseStudy('x-ray').ok,
+      foot: parseStudy('x-ray foot').label,
+      big: parseStudy('MRI w/ w/o contrast of head neck and spine').label,
+      // the right film for a sprain; a chest film is not
+      rightFilm: studyMatches(parseStudy('x-ray ankle'), 'ankle'),
+      wrongRegion: studyMatches(parseStudy('x-ray chest'), 'ankle'),
+      // over-imaging costs time but still answers the question...
+      ctForFilm: studyMatches(parseStudy('CT ankle'), 'ankle'),
+      // ...but a plain film cannot replace a head CT
+      filmForCt: studyMatches(parseStudy('x-ray head'), 'ct_head_bleed'),
+    };
+  });
+
+  expect(res.bare).toBe(false);
+  expect(res.foot).toContain('ankle/foot');
+  expect(res.big).toContain('head + neck + spine');
+  expect(res.big).toContain('w/ & w/o contrast');
+  expect(res.rightFilm).toBe(true);
+  expect(res.wrongRegion).toBe(false);
+  expect(res.ctForFilm).toBe(true);
+  expect(res.filmForCt).toBe(false);
+});
+
+// Supportive care buys time exactly once — stabilising, not curing.
+test('partial treatment resets the deterioration clock only once', async ({ page }) => {
+  await page.addInitScript(() => { try { localStorage.setItem('medteam.seenTutorial','1'); } catch {} });
+  await page.goto('/?seed=5&lite=1');
+  await page.waitForFunction(() => window.__game?.ready);
+
+  // a bare-bones stand-in for a bedded patient — only the clock maths matters
+  const cls = await page.evaluate(async () => {
+    const { PatientSim } = await import('/src/sim/PatientSim.js');
+    const fake = Object.create(PatientSim.prototype);
+    Object.assign(fake, {
+      game: { clock: { minutes: 500 } }, tArrive: 0, accel: 1, clockOffset: 0,
+      treated: false, state: 'inbed', critical: false, ent: { setFace() {} },
+      case: { timeline: [{ t: 100, done: true }, { t: 300 }] },
+    });
+    const before = fake.elapsed;
+    const first = fake.stabiliseOnce();
+    const after = fake.elapsed;
+    const second = fake.stabiliseOnce();   // no second reprieve
+    return { before, after, first, second };
+  });
+  expect(cls.first).toBe(true);
+  expect(cls.second).toBe(false);
+  expect(cls.after).toBeLessThan(cls.before);
+});
