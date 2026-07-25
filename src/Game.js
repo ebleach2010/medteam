@@ -361,11 +361,40 @@ export class Game {
 
   // a patient LEAVING a bed must thread their room door before any zone
   // routing — otherwise self-navigation walks them into the room's front wall
+  // The single ward↔lobby door sits behind the 6 m staff desk (x∈[-18.9,-12.8]),
+  // so a straight room→door run jams patients against the desk's south face.
+  // These two helpers bow the path around the desk's EAST end (a clear lane at
+  // x=-12.3, just east of the desk and west of the Adam kiosk).
+  DESK_LANE_X = -12.3;
+
+  // room bed → out of the ward, into the lobby (used by discharge self-walkout)
+  _routeWardToLobby(bed) {
+    const door = this.map.roomDoor(bed.index);
+    const x = this.DESK_LANE_X;
+    return [
+      { x: door.x, z: -6.4 },   // out the room door into the corridor
+      { x, z: -4 },             // east along the corridor, north of the desk
+      { x, z: 2.2 },            // south through the door gap, east of the desk
+    ];
+  }
+
+  // lobby → into a room bed (used by the triage-nurse auto-room escort)
+  _routeLobbyToBed(bed) {
+    const door = this.map.roomDoor(bed.index);
+    const x = this.DESK_LANE_X;
+    return [
+      { x, z: 2.2 },            // to the clear east side of the door gap
+      { x, z: -4 },             // north past the desk's east end into the corridor
+      { x: door.x, z: -6.4 },   // along the corridor to the room door
+      { x: bed.x + 0.9, z: bed.z + 1.1 },
+    ];
+  }
+
   _routeLeaving(sim, to) {
     const from = sim.ent.body.translation();
     if (sim.bed) {
-      const door = this.map.roomDoor(sim.bed.index);
-      return [{ x: door.x, z: -6.4 }, ...this._routeTo({ x: door.x, z: -5.6 }, to)];
+      const lane = this._routeWardToLobby(sim.bed);
+      return [...lane, ...this._routeTo(lane[lane.length - 1], to)];
     }
     return this._routeTo(from, to);
   }
@@ -693,7 +722,68 @@ export class Game {
     this._done(ch);
   }
 
+  // TRIAGE NURSE (the tech NPC): when a bed is free and someone's waiting, walk
+  // the SICKEST waiter into the LOWEST-numbered free room — Room 1 for the most
+  // life-threatening, higher rooms for those who can wait. Runs off the idle
+  // tech, so it never steals a staffer who's mid-job.
+  _triageAutoRoom() {
+    const tech = this.tech;
+    if (!tech || this.tasks.has(tech)) return;
+    const freeBeds = this.map.beds.filter((b) => !b.occupant).sort((a, b) => a.roomNo - b.roomNo);
+    if (!freeBeds.length) return;
+    // settled waiters only — not someone the player is dragging, mid-arrival, or
+    // being reshuffled between chairs
+    const waiters = [...this.world.byTag('patients')].filter((p) => {
+      const s = p.sim;
+      return s.state === 'waiting' && !p.draggedBy && !s.resolved;
+    });
+    if (!waiters.length) return;
+    // sickest first (lowest ESI), then longest wait
+    const esi = (p) => p.sim.case.esi ?? 3;
+    waiters.sort((a, b) => (esi(a) - esi(b)) || (a.sim.tArrive - b.sim.tArrive));
+    const pt = waiters[0], bed = freeBeds[0];
+    bed.occupant = pt;  // RESERVE the room so nothing else claims it mid-walk
+    const wp = pt.body.translation();
+    if (!this.dispatch(tech, { type: 'escortIn', phase: 'toWaiter', patient: pt, bed,
+      route: this._routeTo(tech.pos, { x: wp.x, z: wp.z }) })) {
+      bed.occupant = null; // dispatch refused — release the hold
+    }
+  }
+
+  // the triage nurse: walk to the waiter, tow them to their reserved room, bed
+  // them, go home. Mirrors _task_escortOut (tow via ch.dragging).
+  _task_escortIn(ch, t, dt) {
+    const sim = t.patient?.sim;
+    const releaseBed = () => { if (t.bed && t.bed.occupant === t.patient) t.bed.occupant = null; };
+    // abort only if the patient died, resolved, or the PLAYER snatched them away
+    // (draggedBy === ch is OUR OWN tow handle during the toBed leg — not an abort)
+    const stolen = t.patient.draggedBy && t.patient.draggedBy !== ch;
+    if (!sim || sim.state === 'dead' || sim.resolved || stolen) {
+      if (ch.dragging === t.patient) { ch.dragging.draggedBy = null; ch.dragging = null; }
+      releaseBed(); this._done(ch); return;
+    }
+    if (t.phase === 'toWaiter') {
+      if (sim.state !== 'waiting') { releaseBed(); this._done(ch); return; } // player moved them
+      sim.onGrabbed();                 // frees the chair, sets dynamic, state→escorted
+      sim.state = 'transport';
+      ch.dragging = t.patient; t.patient.draggedBy = ch;
+      t.phase = 'toBed';
+      t.route = this._routeLobbyToBed(t.bed);   // bows around the staff desk
+      return;
+    }
+    if (t.phase === 'toBed') {
+      ch.dragging = null; t.patient.draggedBy = null;
+      if (t.bed.occupant && t.bed.occupant !== t.patient) { sim.state = 'waiting'; this._done(ch); return; }
+      this.bedPatient(t.patient, t.bed);   // sets occupant + inbed + score
+      t.phase = 'home';
+      t.route = this._routeTo(ch.pos, ch.home ?? this.map.staffSeats.tech);
+      return;
+    }
+    this._done(ch);
+  }
+
   _staffTick(dt) {
+    this._triageAutoRoom();
     // off-duty staff head back to their post and SIT until dispatched
     for (const ch of [this.aide, this.porter, this.tech, this.surgeon]) {
       if (this.tasks.has(ch)) { ch.atPost = false; continue; }

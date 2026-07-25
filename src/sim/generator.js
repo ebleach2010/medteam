@@ -55,7 +55,7 @@ const exampleFor = (cls) => medsInClass(cls)[0]?.id ?? null;
  */
 export function generateCase(rng, day = 1, opts = {}) {
   const bias = opts.esiWeights ? (p) => opts.esiWeights[p.esi - 1] ?? 1 : undefined;
-  const P = opts.id ? (presentationById(opts.id) ?? pickPresentation(rng, bias)) : pickPresentation(rng, bias);
+  const P = opts.id ? (presentationById(opts.id) ?? pickPresentation(rng, bias, opts.avoid)) : pickPresentation(rng, bias, opts.avoid);
   const E = BY_ESI[P.esi] ?? BY_ESI[3];
 
   // --- severity roll: the same complaint can be a nuisance or a disaster ---
@@ -138,7 +138,7 @@ export function generateCase(rng, day = 1, opts = {}) {
     fail: P.fail ?? 'shock',
     ambulatory: P.esi >= 3,
     complaint: [rng.pick(P.complaint)],
-    history: P.history,
+    history: Array.isArray(P.history) ? rng.pick(P.history) : P.history,
     bubbles: BUB,
     vitals,
     timeline,
