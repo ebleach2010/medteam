@@ -22,6 +22,7 @@ import { generateScan } from './render/xray.js';
 import { glowSprite } from './render/meshes.js';
 import { matchTreatment } from './sim/talk.js';
 import { consultReport } from './sim/llm.js';
+import { parseStudy, studyMatches } from './data/studies.js';
 import { Blood } from './sim/blood.js';
 import { Barks } from './sim/barks.js';
 
@@ -373,16 +374,17 @@ export class Game {
 
   // modality is optional: without one the porter still hauls the patient to
   // diagnostics, and the tech waits for YOU to show up and choose the study
-  orderImaging(patient, modality = null) {
+  orderImaging(patient, request = null) {
     const sim = patient.sim;
-    const M = modality ? Game.MODALITIES.find((m) => m.id === modality) : null;
-    if (modality && !M) { this.ui.toast('Unknown study'); return; }
+    // `request` is written English ("x-ray ankle"); parsed to modality+region
+    const M = request ? parseStudy(request) : null;
+    if (request && !M.ok) { this.ui.toast(`🧑‍⚕️ Tech: “${M.why}”`, 'bad'); return; }
     if (sim.state !== 'inbed') { this.ui.toast('They need to be in a room bed'); return; }
     if (sim.imagingOrder) { this.ui.toast('Imaging already in motion'); return; }
-    if (this.tasks.has(this.porter)) { this._queueJob(this.porter, { kind: 'imaging', patientId: patient.id, modality }, sim, 'imaging'); return; }
-    if (!this.dispatch(this.porter, { type: 'imaging', phase: 'toRoom', patient, modality: M,
+    if (this.tasks.has(this.porter)) { this._queueJob(this.porter, { kind: 'imaging', patientId: patient.id, request }, sim, 'imaging'); return; }
+    if (!this.dispatch(this.porter, { type: 'imaging', phase: 'toRoom', patient, study: M,
       bed: sim.bed, route: this._routeToRoomBed(this.porter.pos, sim.bed) })) return;
-    sim.imagingOrder = { modality: M?.id ?? 'TBD', phase: 'transport' };
+    sim.imagingOrder = { modality: M?.label ?? 'TBD', phase: 'transport' };
     this.ui.bubbles.say(this.porter, '🫡 ROGER!! Transport rolling!', { hold: 3 });
   }
 
@@ -422,6 +424,7 @@ export class Game {
     const route = [{ ...this.map.entrance }, { ...this.map.insideWaypoint },
       ...this._routeToRoomBed(this.map.insideWaypoint, sim.bed)];
     this.tasks.set(spec, { type: 'consult', phase: 'toPatient', patient, specialty: specialtyLabel, bed: sim.bed, route, wait: 0 });
+    this.audio.page();
     this.ui.announce(`📟 ${specialtyLabel} consult paged — the specialist is on their way in.`, 'good');
   }
 
@@ -532,6 +535,7 @@ export class Game {
   // 📟 pager: the parsed order becomes a real nurse task. Returns her reply.
   executePage(parsed, raw) {
     const nurse = this.nurse;
+    this.audio.radio();      // squelch break before she answers
     if (this.activeIdx === 0) return 'You ARE the nurse right now, doctor. Swap back and page me.';
     if (parsed.action === 'none') return parsed.reply ?? 'Say again?';
     const pts = [...this.world.byTag('patients')];
@@ -753,7 +757,7 @@ export class Game {
       const pt = [...this.world.byTag('patients')].find((p) => p.id === job.patientId);
       if (!pt || pt.sim.state === 'dead' || pt.sim.resolved) continue;
       const sim = pt.sim;
-      if (job.kind === 'imaging') { sim.imagingOrder = null; this.orderImaging(pt, job.modality); }
+      if (job.kind === 'imaging') { sim.imagingOrder = null; this.orderImaging(pt, job.request); }
       else if (job.kind === 'labs') { if (sim.labState === 'queued') sim.labState = 'none'; this.orderLabs(pt, job.panels); }
       else if (job.kind === 'surgery') { sim._surgQueued = false; this.orderSurgery(pt); }
       else if (job.kind === 'fetch') { this.orderMedFetch(pt, job.medId); }
@@ -868,29 +872,13 @@ export class Game {
       paper.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
       paper.body.setTranslation({ x: spot.x, y: desk.y + 0.05, z: spot.z }, true);
       this.ui.toast(`📋 Lab results on the desk — Room ${t.bed.roomNo}`, 'good');
-      this.audio.good();
+      this.audio.paper(); this.audio.good();
       t.phase = 'home';
       t.route = this._routeTo(ch.pos, this.map.nurseSpawn);
       return;
     }
     this._done(ch);
   }
-
-  // the diagnostics machine is a shapeshifter — one dock, every study a real
-  // doctor would order. The tech runs whichever one you pick at the machine.
-  static MODALITIES = [
-    { id: 'XRAY', label: 'X-ray', t: 12, match: ['cxr', 'ankle'] },
-    { id: 'US', label: 'Ultrasound', t: 16, match: ['ct_freefluid'] },
-    { id: 'ECHO', label: 'Echo + bubble study', t: 20, match: ['echo'] },
-    { id: 'EKG12', label: '12-lead EKG', t: 8, match: ['ekg'] },
-    { id: 'CT', label: 'CT', t: 22, match: ['ct'] },
-    { id: 'CTC', label: 'CT + contrast', t: 30, match: ['ct'] },
-    { id: 'MRI', label: 'MRI', t: 45, match: ['mri'] },
-    { id: 'MRIC', label: 'MRI + contrast', t: 70, match: ['mri'] },
-    { id: 'SCOPE', label: 'Endoscopy', t: 35, match: ['scope'] },
-    { id: 'BIOPSY', label: 'Biopsy', t: 40, match: ['biopsy'] },
-    { id: 'STRESS', label: 'Stress test', t: 50, match: ['stress'] },
-  ];
 
   // the surgery team's menu — pick right and it's curative, pick wrong and
   // you just operated on someone for fun
@@ -921,9 +909,9 @@ export class Game {
     if (t.phase === 'toRoom') {
       if (sim.state !== 'inbed') { sim.imagingOrder = null; this._done(ch); return; }
       t.bed = sim.bed;
-      if (!t.modality) {
+      if (!t.study) {
         t.phase = 'awaitChoice';
-        this.ui.bubbles.say(ch, '📷 What study are we running? Come tell me.', { hold: 5 });
+        this.ui.bubbles.say(ch, '📷 What are we imaging, and where? Come tell me.', { hold: 5 });
         return;
       }
       t.phase = 'wheel';
@@ -932,7 +920,7 @@ export class Game {
     if (t.phase === 'awaitChoice') {
       if (sim.state !== 'inbed') { sim.imagingOrder = null; this._done(ch); return; }
       if (!this._playerNear(ch.pos, 3.2)) { t.asked = false; return; }
-      if (t.modality) { t.phase = 'wheel'; return; }
+      if (t.study) { t.phase = 'wheel'; return; }
       if (!t.asked && !this.ui.modals.open) { t.asked = true; this.ui.modals.studyPick(t); }
       return;
     }
@@ -948,17 +936,19 @@ export class Game {
     }
     if (t.phase === 'toEther') {
       this._enterEther(ch, t.patient);
-      this.beginScan(t, t.modality);
+      this.beginScan(t, t.study);
       return;
     }
     if (t.phase === 'scanning') {
       t.wait -= dt;
       if (t.wait > 0) return;
       const img = sim.case.imaging;
-      const matches = img && t.modality.match.some((pre) => img.type.startsWith(pre));
+      // the study only shows the problem if it actually imaged the right part
+      const matches = img && studyMatches(t.study, img.type);
       t.report = matches
-        ? { text: `${t.modality.id} RESULT: ${img.options[img.correct]}`, img: generateScan(img.type, sim.scanSeed) }
-        : { text: `${t.modality.id} RESULT: no acute findings on this study.`, img: null };
+        ? { text: `${t.study.label.toUpperCase()}\n\nFINDING: ${img.options[img.correct]}`, img: generateScan(img.type, sim.scanSeed) }
+        : { text: `${t.study.label.toUpperCase()}\n\nFINDING: no acute abnormality demonstrated${
+            img ? ' in the area imaged.' : '.'}`, img: null };
       if (matches) sim.imagingDone = true;
       sim.imagingOrder = null;
       this._exitEther(ch, t.patient); // reappear at the door, patient in tow
@@ -979,7 +969,7 @@ export class Game {
       clip.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
       clip.body.setTranslation({ x: spot.x, y: desk.y + 0.05, z: spot.z }, true);
       this.ui.toast(`📋 Imaging report on the desk — Room ${t.bed.roomNo}`, 'good');
-      this.audio.good();
+      this.audio.paper(); this.audio.good();
       t.phase = 'home';
       t.route = this._routeTo(ch.pos, this.map.porterSpawn);
       return;
@@ -987,14 +977,14 @@ export class Game {
     this._done(ch);
   }
 
-  beginScan(t, M) {
+  beginScan(t, study) {
     const sim = t.patient.sim;
-    t.modality = M;
-    sim.imagingOrder = { modality: M.id, phase: 'scanning' };
+    t.study = study;
+    sim.imagingOrder = { modality: study.label, phase: 'scanning' };
     t.phase = 'scanning';
-    t.wait = M.t;
-    this.ui.toast(`📷 ${M.label} running on ${sim.displayName} (${M.t}s)...`);
-    this.audio.tap();
+    t.wait = study.t;
+    this.ui.toast(`📷 ${study.label} running on ${sim.displayName} (${study.t}s)...`);
+    this.audio.scanner?.();
   }
 
   beginSurgery(t, S) {
@@ -1173,7 +1163,24 @@ export class Game {
     for (const c of this.world.byTag('chars')) {
       if (c.tackleTimer <= 0) continue;
       const pt = this.nearestPatient(c, 1.15, (s) => s.state === 'agitated');
-      if (pt) { pt.sim.pin(); c.tackleTimer = 0; this.addScore(30, 'Takedown!'); }
+      if (pt) { pt.sim.pin(); c.tackleTimer = 0; this.addScore(30, 'Takedown!'); this.audio.tackle(); }
+    }
+    // monitors: a steady blip for anyone on the leads near you, and the alarm
+    // keeps nagging while someone is crashing. Rate-limited so a full
+    // department doesn't turn into a wall of beeps.
+    this._blipT = (this._blipT ?? 0) - dt;
+    if (this._blipT <= 0) {
+      let crit = false, near = false;
+      for (const p of this.world.byTag('patients')) {
+        if (!p.sim.hooked || p.sim.state === 'dead') continue;
+        const q = p.body.translation(), a = this.active.pos;
+        if (Math.hypot(q.x - a.x, q.z - a.z) > 9) continue;
+        near = true;
+        if (p.sim.critical) crit = true;
+      }
+      if (crit) { this.audio.alarm(); this._blipT = 4.5; }
+      else if (near) { this.audio.blip(); this._blipT = 2.6; }
+      else this._blipT = 1.5;
     }
     // ---- stations react to what you physically bring them (no verb menus) ----
     // bed: monitor leads hook themselves up a moment after a patient is bedded
@@ -1221,7 +1228,7 @@ export class Game {
         if (p.draggedBy) { p.draggedBy.dragging = null; p.draggedBy = null; }
         sim.incinerating = 1.3;
         this.map.fire.flare = 1.6;
-        this.audio.bad();
+        this.audio.fire();
       }
     }
 
@@ -1268,6 +1275,8 @@ export class Game {
           Math.abs(c.pos.x - this.map.etherDoor.x) < 2.4 && Math.abs(c.pos.z - this.map.etherDoor.z) < 1.6;
       });
       const want = (this._etherBusy ?? 0) > 0 || near ? 1 : 0;
+      if (want && !efx._wasOpen) this.audio.door();   // the pneumatic hiss, once per cycle
+      efx._wasOpen = want;
       efx.openT += (want - efx.openT) * Math.min(1, dt * 9);
       for (const leaf of efx.leaves) leaf.position.z = leaf.userData.base + leaf.userData.dir * efx.openT * (this.map.etherDoor.w / 2 - 0.1);
       efx.lamp.emissiveIntensity = 0.2 + want * (0.7 + Math.sin(now * 8) * 0.3);
@@ -1362,6 +1371,7 @@ export class Game {
           this.nurse._jobQueue = [];
           this.ui.toast('You took over from the nurse — her pager task is cancelled.');
         }
+        this.audio.back();
         this.ui.toast(`You are now the ${this.active.role.toUpperCase()}`);
         break;
       case INTENT.ORDER: this._handleOrder(char, i.payload); break;
@@ -1382,7 +1392,8 @@ export class Game {
         const sim = pt.sim;
         sim.resolved = true;
         this.dayStats.treated += 1;
-        this.addScore(Math.round(sim.case.score * (sim.dxPicked === 0 ? 1 : 0.55)), 'Discharged well');
+        const dxRight = sim.dxPicked === (sim.case.correctDx ?? 0);
+        this.addScore(Math.round(sim.case.score * (dxRight ? 1 : 0.55)), 'Discharged well');
         this.ui.toast(`🏠 ${sim.displayName} walking home!`, 'good');
         const leaveRoute = this._routeLeaving(sim, this.map.discharge); // door-first, BEFORE freeing the bed
         if (sim.bed) this.freeBed(sim);
@@ -1529,6 +1540,7 @@ export class Game {
     if (it.itemKind === 'paper') {
       const other = char === this.nurse ? this.doctor : this.nurse;
       const p = it.body.translation(), o = other.pos;
+      this.audio.paper();
       if (Math.hypot(p.x - o.x, p.z - o.z) < 1.6) this.ui.toast('Results handed over 🤝');
     }
   }
@@ -1556,7 +1568,7 @@ export class Game {
       this.dayStats.treated += 1;
       this.addScore(Math.round(sim.case.score * (dxRight ? 1 : 0.55)), 'Discharged well');
       this.ui.toast(`🏠 ${sim.displayName} is going HOME! ${dxRight ? '' : '(dx was wrong, but they lived)'}`, 'good');
-      this.audio.good();
+      this.audio.cash();
       this.setPatientDynamic(pt);
       sim.state = 'leaving';
       pt.setFace('normal');
@@ -1589,6 +1601,7 @@ export class Game {
     sim.state = 'inbed';
     sim.yaw = 0;
     pt.setFace(sim.critical ? 'crit' : 'normal');
+    this.audio.bed();
     this.ui.toast(`${sim.displayName} → Room ${bed.roomNo ?? bed.index + 1}`);
     this.addScore(15, 'Admitted to a room');
   }
@@ -1710,6 +1723,8 @@ export class Game {
   addScore(pts, reason) {
     this.score += pts;
     this.dayStats.score += pts;
+    // a chime for anything worth noticing; small housekeeping points stay quiet
+    if (pts >= 25) this.audio.score();
   }
 }
 

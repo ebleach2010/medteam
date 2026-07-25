@@ -18,6 +18,11 @@ export function giveMed(game, patient, medId) {
   const med = medById(medId);
   const name = sim.displayName;
 
+  // the sound of giving it: a syringe for anything parenteral, a rattle of
+  // tablets for anything swallowed
+  const parenteral = /\b(IV|IM|SC|SubQ|neb|inhal)/i.test(med?.dose ?? '');
+  if (parenteral) game.audio?.inject?.(); else game.audio?.pill?.();
+
   // sedatives are universal (and the answer to agitation)
   if (medId === 'sedative') {
     if (['agitated', 'pinned'].includes(sim.state)) { sim.sedate(); game.addScore(40, 'Chemical calm'); }
@@ -108,9 +113,16 @@ export function giveMed(game, patient, medId) {
     }
     if (isAdjunct) {
       sim.adjunctsGiven = (sim.adjunctsGiven ?? 0) + 1;
-      game.ui.toast(`${med.name} helps, but it isn't the fix.`, 'good');
-      game.addScore(8, 'Reasonable adjunct');
-      radioReport(game, sim, med, false, 'SOME RELIEF — STILL NEEDS DEFINITIVE TREATMENT', 'good');
+      // stabilising: buys time by winding the deterioration clock back — but
+      // only the first time. Supportive care holds a patient; it doesn't cure.
+      const bought = sim.stabiliseOnce();
+      game.ui.toast(bought
+        ? `${med.name} stabilises them — you've bought time, not a cure.`
+        : `${med.name} helps a little. They still need the real treatment.`, 'good');
+      game.addScore(bought ? 15 : 5, 'Supportive care');
+      radioReport(game, sim, med, false,
+        bought ? 'STABILISED FOR NOW — STILL NEEDS DEFINITIVE TREATMENT'
+          : 'NO FURTHER BENEFIT — NEEDS DEFINITIVE TREATMENT', 'good');
       return;
     }
     game.barks?.say('wrongMed');

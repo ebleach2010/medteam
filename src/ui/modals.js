@@ -5,6 +5,7 @@ import { PANELS, filterLabs } from '../data/labs.js';
 import { spawnCarryable } from '../entities/Carryable.js';
 import { ekgPath } from './monitor.js';
 import { settings, saveSettings, keyLabel, DEFAULT_KEYS } from '../core/settings.js';
+import { parseStudy } from '../data/studies.js';
 
 // fuzzy pick from a {id,label} menu by typed text: score by how much of the
 // text the label covers and vice versa ("ct with contrast" → CT + contrast)
@@ -47,6 +48,20 @@ export class Modals {
   }
 
   get open() { return !!this.current; }
+
+  // every modal body raises itself through here, so the whoosh (and the key
+  // clicks on whatever input it contains) get wired in exactly once
+  _open() {
+    if (this.veil.style.display !== 'flex') this.game.audio?.open?.();
+    this.veil.style.display = 'flex';
+    if (!this._typeWired) {
+      this._typeWired = true;
+      this.veil.addEventListener('keydown', (e) => {
+        if (e.key === 'Shift' || e.key === 'Meta' || e.key === 'Control' || e.key === 'Alt') return;
+        if (e.target?.tagName === 'INPUT' || e.target?.tagName === 'TEXTAREA') this.game.audio?.type?.();
+      });
+    }
+  }
 
   // results show ONLY the panels that were ordered — a test never sent never
   // the lab printout body (also reused by the folder-tabbed reports view)
@@ -108,7 +123,7 @@ export class Modals {
       this.box.querySelector('.close').addEventListener('click', () => this.close());
     };
     paint(false);
-    this.veil.style.display = 'flex';
+    this._open();
     // reviewing labs still counts as read (score + it stops the pester)
     if (sim.labState === 'ready') { sim.labState = 'read'; this.game.addScore(20, 'Labs reviewed'); }
   }
@@ -125,7 +140,7 @@ export class Modals {
     body += `<button class="opt" id="sendlabs" style="font-weight:800">🩸 SEND ORDER</button>
       <button class="close">Not yet</button>`;
     this.box.innerHTML = body;
-    this.veil.style.display = 'flex';
+    this._open();
     this.box.querySelectorAll('.ptoggle').forEach((b) =>
       b.addEventListener('click', () => {
         b.classList.toggle('on');
@@ -158,7 +173,7 @@ export class Modals {
       this.box.querySelector('.close').addEventListener('click', () => this.close());
     };
     render();
-    this.veil.style.display = 'flex';
+    this._open();
     clearInterval(this._vfT);
     this._vfT = setInterval(() => {
       if (this.current?.type === 'vitalsfull') render();
@@ -186,7 +201,7 @@ export class Modals {
          <i style="background:#${m.color.toString(16).padStart(6, '0')}"></i>${m.name}</button>`).join('');
     this.box.innerHTML = `<h3>💊 Med cabinet</h3><div class="tabs">${tabs}</div>${meds}
       <button class="close">Close</button>`;
-    this.veil.style.display = 'flex';
+    this._open();
     this.box.querySelectorAll('.tab').forEach((b) =>
       b.addEventListener('click', () => this.cabinet(b.dataset.tab)));
     this.box.querySelectorAll('.medbtn').forEach((b) =>
@@ -227,7 +242,7 @@ export class Modals {
         ? '<button class="opt" data-w="chart">🗂 Open chart folder (labs · imaging · consults)</button>' : ''}
       <button class="opt" data-w="dx">✅ Diagnose</button>
       <button class="close">Close</button>`;
-    this.veil.style.display = 'flex';
+    this._open();
     this.box.querySelectorAll('.opt').forEach((b) =>
       b.addEventListener('click', (ev) => {
         const w2 = b.dataset.w;
@@ -254,18 +269,30 @@ export class Modals {
   // confirm with the ✅ — typing NEVER closes or submits this by accident
   studyPick(task) {
     this.current = { type: 'study', patient: task.patient, options: [], task };
+    // you order a study OF something — modality alone isn't an order
+    const common = ['X-ray chest', 'X-ray ankle', 'CT head', 'CT abdomen w/ contrast',
+      'Ultrasound abdomen', '12-lead EKG', 'MRI head', 'CTA chest'];
     let body = `<h3>📷 Order a study — ${task.patient.sim.displayName}</h3>
-      <div class="txrow"><input id="studybar" placeholder="Type a study (e.g. CT with contrast)..." /><button class="opt go-mini" id="studygo">✅</button></div>
-      <p style="color:#8a7a55;font-size:11px;margin:2px 0 6px">...or tap one from the board:</p>`;
-    for (const m of this.game.constructor.MODALITIES) {
-      body += `<button class="opt" data-m="${m.id}">${m.label} <span style="float:right;color:#8a7a55">${m.t}s</span></button>`;
-    }
+      <p style="color:#8a7a55;font-size:11px;margin:2px 0 6px">Write it like a real request: modality <b>and</b> body part.
+        “x-ray foot”, “CT head w/o contrast”, “MRI w/ w/o contrast of head, neck and spine”.</p>
+      <div class="txrow"><input id="studybar" placeholder="e.g. x-ray left ankle" /><button class="opt go-mini" id="studygo">✅</button></div>
+      <div id="studyecho" style="font-size:11px;color:#6b7f5a;min-height:15px;margin:2px 0 6px"></div>
+      <p style="color:#8a7a55;font-size:11px;margin:2px 0 6px">...or tap a common one:</p>`;
+    for (const c of common) body += `<button class="opt" data-q="${c}">${c}</button>`;
     body += '<button class="close">Not yet</button>';
     this.box.innerHTML = body;
-    this.veil.style.display = 'flex';
-    this.box.querySelectorAll('.opt[data-m]').forEach((b) =>
+    this._open();
+    // live echo of how the order parses, so it's obvious what you're asking for
+    const bar = this.box.querySelector('#studybar');
+    const echo = this.box.querySelector('#studyecho');
+    bar?.addEventListener('input', () => {
+      const r = parseStudy(bar.value);
+      echo.textContent = bar.value.trim() ? (r.ok ? `→ ${r.label} (${r.t}s)` : `→ ${r.why}`) : '';
+      echo.style.color = r.ok ? '#4a7a3a' : '#a06a3a';
+    });
+    this.box.querySelectorAll('.opt[data-q]').forEach((b) =>
       b.addEventListener('click', () =>
-        this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'study', choice: b.dataset.m } })));
+        this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'study', text: b.dataset.q } })));
     this._wireTyped('#studybar', '#studygo', (text) =>
       this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'study', text } }));
     this.box.querySelector('.close').addEventListener('click', () => this.close());
@@ -282,7 +309,7 @@ export class Modals {
     }
     body += '<button class="close">Not yet</button>';
     this.box.innerHTML = body;
-    this.veil.style.display = 'flex';
+    this._open();
     this.box.querySelectorAll('.opt[data-s]').forEach((b) =>
       b.addEventListener('click', () =>
         this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'surgery', choice: b.dataset.s } })));
@@ -326,7 +353,7 @@ export class Modals {
       <button class="close">Close</button>`;
     this.box.classList.add('rise');
     setTimeout(() => this.box.classList.remove('rise'), 500);
-    this.veil.style.display = 'flex';
+    this._open();
     this.box.querySelector('.close').addEventListener('click', () => this.close());
   }
 
@@ -338,7 +365,7 @@ export class Modals {
       <div class="paper">${(sim.talkLog ?? ['"' + (sim.lastCurse ?? 'THIS PLACE IS A JOKE!') + '"']).slice(-3).join('\n')}</div>
       <div class="txrow"><input id="talkbar" placeholder="Say something calming..." /><button class="opt go-mini" data-t="1">💬</button></div>
       <button class="close">Walk away</button>`;
-    this.veil.style.display = 'flex';
+    this._open();
     this._wireTyped('#talkbar', '[data-t]', (text) =>
       this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'talk', text } }));
     this.box.querySelector('.close').addEventListener('click', () => this.close());
@@ -367,7 +394,7 @@ export class Modals {
     for (const i of order) body += `<button class="opt" data-i="${i}">${c.dxOptions[i]}</button>`;
     body += '<button class="close">Close</button>';
     this.box.innerHTML = body;
-    this.veil.style.display = 'flex';
+    this._open();
     this.box.querySelectorAll('.opt[data-i]').forEach((b) =>
       b.addEventListener('click', () =>
         this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'dx', choice: +b.dataset.i } })));
@@ -382,7 +409,7 @@ export class Modals {
     options.forEach((o, i) => { body += `<button class="opt" data-i="${i}">${o}</button>`; });
     if (closable) body += '<button class="close">Close</button>';
     this.box.innerHTML = body;
-    this.veil.style.display = 'flex';
+    this._open();
     this.box.querySelectorAll('.opt').forEach((b) =>
       b.addEventListener('click', () =>
         this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: type, choice: +b.dataset.i } })));
@@ -400,7 +427,7 @@ export class Modals {
         <div class="paper">${esc(sim.consultPending)} is already on the way to ${sim.bed ? 'Room ' + sim.bed.roomNo : 'this patient'}.
 They'll evaluate at the bedside and file a note in the chart.</div>
         <button class="close">OK</button>`;
-      this.veil.style.display = 'flex';
+      this._open();
       this.box.querySelector('.close').addEventListener('click', () => this.close());
       return;
     }
@@ -409,7 +436,7 @@ They'll evaluate at the bedside and file a note in the chart.</div>
     for (const s of g.constructor.SPECIALTIES) body += `<button class="opt" data-spec="${esc(s.label)}">🩺 ${s.label}</button>`;
     body += '<button class="close">Cancel</button>';
     this.box.innerHTML = body;
-    this.veil.style.display = 'flex';
+    this._open();
     this.box.querySelectorAll('[data-spec]').forEach((b) => b.addEventListener('click', () => {
       g.orderConsult(patient, b.dataset.spec);
       this.close();
@@ -433,7 +460,7 @@ They'll evaluate at the bedside and file a note in the chart.</div>
         l.who === 'you' ? `<b>YOU:</b> ${esc(l.text)}` : `<b>${esc(l.role.toUpperCase())}:</b> ${esc(l.text)}`).join('\n') || `Ask the ${roleDef.label.toLowerCase()} anything about this patient.`}</div>
       <div class="txrow"><input id="conbar" autocomplete="off" placeholder="Ask the ${roleDef.label.toLowerCase()}..." /><button class="opt go-mini" id="congo">💬</button></div>
       <button class="close">Done</button>`;
-    this.veil.style.display = 'flex';
+    this._open();
     this.box.querySelectorAll('.tab').forEach((b) =>
       b.addEventListener('click', () => this.consult(patient, b.dataset.role)));
     const logEl = this.box.querySelector('#clog');
@@ -470,7 +497,7 @@ They'll evaluate at the bedside and file a note in the chart.</div>
       <p style="color:#6e7f9e;font-size:11px;margin:4px 0 6px">e.g. "give amoxicillin to room 3" · "discharge room 2" · "check on room 5 and report back"</p>
       <div class="txrow"><input id="pagebar" autocomplete="off" placeholder="Page her anything..." /><button class="opt go-mini" id="pagego">📟</button></div>
       <button class="close">Close</button>`;
-    this.veil.style.display = 'flex';
+    this._open();
     const logEl = this.box.querySelector('#plog');
     const paint = () => {
       logEl.innerHTML = g.pagerLog.slice(-6).map((l) =>
@@ -525,7 +552,7 @@ They'll evaluate at the bedside and file a note in the chart.</div>
       this.box.querySelector('.close').addEventListener('click', () => this.close());
     };
     render();
-    this.veil.style.display = 'flex';
+    this._open();
     clearInterval(this._vfT);
     this._vfT = setInterval(() => {
       if (this.current?.type === 'triage') render();
@@ -550,7 +577,7 @@ Try: a plain question, "census", "lookup <diagnosis>", or "clear".`,
       <div class="crt-log" id="crtlog"></div>
       <div class="txrow"><span class="crt-ps">C:\\&gt;</span><input id="crtbar" autocomplete="off" spellcheck="false" placeholder="query..." /><button class="opt go-mini crt-go" id="crtgo">⏎</button></div>
       <button class="close">POWER OFF</button>`;
-    this.veil.style.display = 'flex';
+    this._open();
     const logEl = this.box.querySelector('#crtlog');
     const paint = () => {
       logEl.innerHTML = g.medDocLog.map((l) =>
@@ -582,6 +609,7 @@ Try: a plain question, "census", "lookup <diagnosis>", or "clear".`,
         i += 1;
         pending.text = reply.slice(0, i) + (i < reply.length ? ' ▮' : '');
         paint();
+        if (i % 3 === 0 && reply[i - 1] !== ' ') g.audio?.type?.(); // teletype chatter
         if (i >= reply.length) clearInterval(this._ttT);
       }, 45);
     });
@@ -611,7 +639,7 @@ Your key stays in this browser only.</div>
     if (on) body += '<button class="opt" id="keyoff">🗑 Disconnect (forget key)</button>';
     body += '<button class="close">Close</button>';
     this.box.innerHTML = body;
-    this.veil.style.display = 'flex';
+    this._open();
     this._wireTyped('#keybar', '#keygo', (key) => {
       setKey(key.trim());
       this.game.ui.toast(key.trim() ? '🔑 Claude connected' : 'Key cleared', 'good');
@@ -695,21 +723,28 @@ Your key stays in this browser only.</div>
       this.close();
       return;
     }
-    if (cur.type === 'study' || cur.type === 'surgery') {
-      const list = cur.type === 'study' ? g.constructor.MODALITIES : g.constructor.SURGERIES;
-      const picked = choice !== undefined
-        ? list.find((m) => m.id === choice)
-        : pickByText(list, text);
-      if (!picked) {
-        g.ui.toast(cur.type === 'study'
-          ? 'Tech: “never heard of that study.”' : 'Surgeon: “that is not an operation.”', 'bad');
-        return; // board stays up — fix the typo and hit ✅ again
+    if (cur.type === 'study') {
+      // parse the written request: modality + body region(s) + contrast
+      const study = parseStudy(text ?? '');
+      if (!study.ok) {
+        g.ui.toast(`🧑‍⚕️ Tech: “${study.why}”`, 'bad');
+        return; // board stays up — refine the order
       }
-      const t2 = cur.task;
-      // record the choice at the bedside; the task then wheels the patient
-      // through the ether door and runs it offstage
-      if (cur.type === 'study') { t2.modality = picked; g.ui.toast(`📷 ${picked.label} ordered — rolling to imaging`); }
-      else { g.beginSurgery(t2, picked); g.ui.toast(`🔪 ${picked.label} ordered — rolling to the OR`); }
+      cur.task.study = study;
+      g.ui.toast(`📷 ${study.label} ordered — rolling to imaging`);
+      this.close();
+      return;
+    }
+    if (cur.type === 'surgery') {
+      const picked = choice !== undefined
+        ? g.constructor.SURGERIES.find((m) => m.id === choice)
+        : pickByText(g.constructor.SURGERIES, text);
+      if (!picked) {
+        g.ui.toast('Surgeon: “that is not an operation.”', 'bad');
+        return;
+      }
+      g.beginSurgery(cur.task, picked);
+      g.ui.toast(`🔪 ${picked.label} ordered — rolling to the OR`);
       this.close();
       return;
     }
@@ -750,7 +785,7 @@ Your key stays in this browser only.</div>
       if (text !== undefined && choice === undefined) {
         g.ui.toast('🤔 Considering that diagnosis...');
         judgeDx(sim, text).then(({ ok }) => {
-          sim.dxPicked = ok ? 0 : -1;
+          sim.dxPicked = ok ? (sim.case.correctDx ?? 0) : -1;
           if (ok) {
             g.ui.toast(`✓ Dx accepted: “${text}”`, 'good');
             g.addScore(100, 'Typed diagnosis');
@@ -801,7 +836,7 @@ Your key stays in this browser only.</div>
         <div class="hstep"><span>💡</span><div>Glowing floor rings mark the machines &amp; terminals. The green ⬤ terminal is <b>MED-DOC</b> — ask Claude for help. Tap 📟 to send your nurse on errands.</div></div>
       </div>
       <button class="close">${fromPause ? '◀ Back' : "LET'S GO"}</button>`;
-    this.veil.style.display = 'flex';
+    this._open();
     this.box.querySelector('.close').addEventListener('click', () => {
       try { localStorage.setItem('medteam.seenTutorial', '1'); } catch { /* private mode */ }
       if (fromPause) this.pauseMenu(); else this.close();
@@ -820,7 +855,7 @@ Your key stays in this browser only.</div>
       <button class="opt" id="p-howto">📖 HOW TO PLAY</button>
       <button class="opt" id="p-restart">🔁 RESTART DAY ${g.clock.day}</button>
       <button class="opt" id="p-settings">⚙️ SETTINGS</button>`;
-    this.veil.style.display = 'flex';
+    this._open();
     this.box.querySelector('#p-resume').addEventListener('click', () => this.close());
     this.box.querySelector('#p-howto').addEventListener('click', () => this.howToPlay(true));
     this.box.querySelector('#p-restart').addEventListener('click', () => this.game.restartDay());
@@ -850,7 +885,7 @@ Your key stays in this browser only.</div>
       ${keyRow('pager', '📟 Page the nurse')}
       <button class="opt" id="s-defaults">RESET TO DEFAULTS</button>
       <button class="close">◀ Back</button>`;
-    this.veil.style.display = 'flex';
+    this._open();
     this.box.querySelector('#s-vol').addEventListener('input', (e) => {
       settings.vol = (+e.target.value) / 100;
       saveSettings();
@@ -906,6 +941,7 @@ Your key stays in this browser only.</div>
   }
 
   close() {
+    if (this.current) this.game.audio?.close?.();
     clearInterval(this._vfT);
     clearInterval(this._ttT);
     this._cancelRebind();

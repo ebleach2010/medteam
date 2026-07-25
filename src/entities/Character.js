@@ -139,6 +139,10 @@ export class Character {
     // gait driven by actual velocity
     const v = this.body.linvel();
     const speed01 = Math.min(1, Math.hypot(v.x, v.z) / SPRINT);
+    // only YOUR feet make noise — six sets of staff shoes is just static
+    if (this === this.game.active && !seated && this.sprawlTimer <= 0) {
+      this.game.audio.footstep(speed01, now);
+    }
     animateRig(this.mesh, dt, now, speed01, {
       reach: !!(this.carrying || this.dragging),
       sitting: seated,
@@ -161,6 +165,7 @@ export class Character {
     }
     if (best) {
       this.carrying = best; best.heldBy = this;
+      if (this === game.active) game.audio.grab();
       game.ui.toast(`Grabbed: ${best.label}`);
       return;
     }
@@ -178,11 +183,13 @@ export class Character {
     if (bp) {
       bp.sim.onGrabbed();
       this.dragging = bp; bp.draggedBy = this;
+      if (this === game.active) game.audio.grab();
       game.ui.toast(`Dragging ${bp.sim.displayName}`);
     }
   }
 
   release() {
+    if ((this.carrying || this.dragging) && this === this.game.active) this.game.audio.drop();
     if (this.carrying) {
       const it = this.carrying;
       it.heldBy = null; this.carrying = null;
@@ -199,6 +206,7 @@ export class Character {
   // wipe out on a wet floor: legs go, you skid, you land on your face
   slip() {
     this.sprawlTimer = 1.5;
+    this.game.audio.slip();
     const v = this.body.linvel();
     this.body.applyImpulse({ x: v.x * 26 + 40, y: 95, z: v.z * 26 }, true);
     this.body.applyTorqueImpulse({ x: 70, y: 22, z: 45 }, true);
@@ -210,6 +218,7 @@ export class Character {
     this.tackleTimer = 0.55;
     this.sprawlTimer = 1.1; // commit to the dive — recover upright after
     this.body.applyImpulse({ x: Math.sin(this.yaw) * 340, y: 60, z: Math.cos(this.yaw) * 340 }, true);
+    this.game.audio.tackle();
     this.game.ui.toast('LEEEROY!');
   }
 }
