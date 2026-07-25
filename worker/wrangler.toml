@@ -1,0 +1,21 @@
+name = "adam-proxy"
+main = "adam-proxy.js"
+compatibility_date = "2024-11-01"
+
+# --- Rate limiting (recommended) ---
+# Cloudflare's native rate-limit binding. If present, the worker uses it; if
+# your account/plan doesn't expose it, delete this block and instead create a KV
+# namespace and bind it as ADAM_KV (see README) — the worker falls back to that.
+# [[unsafe.bindings]]
+# name = "ADAM_RL"
+# type = "ratelimit"
+# namespace_id = "1001"
+# simple = { limit = 40, period = 60 }
+
+# --- KV fallback for rate limiting (uncomment + set id from `wrangler kv namespace create ADAM_KV`) ---
+# [[kv_namespaces]]
+# binding = "ADAM_KV"
+# id = "REPLACE_WITH_KV_ID"
+
+# The OPENAI_API_KEY is NOT set here — it is a SECRET, set with:
+#   wrangler secret put OPENAI_API_KEY

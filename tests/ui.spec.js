@@ -204,3 +204,47 @@ test('Adam computer: sit pauses, chat logs + persists, PIN unlocks admin + CSV',
   const persisted = await page.evaluate(() => JSON.parse(localStorage.getItem('medteam.adam.log') || '[]').length);
   expect(persisted).toBeGreaterThanOrEqual(2);
 });
+
+test('Adam computer: proxy path is keyless and sends no key to the client', async ({ page }) => {
+  test.setTimeout(30000);
+  let proxyHits = 0, sawAuthHeader = false;
+  await page.addInitScript(() => {
+    try { localStorage.setItem('medteam.seenTutorial', '1'); } catch { /* private */ }
+    // configure a proxy URL at runtime (no local OpenAI key set at all)
+    globalThis.__ADAM_PROXY_URL = 'https://adam-proxy.test/relay';
+    const _f = window.fetch;
+    window.fetch = (u, o) => {
+      if (String(u).includes('adam-proxy.test')) {
+        window.__proxyAuth = !!(o && o.headers && (o.headers.Authorization || o.headers.authorization));
+        window.__proxyCount = (window.__proxyCount || 0) + 1;
+        return Promise.resolve(new Response(JSON.stringify({ reply: 'Noted, Adam.' }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+      }
+      return _f(u, o);
+    };
+  });
+  await page.goto('/?seed=3&lite=1');
+  await page.waitForFunction(() => window.__game?.ready, null, { timeout: 20000 });
+  await page.locator('#screen .go').click();
+  await page.waitForTimeout(300);
+
+  // sit at Adam — with a proxy configured and NO key stored, it must go
+  // straight to chat (no key prompt)
+  await page.evaluate(async () => {
+    const g = window.__game.game;
+    const s = g.map.termSeats.find((t) => t.kind === 'adam');
+    g.active.body.setTranslation({ x: s.x, y: g.active.pos.y, z: s.z + 0.9 }, true);
+    await new Promise((r) => setTimeout(r, 250));
+    g.actionContext(g.active)?.run();
+  });
+  await page.waitForSelector('#adambar', { timeout: 4000 });
+  expect(await page.locator('#adamkey').count()).toBe(0);          // no key prompt
+  expect(await page.evaluate(() => localStorage.getItem('medteam.openai_key'))).toBeNull();
+
+  // a turn hits the PROXY, not OpenAI, and carries no Authorization header
+  await page.locator('#adambar').fill('hello');
+  await page.locator('#adambar').press('Enter');
+  await page.waitForFunction(() => (window.__proxyCount || 0) >= 1, null, { timeout: 6000 });
+  expect(await page.evaluate(() => window.__proxyAuth)).toBe(false);  // client sent no key
+  const log = await page.evaluate(() => JSON.parse(localStorage.getItem('medteam.adam.log') || '[]'));
+  expect(log.map((l) => l.role)).toEqual(['you', 'adam']);
+});
