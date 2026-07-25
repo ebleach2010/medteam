@@ -248,3 +248,21 @@ test('Adam computer: proxy path is keyless and sends no key to the client', asyn
   const log = await page.evaluate(() => JSON.parse(localStorage.getItem('medteam.adam.log') || '[]'));
   expect(log.map((l) => l.role)).toEqual(['you', 'adam']);
 });
+
+test('Adam computer: an OpenAI error surfaces the real reason (not a mystery)', async ({ page }) => {
+  await page.addInitScript(() => {
+    try { localStorage.setItem('medteam.seenTutorial', '1'); localStorage.setItem('medteam.openai_key', 'sk-nocredit'); } catch { /* private */ }
+    const _f = window.fetch;
+    window.fetch = (u, o) => String(u).includes('api.openai.com')
+      ? Promise.resolve(new Response(JSON.stringify({ error: { code: 'insufficient_quota', message: 'You exceeded your current quota' } }), { status: 429, headers: { 'Content-Type': 'application/json' } }))
+      : _f(u, o);
+  });
+  await page.goto('/?seed=3&lite=1');
+  await page.waitForFunction(() => window.__game?.ready, null, { timeout: 20000 });
+  const reply = await page.evaluate(async () => {
+    const llm = await import('/src/sim/llm.js');
+    return llm.askAdam([], 'hello');
+  });
+  expect(reply.toLowerCase()).toContain('credit');   // tells the player it's a billing problem
+  expect(reply).not.toContain('crackles');            // no more mystery message
+});
