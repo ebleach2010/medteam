@@ -116,3 +116,31 @@ test('treating a patient well drops a coin in the counter', async ({ page }) => 
   await page.waitForFunction(() => document.querySelector('.coinfly')?.style.display === 'block');
   expect(await page.locator('#hud .coins .n').textContent()).toBe(String(before + 1));
 });
+
+test('quota met shows End-shift button; it ends the day', async ({ page }) => {
+  await boot(page);
+  await page.locator('#screen .go').click();
+  await page.waitForTimeout(300);
+  // not met yet → hidden
+  expect(await page.locator('#endshift').isVisible()).toBe(false);
+  await page.evaluate(() => { window.__game.game.dayStats.treated = window.__game.game.quota; });
+  await page.waitForFunction(() => document.querySelector('#endshift')?.offsetParent !== null, null, { timeout: 4000 });
+  await page.locator('#endshift').click();
+  await page.waitForFunction(() => window.__game.game.mode === 'summary', null, { timeout: 4000 });
+});
+
+test('empty ED gets topped up mid-shift instead of going dead', async ({ page }) => {
+  await boot(page);
+  await page.locator('#screen .go').click();
+  await page.waitForTimeout(300);
+  const refilled = await page.evaluate(async () => {
+    const g = window.__game.game;
+    for (const pt of [...g.world.byTag('patients')]) g.removePatient(pt);
+    g.clock.minutes = 700;                              // a historically dead stretch
+    g.spawner.schedule.forEach((s) => { if (s.at < 700) s.done = true; });
+    let peak = 0;
+    for (let i = 0; i < 400; i++) { g.clock.minutes += 0.5; g.spawner.tick(); peak = Math.max(peak, g.spawner.activeCount()); }
+    return peak;
+  });
+  expect(refilled).toBeGreaterThan(0);   // the department refilled itself
+});

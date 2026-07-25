@@ -32,23 +32,61 @@ export class Spawner {
     const g = this.game;
     for (const s of this.schedule) {
       if (s.done || g.clock.minutes < s.at) continue;
-      s.done = true;
-      const p = spawnPatient(g, s.caseData, g.map.spawnOutside.x, g.map.spawnOutside.z);
-      // route THROUGH the entrance first (straight-lining clips wall corners),
-      // then to a free waiting chair
-      // TRIAGE: the nurse eyeballs them at the desk and seats the waiting room
-      // by acuity — ESI 1 nearest the doors, the nonurgent down the far end.
-      const seat = triageSeat(g, p);
-      const route = [{ ...g.map.entrance }, { ...g.map.insideWaypoint }];
-      // approach the chair from the NORTH (the side patients enter from) —
-      // the south side is blocked by the reception desk, which stranded them
-      if (seat) { seat.taken = p; p.sim.seat = seat; route.push({ x: seat.x, z: seat.z + 0.7 }); }
-      else route.push({ x: g.map.insideWaypoint.x + g.rng.range(-1, 3), z: g.map.insideWaypoint.z + g.rng.range(1, 3) });
-      p.sim.route = route;
-      p.sim.walkTarget = p.sim.route.shift();
-      g.audio?.arrive?.();       // the automatic doors announce another one
-      g.ui.toast(`🚑 New patient: ${p.sim.displayName}`);
+      this._release(s);
     }
+    this._topUp();
+  }
+
+  _release(s) {
+    const g = this.game;
+    s.done = true;
+    const p = spawnPatient(g, s.caseData, g.map.spawnOutside.x, g.map.spawnOutside.z);
+    // route THROUGH the entrance first (straight-lining clips wall corners),
+    // then to a free waiting chair
+    // TRIAGE: the nurse eyeballs them at the desk and seats the waiting room
+    // by acuity — ESI 1 nearest the doors, the nonurgent down the far end.
+    const seat = triageSeat(g, p);
+    const route = [{ ...g.map.entrance }, { ...g.map.insideWaypoint }];
+    // approach the chair from the NORTH (the side patients enter from) —
+    // the south side is blocked by the reception desk, which stranded them
+    if (seat) { seat.taken = p; p.sim.seat = seat; route.push({ x: seat.x, z: seat.z + 0.7 }); }
+    else route.push({ x: g.map.insideWaypoint.x + g.rng.range(-1, 3), z: g.map.insideWaypoint.z + g.rng.range(1, 3) });
+    p.sim.route = route;
+    p.sim.walkTarget = p.sim.route.shift();
+    g.audio?.arrive?.();       // the automatic doors announce another one
+    g.ui.toast(`🚑 New patient: ${p.sim.displayName}`);
+  }
+
+  // how many patients are physically in the department needing (or getting) care
+  activeCount() {
+    let n = 0;
+    for (const p of this.game.world.byTag('patients')) {
+      const s = p.sim;
+      if (s.resolved || ['dead', 'leaving', 'walkout'].includes(s.state)) continue;
+      n++;
+    }
+    return n;
+  }
+
+  // Keep the ED alive. If you clear the board fast, don't sit in an empty
+  // department for hours — as soon as nobody's here and nothing's due shortly,
+  // pull the next patient in. When the planned load is spent but there's still
+  // shift left, invent fresh ones so a steady flow keeps coming.
+  _topUp() {
+    const g = this.game;
+    if (g.mode !== 'playing') return;
+    const now = g.clock.minutes;
+    if (now > 24 * 60 - 75) return;             // last ~1h: let the shift wind down
+    if (this.activeCount() > 0) return;         // only refill an EMPTY department
+    if (this.schedule.some((s) => !s.done && s.at <= now + 45)) return; // one's already due soon
+    if (now - (this._lastFlowAt ?? -999) < 20) return; // a short beat, not a teleport
+    this._lastFlowAt = now;
+    const next = this.schedule.find((s) => !s.done);
+    if (next) { next.at = now; return; }        // bring the next planned arrival in now
+    // planned load spent — generate a fresh walk-in so the ED never goes dead
+    const cfg = dayConfig(g.clock.day);
+    this.schedule.push({ at: now, done: false,
+      caseData: generateCase(g.rng, g.clock.day, { esiWeights: cfg.esiWeights }) });
   }
 }
 

@@ -25,6 +25,19 @@ export class HUD {
     this.announceEl = document.createElement('div');
     this.announceEl.id = 'announce';
     root.appendChild(this.announceEl);
+    // "End shift" — appears once quota is met so you can skip a dead-quiet
+    // afternoon instead of waiting out the clock
+    this.endShift = document.createElement('button');
+    this.endShift.id = 'endshift';
+    this.endShift.textContent = '✅ Quota met — End shift ▶';
+    this.endShift.style.display = 'none';
+    this.endShift.addEventListener('click', () => {
+      if (this.game.mode === 'playing' && this.game.dayStats.treated >= this.game.quota) {
+        this.game.audio?.cash?.();
+        this.game.endDay();
+      }
+    });
+    root.appendChild(this.endShift);
   }
 
   // center-screen mission text: typed letter by letter, gone 7s after the
@@ -73,7 +86,9 @@ export class HUD {
     this.role.textContent = g.active.role === 'nurse' ? '🩺 NURSE' : '🥼 DOCTOR';
     const tr = Math.round(g.dayStats.treated * 100) / 100;
     this.quota.textContent = `✅ ${tr}/${g.quota}`;
-    this.quota.style.color = tr >= g.quota ? '#7dffb0' : '#ffb03c';
+    const met = tr >= g.quota;
+    this.quota.style.color = met ? '#7dffb0' : '#ffb03c';
+    this.endShift.style.display = (met && g.mode === 'playing') ? 'block' : 'none';
     const edBeds = g.map.beds;
     const used = edBeds.filter((b) => b.occupant).length;
     const waiting = [...g.world.byTag('patients')]
