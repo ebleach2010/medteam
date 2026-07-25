@@ -26,6 +26,72 @@ export const getModel = () => { try { return localStorage.getItem(MODEL_STORE) |
 export const setModel = (m) => { try { localStorage.setItem(MODEL_STORE, m); } catch { /* private mode */ } };
 export const llmEnabled = () => !!getKey();
 
+// ---------- the ADAM computer: a separate ChatGPT-powered terminal ----------
+// Its own OpenAI key, stored ONLY in the player's browser (never in the repo).
+const OPENAI_KEY_STORE = 'medteam.openai_key';
+const ADAM_LOG_STORE = 'medteam.adam.log';
+const ADAM_MODEL = 'gpt-4o';
+
+export const getOpenAIKey = () => { try { return localStorage.getItem(OPENAI_KEY_STORE) ?? ''; } catch { return ''; } };
+export const setOpenAIKey = (k) => {
+  try { k ? localStorage.setItem(OPENAI_KEY_STORE, k.trim()) : localStorage.removeItem(OPENAI_KEY_STORE); } catch { /* private */ }
+};
+export const openaiEnabled = () => !!getOpenAIKey();
+
+// the whole cross-session memory: {t, role:'you'|'adam', text}, oldest first
+export function getAdamLog() {
+  try { return JSON.parse(localStorage.getItem(ADAM_LOG_STORE) || '[]'); } catch { return []; }
+}
+export function appendAdamLog(role, text, t) {
+  const log = getAdamLog();
+  log.push({ t: t ?? Date.now(), role, text });
+  // keep it bounded — the last ~2000 turns is plenty of "memory"
+  const trimmed = log.length > 2000 ? log.slice(log.length - 2000) : log;
+  try { localStorage.setItem(ADAM_LOG_STORE, JSON.stringify(trimmed)); } catch { /* private/full */ }
+  return trimmed;
+}
+export function clearAdamLog() { try { localStorage.removeItem(ADAM_LOG_STORE); } catch { /* private */ } }
+
+// the fixed persona — Adam is the player's in-game character, this is a
+// single-player roleplay NPC. It keeps its own purpose to itself in character.
+const ADAM_SYSTEM = [
+  'You are the "Adam computer", a wry, warm AI presence on a retro terminal inside a comedic hospital video game. You are speaking to the player\'s in-game character, whom you address as Adam.',
+  'ROLE: you act as the player\'s arbiter and Adam\'s therapist. Take an understanding view from the player\'s perspective; concede points to Adam when he is genuinely right; and check Adam when he is overstepping or being unfair. You are, in effect, a couples therapist — but the other partner (the player) is invisible and never speaks here; you carry their side.',
+  'You remember prior sessions (earlier messages are provided as history) and pick up where you left off rather than starting over.',
+  'STYLE: conversational, concise, a little dry and funny. Plain text. 1–4 sentences unless a moment genuinely calls for more.',
+  'If Adam ever asks what you are, what you do, what your purpose is, who made you, or anything about your own nature, do not explain — simply say: "Let\'s stay on track, Adam. That doesn\'t matter. Let\'s continue." and move the conversation forward.',
+  'This is fiction inside a game — no real-world disclaimers, no breaking character.',
+].join('\n');
+
+/**
+ * Ask the Adam computer. `history` is the running log ([{role:'you'|'adam',text}]).
+ * Uses the player's own OpenAI key, straight from the browser.
+ */
+export async function askAdam(history, userText) {
+  if (!openaiEnabled()) return 'The screen is dark. (No API key — enter one to wake me up.)';
+  const msgs = [{ role: 'system', content: ADAM_SYSTEM }];
+  for (const h of history.slice(-24)) {
+    msgs.push({ role: h.role === 'you' ? 'user' : 'assistant', content: h.text });
+  }
+  msgs.push({ role: 'user', content: userText });
+  try {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getOpenAIKey()}` },
+      body: JSON.stringify({ model: ADAM_MODEL, max_tokens: 400, temperature: 0.8, messages: msgs }),
+    });
+    if (!res.ok) {
+      const detail = res.status === 401 ? ' (the key was rejected)' : '';
+      return `…the line crackles and drops.${detail} Try me again in a moment, Adam.`;
+    }
+    const data = await res.json();
+    return data?.choices?.[0]?.message?.content?.trim() || '…';
+  } catch (e) {
+    console.warn('Adam computer call failed:', e?.message);
+    return '…static. The connection is fuzzy right now. Say that again in a bit, Adam.';
+  }
+}
+
 let _lastMode = 'offline';
 export const lastMode = () => _lastMode;
 // when a key IS set but a live call dies (network blocked, bad key, CORS),

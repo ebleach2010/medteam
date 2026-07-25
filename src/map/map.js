@@ -792,17 +792,57 @@ export function buildMap(scene, physics) {
   crt2.scale.setScalar(2.1); // matching giant twin
   statics.add(crt2);
   const triagePC = { x: -18.6, z: -0.2, yaw: Math.PI, kind: 'triage' };
+
+  // 👀 THE ADAM COMPUTER — a standout googly-eyed kiosk, deliberately louder
+  // and more saturated than anything else, on its own stand east of the desk.
+  const adamFaceTex = (() => {
+    const c = document.createElement('canvas'); c.width = c.height = 128;
+    const x = c.getContext('2d');
+    x.fillStyle = '#04381e'; x.fillRect(0, 0, 128, 128);          // deep green screen
+    // two white googly eyes with dark pupils
+    for (const ex of [46, 82]) {
+      x.fillStyle = '#ffffff'; x.beginPath(); x.arc(ex, 52, 17, 0, 7); x.fill();
+      x.fillStyle = '#0a1a10'; x.beginPath(); x.arc(ex + 4, 56, 6, 0, 7); x.fill();
+    }
+    // bright green grin
+    x.strokeStyle = '#25ff6a'; x.lineWidth = 7; x.lineCap = 'round';
+    x.beginPath(); x.arc(64, 78, 26, 0.15 * Math.PI, 0.85 * Math.PI); x.stroke();
+    const t = new THREE.CanvasTexture(c); t.magFilter = THREE.NearestFilter; return t;
+  })();
+  const adam = new THREE.Group();
+  const adamCase = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.5, 0.5), mat(0xf3ead0)); // bright cream body
+  adamCase.position.y = 0.25; adamCase.castShadow = true;
+  const adamScreen = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.32),
+    new THREE.MeshBasicMaterial({ map: adamFaceTex, toneMapped: false })); // full-bright face
+  adamScreen.position.set(0, 0.27, 0.253);
+  const adamKeys = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.05, 0.2), mat(0xe6dcc0));
+  adamKeys.position.set(0, 0.03, 0.42);
+  const adamStand = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 0.86, 12), mat(0x2a6f45));
+  adamStand.position.y = -0.43;
+  const adamLed = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 6), emat(0x25ff6a, 1.8).clone());
+  adamLed.position.set(-0.24, 0.07, 0.26);
+  adam.add(adamCase, adamScreen, adamKeys, adamStand, adamLed);
+  adam.position.set(-11.0, 1.3, -1.2);
+  adam.rotation.y = 0;         // face toward the camera / the chair
+  adam.scale.setScalar(2.0);
+  statics.add(adam);
+  // a saturated green glow so it pops out of the beige station
+  const adamGlow = glowSprite ? glowSprite(0x25ff6a, 3.4, 0.5) : null;
+  if (adamGlow) { adamGlow.position.set(-11.0, 1.4, -1.0); statics.add(adamGlow); }
+  const adamPC = { x: -11.0, z: 0.0, yaw: Math.PI, kind: 'adam' };
+
   // a free chair at each terminal, matching the staff row
-  for (const s of [medDoc, triagePC]) {
+  for (const s of [medDoc, triagePC, adamPC]) {
     const c = makeOfficeChair(Math.PI);
     c.position.set(s.x, 0, s.z + 0.16);
     statics.add(c);
     shadowBlob(s.x, s.z + 0.1, 0.85, 0.85, 0.24);
   }
-  const termSeats = [medDoc, triagePC];
+  const termSeats = [medDoc, triagePC, adamPC];
   const stationLights = [
     { mesh: crtLed, mat: crtLed.material, phase: 0 },
     { mesh: crt2Led, mat: crt2Led.material, phase: 1.6 },
+    { mesh: adamLed, mat: adamLed.material, phase: 0.8 },
   ];
 
   // when dispatched they round the desk via a fixed lane, then sprint
@@ -885,6 +925,7 @@ export function buildMap(scene, physics) {
   floorRing(etherDoor.x - 0.9, etherDoor.z, 0x8aa0c0, 1.1); // the staff ether door
   floorRing(medDoc.x, medDoc.z + 0.1, 0x39ff6e, 0.85);   // the green terminal's chair
   floorRing(triagePC.x, triagePC.z + 0.1, 0x4aa8ff, 0.85); // …and the blue one's
+  floorRing(adamPC.x, adamPC.z + 0.1, 0x25ff6a, 0.9);    // …and the googly Adam kiosk
 
   const dropRing = new THREE.Mesh(new THREE.RingGeometry(1.0, 1.3, 36),
     new THREE.MeshBasicMaterial({ color: 0x4dd07a, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }));
