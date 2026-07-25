@@ -299,23 +299,62 @@ export class Modals {
     this.box.querySelector('.close').addEventListener('click', () => this.close());
   }
 
-  // the surgeon's board — same deal, sharper consequences
+  // the surgeon's board — a big categorised menu you tap, plus a live filter.
+  // No more guessing the exact phrase: pick "Kidney stone removal" from Urology
+  // instead of typing it and hoping.
   surgeryPick(task) {
+    const G = this.game.constructor;
     this.current = { type: 'surgery', patient: task.patient, options: [], task };
-    let body = `<h3>🔪 Choose the operation — ${task.patient.sim.displayName}</h3>
-      <div class="txrow"><input id="surgbar" placeholder="Type an operation..." /><button class="opt go-mini" id="surggo">✅</button></div>
-      <p style="color:#8a7a55;font-size:11px;margin:2px 0 6px">...or tap one from the board:</p>`;
-    for (const s of this.game.constructor.SURGERIES) {
-      body += `<button class="opt" data-s="${s.id}">${s.label} <span style="float:right;color:#8a7a55">${s.t}s</span></button>`;
-    }
-    body += '<button class="close">Not yet</button>';
-    this.box.innerHTML = body;
+    const cats = G.SURGERY_CATS;
+    const norm = (s) => s.toLowerCase();
+    const tabs = `<button class="tab on" data-cat="all">All</button>` +
+      cats.map((c) => `<button class="tab" data-cat="${c.id}">${c.label}</button>`).join('');
+    const rows = G.SURGERIES.map((s) =>
+      `<button class="opt surgrow" data-s="${s.id}" data-cat="${s.cat}" data-l="${norm(s.label)}">${
+        s.label} <span style="float:right;color:#8a7a55">${s.t}s</span></button>`).join('');
+    this.box.innerHTML = `<h3>🔪 Choose the operation — ${esc(task.patient.sim.displayName)}</h3>
+      <div class="txrow"><input id="surgbar" autocomplete="off" placeholder="Filter operations..." /><button class="opt go-mini" id="surggo">✅</button></div>
+      <div id="surgnote" style="min-height:14px;font-size:11px;color:#a0552c;margin:2px 0"></div>
+      <div class="tabs">${tabs}</div>
+      <div class="surglist" id="surglist">${rows}</div>
+      <button class="close">Not yet</button>`;
     this._open();
-    this.box.querySelectorAll('.opt[data-s]').forEach((b) =>
-      b.addEventListener('click', () =>
-        this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'surgery', choice: b.dataset.s } })));
-    this._wireTyped('#surgbar', '#surggo', (text) =>
-      this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'surgery', text } }));
+
+    let cat = 'all', filter = '';
+    const list = this.box.querySelector('#surglist');
+    const note = this.box.querySelector('#surgnote');
+    const apply = () => {
+      const words = filter.split(/\s+/).filter(Boolean);
+      let shown = 0;
+      list.querySelectorAll('.surgrow').forEach((b) => {
+        const okCat = cat === 'all' || b.dataset.cat === cat;
+        const okText = !words.length || words.every((w) => b.dataset.l.includes(w));
+        const vis = okCat && okText;
+        b.style.display = vis ? '' : 'none';
+        if (vis) shown++;
+      });
+      note.textContent = shown ? '' : `No operation matches “${filter}”. Try another tab or term.`;
+      return shown;
+    };
+    const pick = (id) => this.game.enqueue({ type: 'SELECT', actorId: this.game.active.id, payload: { modal: 'surgery', choice: id } });
+
+    this.box.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => {
+      cat = b.dataset.cat; filter = '';
+      this.box.querySelector('#surgbar').value = '';
+      this.box.querySelectorAll('.tab').forEach((t) => t.classList.toggle('on', t === b));
+      apply();
+    }));
+    list.querySelectorAll('.surgrow').forEach((b) =>
+      b.addEventListener('click', () => pick(b.dataset.s)));
+    // live filter — no re-render, so the keyboard/focus survives each keystroke
+    const bar = this.box.querySelector('#surgbar');
+    bar.addEventListener('input', () => { filter = norm(bar.value.trim()); apply(); });
+    // the ✅ (or Enter) commits the top visible match; empty → a visible note
+    this._wireTyped('#surgbar', '#surggo', () => {
+      const first = [...list.querySelectorAll('.surgrow')].find((b) => b.style.display !== 'none');
+      if (first) pick(first.dataset.s);
+      else { note.textContent = 'Nothing matches — pick an operation from a tab.'; }
+    });
     this.box.querySelector('.close').addEventListener('click', () => this.close());
   }
 

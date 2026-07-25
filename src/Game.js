@@ -923,19 +923,78 @@ export class Game {
 
   // the surgery team's menu — pick right and it's curative, pick wrong and
   // you just operated on someone for fun
+  // categories for the surgery board's tabs (order = tab order)
+  static SURGERY_CATS = [
+    { id: 'general', label: 'General / Abdo' },
+    { id: 'cardiothoracic', label: 'Cardiothoracic' },
+    { id: 'ortho', label: 'Orthopedic' },
+    { id: 'neuro', label: 'Neuro' },
+    { id: 'vascular', label: 'Vascular' },
+    { id: 'urology', label: 'Urology' },
+    { id: 'obgyn', label: 'OB/GYN' },
+    { id: 'ent', label: 'ENT / Head' },
+    { id: 'other', label: 'Soft tissue / Other' },
+  ];
+
+  // The operating board. `cat` files each op under a tab; existing ids are kept
+  // (cases match on them). A big, specific menu beats one generic list — you
+  // tap the operation instead of guessing the exact phrase to type.
   static SURGERIES = [
-    { id: 'chest_tube', label: 'Chest tube', t: 14 },
-    { id: 'debridement', label: 'Surgical debridement', t: 24 },
-    { id: 'peri_window', label: 'Pericardial window', t: 26 },
-    { id: 'orif', label: 'ORIF (fracture fixation)', t: 28 },
-    { id: 'appendectomy', label: 'Appendectomy', t: 30 },
-    { id: 'salpingectomy', label: 'Salpingectomy (ectopic)', t: 30 },
-    { id: 'cholecystectomy', label: 'Cholecystectomy', t: 32 },
-    { id: 'laminectomy', label: 'Decompressive laminectomy', t: 36 },
-    { id: 'exlap', label: 'Exploratory laparotomy', t: 38 },
-    { id: 'thoracotomy', label: 'Thoracotomy', t: 40 },
-    { id: 'craniotomy', label: 'Craniotomy', t: 45 },
-    { id: 'cabg', label: 'CABG', t: 60 },
+    // ---- general / abdominal ----
+    { id: 'appendectomy', label: 'Appendectomy', t: 30, cat: 'general' },
+    { id: 'cholecystectomy', label: 'Cholecystectomy', t: 32, cat: 'general' },
+    { id: 'exlap', label: 'Exploratory laparotomy', t: 38, cat: 'general' },
+    { id: 'bowel_resection', label: 'Bowel resection', t: 40, cat: 'general' },
+    { id: 'hernia_repair', label: 'Hernia repair', t: 26, cat: 'general' },
+    { id: 'perf_repair', label: 'Perforated ulcer repair', t: 34, cat: 'general' },
+    { id: 'splenectomy', label: 'Splenectomy', t: 34, cat: 'general' },
+    { id: 'colectomy', label: 'Colectomy', t: 42, cat: 'general' },
+    { id: 'whipple', label: 'Whipple procedure', t: 90, cat: 'general' },
+    // ---- cardiothoracic ----
+    { id: 'chest_tube', label: 'Chest tube', t: 14, cat: 'cardiothoracic' },
+    { id: 'peri_window', label: 'Pericardial window', t: 26, cat: 'cardiothoracic' },
+    { id: 'thoracotomy', label: 'Thoracotomy', t: 40, cat: 'cardiothoracic' },
+    { id: 'lobectomy', label: 'Lung lobectomy', t: 50, cat: 'cardiothoracic' },
+    { id: 'cabg', label: 'CABG', t: 60, cat: 'cardiothoracic' },
+    { id: 'valve_replacement', label: 'Valve replacement', t: 70, cat: 'cardiothoracic' },
+    // ---- orthopedic ----
+    { id: 'orif', label: 'ORIF (fracture fixation)', t: 28, cat: 'ortho' },
+    { id: 'joint_washout', label: 'Joint washout', t: 22, cat: 'ortho' },
+    { id: 'fasciotomy', label: 'Fasciotomy (compartment syndrome)', t: 20, cat: 'ortho' },
+    { id: 'hip_replacement', label: 'Hip replacement', t: 45, cat: 'ortho' },
+    { id: 'amputation', label: 'Amputation', t: 30, cat: 'ortho' },
+    // ---- neuro ----
+    { id: 'evd', label: 'EVD / ventriculostomy', t: 20, cat: 'neuro' },
+    { id: 'craniotomy', label: 'Craniotomy', t: 45, cat: 'neuro' },
+    { id: 'hematoma_evac', label: 'Hematoma evacuation', t: 40, cat: 'neuro' },
+    { id: 'decompressive_crani', label: 'Decompressive craniectomy', t: 45, cat: 'neuro' },
+    { id: 'aneurysm_clip', label: 'Aneurysm clipping', t: 60, cat: 'neuro' },
+    { id: 'laminectomy', label: 'Decompressive laminectomy', t: 36, cat: 'neuro' },
+    // ---- vascular ----
+    { id: 'embolectomy', label: 'Embolectomy', t: 30, cat: 'vascular' },
+    { id: 'vascular_bypass', label: 'Vascular bypass', t: 55, cat: 'vascular' },
+    { id: 'aaa_repair', label: 'AAA repair', t: 75, cat: 'vascular' },
+    { id: 'av_fistula', label: 'AV fistula creation', t: 30, cat: 'vascular' },
+    // ---- urology ----
+    { id: 'stone_removal', label: 'Kidney stone removal', t: 24, cat: 'urology' },
+    { id: 'orchiopexy', label: 'Testicular torsion repair', t: 22, cat: 'urology' },
+    { id: 'nephrectomy', label: 'Nephrectomy', t: 45, cat: 'urology' },
+    { id: 'turp', label: 'TURP', t: 30, cat: 'urology' },
+    { id: 'cystectomy', label: 'Cystectomy', t: 60, cat: 'urology' },
+    // ---- ob/gyn ----
+    { id: 'salpingectomy', label: 'Salpingectomy (ectopic)', t: 30, cat: 'obgyn' },
+    { id: 'c_section', label: 'C-section', t: 26, cat: 'obgyn' },
+    { id: 'd_and_c', label: 'D&C', t: 18, cat: 'obgyn' },
+    { id: 'hysterectomy', label: 'Hysterectomy', t: 45, cat: 'obgyn' },
+    // ---- ent / head & neck ----
+    { id: 'tracheostomy', label: 'Tracheostomy', t: 18, cat: 'ent' },
+    { id: 'tonsillectomy', label: 'Tonsillectomy', t: 20, cat: 'ent' },
+    { id: 'neck_exploration', label: 'Neck exploration', t: 30, cat: 'ent' },
+    // ---- soft tissue / other ----
+    { id: 'debridement', label: 'Surgical debridement', t: 24, cat: 'other' },
+    { id: 'abscess_id', label: 'Abscess I&D', t: 12, cat: 'other' },
+    { id: 'escharotomy', label: 'Escharotomy', t: 16, cat: 'other' },
+    { id: 'skin_graft', label: 'Skin graft', t: 30, cat: 'other' },
   ];
 
   // IMAGING: tech comes to the bed, you pick the study there, then they wheel
