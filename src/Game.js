@@ -23,6 +23,7 @@ import { glowSprite } from './render/meshes.js';
 import { matchTreatment } from './sim/talk.js';
 import { consultReport } from './sim/llm.js';
 import { Blood } from './sim/blood.js';
+import { Barks } from './sim/barks.js';
 
 const FIXED_DT = 1 / 60;
 
@@ -38,6 +39,7 @@ export class Game {
     this.map = buildMap(this.renderer.scene, physics);
     this.spawner = new Spawner(this);
     this.blood = new Blood(this); // bleeders pool on the floor; you can slip in it
+    this.barks = new Barks(this); // the attending has opinions about all of this
 
     this.nurse = this.world.add(new Character(this, 'nurse', this.map.nurseSpawn.x, this.map.nurseSpawn.z), 'chars');
     this.doctor = this.world.add(new Character(this, 'doctor', this.map.doctorSpawn.x, this.map.doctorSpawn.z), 'chars');
@@ -283,6 +285,7 @@ export class Game {
 
     this._postPhysics(dt);
     this.blood.tick(dt);
+    this.barks.tick(dt);
     this.spawner.tick();
 
     // scheduled one-shots (fatal med errors etc.)

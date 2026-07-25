@@ -145,6 +145,7 @@ export class Blood {
       ch.slip();
       if (ch === this.game.active) {
         this.game.ui.toast('🩸 You hit the blood and go down. Wonderful.', 'bad');
+        this.game.barks?.say('slip', true);
         this.game.audio.bad();
       }
     }

@@ -558,14 +558,16 @@ export function buildMap(scene, physics) {
   // ---- triage: reception + waiting + KNOCKABLE props ----
   const seats = [];
   for (let i = 0; i < 8; i++) {
-    const x = -23.5 + (i % 4) * 2.1, z = 10.2 + Math.floor(i / 4) * 2.2; // pulled toward the door — less hiking
+    // rows sit clear of the reception counter (which runs x −26.1…−22.3 at
+    // z 9.55…10.25) — the old front row put chair #1 inside the desk
+    const x = -23.5 + (i % 4) * 2.1, z = 11.7 + Math.floor(i / 4) * 2.2;
     const c = makeChair();
     c.position.set(x, 0, z);
     statics.add(c);
     seats.push({ x, z, taken: null });
   }
   // wood gang-beams under the chair rows — reference waiting rows
-  for (const rz of [10.2, 12.4]) {
+  for (const rz of [11.7, 13.9]) {
     const beam = new THREE.Mesh(new THREE.BoxGeometry(7.6, 0.09, 0.14), mat(0x8a6742));
     beam.position.set(-20.35, 0.16, rz + 0.1);
     statics.add(beam);
