@@ -6,6 +6,7 @@ import { springToward, uprightSpring, RAPIER } from '../physics/physics.js';
 const SPRINT = 5.4;
 const ACCEL = 0.16;
 const TAU = Math.PI * 2;
+const SLIP_TIME = 3.0;   // seconds face-down after a wipeout
 
 // locomotion tuned hot: even a half-push is a jog. You are always in a rush.
 function targetSpeed(mag) {
@@ -85,16 +86,19 @@ export class Character {
     const v = body.linvel();
     const dvx = dirX * cap - v.x;
     const dvz = dirZ * cap - v.z;
-    if (this.tackleTimer <= 0) {
+    // no locomotion while sprawled — you can't run mid-faceplant, and braking
+    // toward zero would kill the slide. Momentum bleeds off via floor friction.
+    if (this.tackleTimer <= 0 && this.sprawlTimer <= 0) {
       body.applyImpulse({ x: 70 * dvx * ACCEL, y: 0, z: 70 * dvz * ACCEL }, true);
     }
-    // face where we run (smoothed, rec-room style)
-    if (mag > 0.15) {
+    // face where we run (smoothed, rec-room style) — but not while down
+    if (mag > 0.15 && this.sprawlTimer <= 0) {
       this.yaw = smoothAngle(this.yaw, Math.atan2(this.move.x, this.move.z), 10, dt);
     }
-    // upright spring — weakened while sprawling for the faceplant
+    // upright spring — stays limp for most of the sprawl so you lie flat and
+    // slide, then re-stiffens near the end to shove you back to your feet
     this.sprawlTimer = Math.max(0, this.sprawlTimer - dt);
-    const k = this.sprawlTimer > 0 ? 90 : this.uprightK;
+    const k = this.sprawlTimer > 0.6 ? 24 : this.sprawlTimer > 0 ? 420 : this.uprightK;
     uprightSpring(body, { k, c: 95, dt });
 
     this.tackleTimer = Math.max(0, this.tackleTimer - dt);
@@ -151,9 +155,22 @@ export class Character {
     // when they sat — that's what made the crew look drunk in their chairs.
     // Sitting is always bolt upright; only walkers keep the physics wobble.
     _yawQ.setFromAxisAngle(_up, this.yaw);
+    // authored face-down pose during a slip: ramp prone in ~0.25s, hold, ease
+    // back up in the last ~0.6s. Overrides the physics tumble so the flail
+    // reads clearly rather than a stiff figure tipped on its side.
+    const prone = this.sprawlTimer > 0
+      ? Math.min(1, (this.slipMax - this.sprawlTimer) / 0.25, this.sprawlTimer / 0.6)
+      : 0;
     if (seated) {
       this.mesh.position.set(p.x, p.y - 0.8, p.z);
       this.mesh.quaternion.copy(_yawQ);
+    } else if (prone > 0) {
+      // face the slide direction, pitched forward onto the belly
+      const yaw = this.slipDir ? Math.atan2(this.slipDir.x, this.slipDir.z) : this.yaw;
+      _yawQ.setFromAxisAngle(_up, yaw);
+      _tiltQ.setFromAxisAngle(_side, prone * 1.5);   // pitch toward face-down
+      this.mesh.position.set(p.x, p.y - 0.8 - prone * 0.35, p.z);
+      this.mesh.quaternion.copy(_yawQ).multiply(_tiltQ);
     } else {
       this.mesh.position.set(p.x, p.y - 0.8, p.z);
       _tiltQ.set(q.x, q.y, q.z, q.w);
@@ -167,8 +184,9 @@ export class Character {
       this.game.audio.footstep(speed01, now);
     }
     animateRig(this.mesh, dt, now, speed01, {
-      reach: !!(this.carrying || this.dragging),
+      reach: !!(this.carrying || this.dragging) && this.sprawlTimer <= 0,
       sitting: seated,
+      sprawl: prone,
       // desk work: a seated staffer taps at a keyboard instead of freezing
       busy: seated ? (this.seatPhase ??= Math.random() * 6) : 0,
     });
@@ -226,13 +244,27 @@ export class Character {
     }
   }
 
-  // wipe out on a wet floor: legs go, you skid, you land on your face
+  // wipe out on a wet floor: legs fly out, you belly-flop and KEEP your
+  // momentum — sliding face-down and flailing for a few feet before you push
+  // yourself back up. ~3 seconds of undignified.
   slip() {
-    this.sprawlTimer = 1.5;
+    if (this.sprawlTimer > 0) return;
+    this.sprawlTimer = SLIP_TIME;
+    this.slipMax = SLIP_TIME;
     this.game.audio.slip();
     const v = this.body.linvel();
-    this.body.applyImpulse({ x: v.x * 26 + 40, y: 95, z: v.z * 26 }, true);
-    this.body.applyTorqueImpulse({ x: 70, y: 22, z: 45 }, true);
+    const spd = Math.hypot(v.x, v.z);
+    // slide along the way you were ACTUALLY going (fall back to facing)
+    const dx = spd > 0.3 ? v.x / spd : Math.sin(this.yaw);
+    const dz = spd > 0.3 ? v.z / spd : Math.cos(this.yaw);
+    // SET the launch speed (don't add to it) so a sprint doesn't fling you
+    // across the room — a firm belly-slide that floor friction eats over a
+    // couple of seconds, carrying you a few feet. Small hop for the flop.
+    const slide = Math.min(spd + 1.4, 5.5);
+    this.body.setLinvel({ x: dx * slide, y: 1.8, z: dz * slide }, true);
+    // tip forward onto the stomach (about the axis across the slide direction)
+    this.body.applyTorqueImpulse({ x: dz * 45, y: 10, z: -dx * 45 }, true);
+    this.slipDir = { x: dx, z: dz };
     if (this.dragging) this.release(); // you let go of whoever you were towing
   }
 
@@ -246,5 +278,6 @@ export class Character {
   }
 }
 const _up = new THREE.Vector3(0, 1, 0);
+const _side = new THREE.Vector3(1, 0, 0);
 const _yawQ = new THREE.Quaternion();
 const _tiltQ = new THREE.Quaternion();

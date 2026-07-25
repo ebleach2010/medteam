@@ -13,7 +13,7 @@ import { makeCharacterMesh } from './render/meshes.js';
 import { animateRig } from './render/rig.js';
 import { spawnCarryable } from './entities/Carryable.js';
 import { Spawner } from './sim/spawner.js';
-import { giveMed, applyTreatment } from './sim/treatment.js';
+import { giveMed, applyTreatment, supportiveCare } from './sim/treatment.js';
 import { INTENT, make } from './intents/intents.js';
 import { UI } from './ui/ui.js';
 import { medById } from './data/meds.js';
@@ -536,11 +536,20 @@ export class Game {
   applyIntervention(pt, effect, reply, label) {
     const sim = pt.sim;
     const line = reply || 'It... happens. Nobody is sure it helped.';
-    if (effect === 'helps') {
-      sim.accel = Math.max(0.4, (sim.accel ?? 1) * 0.6);
-      this.addScore(25, 'Good improvisation');
+    if (effect === 'cure') {
+      // the arbiter judged this the DEFINITIVE management for the presentation
+      // (right drug by any route, or curative supportive care for a self-
+      // limited illness). It actually resolves the case.
       this.ui.announce(`✚ ${line}`, 'good');
       sim._say?.('better');
+      this.addScore(30, 'Definitive management');
+      applyTreatment(this, sim);
+    } else if (effect === 'helps') {
+      // reasonable supportive care: winds the deterioration clock back, and for
+      // a self-limited illness it becomes curative after a recheck window
+      this.ui.announce(`✚ ${line}`, 'good');
+      sim._say?.('better');
+      supportiveCare(this, sim, label);
     } else if (effect === 'nothing') {
       this.addScore(-5, 'Questionable order');
       this.ui.announce(`🤷 ${line}`);

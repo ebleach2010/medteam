@@ -112,17 +112,7 @@ export function giveMed(game, patient, medId) {
       return;
     }
     if (isAdjunct) {
-      sim.adjunctsGiven = (sim.adjunctsGiven ?? 0) + 1;
-      // stabilising: buys time by winding the deterioration clock back — but
-      // only the first time. Supportive care holds a patient; it doesn't cure.
-      const bought = sim.stabiliseOnce();
-      game.ui.toast(bought
-        ? `${med.name} stabilises them — you've bought time, not a cure.`
-        : `${med.name} helps a little. They still need the real treatment.`, 'good');
-      game.addScore(bought ? 15 : 5, 'Supportive care');
-      radioReport(game, sim, med, false,
-        bought ? 'STABILISED FOR NOW — STILL NEEDS DEFINITIVE TREATMENT'
-          : 'NO FURTHER BENEFIT — NEEDS DEFINITIVE TREATMENT', 'good');
+      supportiveCare(game, sim, med.name);
       return;
     }
     game.barks?.say('wrongMed');
@@ -148,6 +138,39 @@ export function giveMed(game, patient, medId) {
     game.addScore(-10, 'Unnecessary med');
     radioReport(game, sim, med, false, 'RECOMMEND FURTHER WORKUP', 'bad');
   }
+}
+
+// Supportive / adjunct care. It winds the deterioration clock back once. For a
+// genuinely SELF-LIMITED illness (warm compresses for conjunctivitis, rest for
+// a sprain, fluids for gastro), good supportive care is ITSELF the cure — it
+// just takes a recheck window to declare it. For everything else it only holds
+// the line until the definitive agent arrives.
+export function supportiveCare(game, sim, label) {
+  const bought = sim.stabiliseOnce();
+  if (sim.case.supportiveDefinitive && !sim.treated) {
+    if (!sim._supportivePending) {
+      sim._supportivePending = true;
+      game.ui.toast(`${label} — good supportive care. Recheck them shortly.`, 'good');
+      game.addScore(20, 'Appropriate supportive care');
+      radioReport(game, sim, { name: label }, false, 'SETTLING WITH SUPPORTIVE CARE — RECHECK PENDING', 'good');
+      // a recheck window: self-limited illness resolves on conservative care
+      setTimeoutTicks(game, 22, () => {
+        if (sim.state !== 'dead' && !sim.resolved) applyTreatment(game, sim);
+      });
+    } else {
+      game.ui.toast(`${label} — still settling. Give it time.`, 'good');
+      game.addScore(3, 'Supportive care');
+    }
+    return;
+  }
+  sim.adjunctsGiven = (sim.adjunctsGiven ?? 0) + 1;
+  game.ui.toast(bought
+    ? `${label} stabilises them — you've bought time, not a cure.`
+    : `${label} helps a little. They still need the real treatment.`, 'good');
+  game.addScore(bought ? 15 : 5, 'Supportive care');
+  radioReport(game, sim, { name: label }, false,
+    bought ? 'STABILISED FOR NOW — STILL NEEDS DEFINITIVE TREATMENT'
+      : 'NO FURTHER BENEFIT — NEEDS DEFINITIVE TREATMENT', 'good');
 }
 
 export function applyTreatment(game, sim) {

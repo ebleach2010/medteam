@@ -155,11 +155,11 @@ function easeX(node, target, k = 0.35) { node.rotation.x += (target - node.rotat
 
 // Gait + poses. speed01 drives cadence/stride/lean; `reach` = sticky HFF arms
 // up-and-forward; `sitting` = butt-on-chair pose; `lying` = bed/floor.
-export function animateRig(root, dt, now, speed01, { reach = false, lying = false, dead = false, sitting = false, dragged = false, busy = 0 } = {}) {
+export function animateRig(root, dt, now, speed01, { reach = false, lying = false, dead = false, sitting = false, dragged = false, sprawl = 0, busy = 0 } = {}) {
   const r = root.userData.rig;
   const cadence = lerp(0.9, 3.4, speed01);
   r.walkClock += cadence * TAU * dt;
-  const still = lying || sitting;
+  const still = lying || sitting || sprawl > 0;
   const stride = still ? 0 : lerp(0, 0.95, speed01);
   const armSwing = still ? 0 : lerp(0.08, 1.0, speed01);
   const lean = still ? 0 : lerp(0, 0.22, speed01);
@@ -180,6 +180,13 @@ export function animateRig(root, dt, now, speed01, { reach = false, lying = fals
     // thighs forward (horizontal), shins straight down → seated L
     easeX(r.legL.pivot, 1.5); easeX(r.legR.pivot, 1.5);
     easeX(r.legL.joint, -1.5); easeX(r.legR.joint, -1.5);
+  } else if (sprawl > 0) {
+    // face-down on the floor, legs kicking to get back up
+    const k = now * 11;
+    easeX(r.legL.pivot, 0.15 + Math.sin(k) * 0.5 * sprawl, 0.4);
+    easeX(r.legR.pivot, 0.15 + Math.sin(k + 1.7) * 0.5 * sprawl, 0.4);
+    easeX(r.legL.joint, -0.3 - Math.max(0, Math.sin(k)) * 0.6 * sprawl, 0.4);
+    easeX(r.legR.joint, -0.3 - Math.max(0, Math.sin(k + 1.7)) * 0.6 * sprawl, 0.4);
   } else if (lying) {
     easeX(r.legL.pivot, 0.02); easeX(r.legR.pivot, 0.02);
     easeX(r.legL.joint, dead ? 0.35 : 0.05); easeX(r.legR.joint, dead ? -0.2 : 0.05);
@@ -209,6 +216,13 @@ export function animateRig(root, dt, now, speed01, { reach = false, lying = fals
     r.head.rotation.y = 0;
   }
   if (lying) { aL = aR = dead ? -0.9 : -0.25; elbow = -0.1; }
+  if (sprawl > 0) {
+    // arms thrash overhead, pushing at the floor — the flail
+    const k = now * 12;
+    aL = -1.2 + Math.sin(k) * 0.9 * sprawl;
+    aR = -1.2 + Math.sin(k + 2.1) * 0.9 * sprawl;
+    elbow = -0.5 - Math.abs(Math.sin(k * 1.3)) * 0.6 * sprawl;
+  }
   if (dragged) { aL = Math.sin(now * 8) * 0.7 - 0.6; aR = Math.sin(now * 8 + 2.1) * 0.7 - 0.6; elbow = -0.6; }
   if (reach) { aL = aR = -1.5; elbow = -0.7; }           // sticky hands up and out, elbows bent
   easeX(r.armL.pivot, aL); easeX(r.armR.pivot, aR);
