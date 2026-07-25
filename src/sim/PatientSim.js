@@ -262,7 +262,8 @@ export class PatientSim {
 
   // ---------------- transitions ----------------
   _goCritical() {
-    if (this.critical) return;
+    if (this.critical) return;   // guard FIRST — otherwise the bark repeats every tick
+    this.game?.barks?.say('crash', true);
     this.critical = true;
     this.ent.setFace('crit');
     this._say('critical', 'critical');
@@ -280,6 +281,7 @@ export class PatientSim {
     this.ent.escortedBy = null;
     if (this.ent.draggedBy) { this.ent.draggedBy.dragging = null; this.ent.draggedBy = null; }
     this._sayRaw('💀', 'critical');
+    this.game.barks?.say('death', true);
     this.game.onDeath(this, cause);
   }
 

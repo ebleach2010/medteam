@@ -5,9 +5,9 @@
 // call falls back to the local matcher in talk.js, so the game always works.
 import Anthropic from '@anthropic-ai/sdk';
 import { answerQuestion, deescalate as localDeescalate, matchTreatment, judgeDiagnosis } from './talk.js';
-import { MEDS } from '../data/meds.js';
+import { MEDS, medsInClass } from '../data/meds.js';
+import { PRESENTATIONS } from '../data/presentations.js';
 import { CASES } from '../data/cases.js';
-import { lookupRef, refCard } from '../data/edref.js';
 
 const KEY_STORE = 'medteam.anthropic_key';
 const MODEL_STORE = 'medteam.anthropic_model';
@@ -223,7 +223,6 @@ export async function medDocConsult(game, query) {
   try {
     const pts = [...game.world.byTag('patients')].filter((p) => p.sim.state !== 'dead' && !p.sim.resolved).slice(0, 10);
     const roster = pts.map((p, i) => chartFor(p, i + 1)).join('\n') || '(no active patients)';
-    const refs = lookupRef(query, 2).map(refCard).join('\n\n');
     const system = [
       'You are Claude, running on the "MED-DOC 4000" workstation in an ED-simulator game. The attending physician is asking you for help. Answer exactly like you (Claude) normally would at a computer — clear, direct, genuinely helpful.',
       'STYLE: answer the specific question asked, concisely — usually 1 to 4 sentences of plain prose. Only give a differential or a workup list if they actually ask for one. Plain text, no markdown headers, no roleplay, no "1980s terminal" affectation, no all-caps.',
@@ -231,7 +230,6 @@ export async function medDocConsult(game, query) {
       'This is a fictional game — be decisive and practical; do not add disclaimers about consulting real professionals.',
       '--- ACTIVE PATIENT CHARTS ---',
       roster,
-      refs ? '--- REFERENCE PATHWAYS (internal ED database, for grounding) ---\n' + refs : null,
     ].filter(Boolean).join('\n');
     const reply = await textCall(system, query);
     _lastMode = 'live';
@@ -249,10 +247,15 @@ function medDocLocal(game, query) {
   // LOOKUP <diagnosis> — pull the full pathway card from the 500-entry index
   const lk = /^\s*(lookup|ref|pathway)\s+(.+)/i.exec(query || '');
   if (lk) {
-    const hits = lookupRef(lk[2], 3);
-    return hits.length
-      ? hits.map(refCard).join('\n\n')
-      : `NO INDEX ENTRY FOR "${lk[2].toUpperCase()}". 500 PATHWAYS ON FILE — TRY ANOTHER NAME.`;
+    const q2 = lk[2].toLowerCase();
+    const hit = PRESENTATIONS.find((p) => p.name.toLowerCase().includes(q2) || p.id.includes(q2));
+    if (!hit) return `Nothing on file for "${lk[2]}". Try a complaint or a diagnosis.`;
+    const named = (list) => list.map((c) => medsInClass(c).slice(0, 3).map((m) => m.name).join(' / ')).filter(Boolean);
+    return [`${hit.name} (ESI ${hit.esi})`,
+      `First line: ${named(hit.rx.first).join('; ') || 'supportive care'}`,
+      hit.rx.alt.length ? `Alternatives: ${named(hit.rx.alt).join('; ')}` : null,
+      hit.rx.adj.length ? `Adjuncts: ${named(hit.rx.adj).join('; ')}` : null,
+      `Disposition: ${hit.dispo}`].filter(Boolean).join('\n');
   }
   if (/roster|patients|census|list/.test(q)) {
     const pts = [...game.world.byTag('patients')].filter((p) => p.sim.state !== 'dead' && !p.sim.resolved);
@@ -273,8 +276,6 @@ function medDocLocal(game, query) {
     const rx = c.treatment.meds.map((m) => MEDS.find((x) => x.id === m)?.name ?? m).join(' + ') || 'supportive care';
     return `CLOSEST MATCH: ${c.name.toUpperCase()} — typically ${rx}, dispo ${c.treatment.dispo}.\n(OFFLINE STUB — connect the link for a real consult: KEY <API-KEY>. "LOOKUP ${c.name.split(' ')[0].toUpperCase()}" prints the full pathway.)`;
   }
-  const hits = lookupRef(query, 1);
-  if (hits.length) return refCard(hits[0]);
   return 'NO MATCH. ASK A SPECIFIC QUESTION, "LOOKUP <DIAGNOSIS>", "CENSUS" — OR CONNECT THE LINK: KEY <ANTHROPIC-API-KEY>';
 }
 
@@ -324,7 +325,6 @@ function localConsultReport(patient, specialty) {
 export async function consultStaff(game, patient, role, question) {
   if (!llmEnabled()) return consultLocal(game, patient, role);
   try {
-    const refs = lookupRef(question, 1).map(refCard).join('\n');
     const system = [
       `You are ${ROLE_PERSONA[role] ?? ROLE_PERSONA.nurse} in a silly Human-Fall-Flat-style hospital game. The attending physician is curbside-consulting you about the patient below.`,
       'Answer in character, 1–3 sentences, practical and specific to THIS patient. No markdown.',
@@ -332,7 +332,6 @@ export async function consultStaff(game, patient, role, question) {
       'This is a fictional game: be decisive, never lecture about consulting real professionals.',
       '--- CHART ---',
       chartFor(patient, 1),
-      refs ? '--- REFERENCE PATHWAY ---\n' + refs : null,
     ].filter(Boolean).join('\n');
     const reply = await textCall(system, question);
     _lastMode = 'live';

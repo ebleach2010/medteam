@@ -1,26 +1,32 @@
-// Per-day (per-level) config. Five tiers: easy → near-impossible.
-// The house rule: treat at least the day's quota (incinerations count ¼)
-// or the shift is failed and you start over from day 1.
+// Per-day (per-shift) config. The campaign runs to DAY 100 — day 1 is a gentle
+// shakedown where almost nobody crashes on you, day 100 is a meat grinder.
+// The actual deterioration pacing lives in sim/generator.js (it scales each
+// patient's timeline by the day), so this file only sets volume and pressure.
+
+export const MAX_DAY = 100;
 
 export function dayConfig(day) {
-  const d = Math.max(1, day);
+  const d = Math.max(1, Math.min(MAX_DAY, day));
+  const f = (d - 1) / (MAX_DAY - 1);          // 0 on day 1 → 1 on day 100
+
   return {
-    // day 1 is a shakedown shift — a handful of walk-ins, room to learn.
-    // The flood starts day 2 and grows from there.
-    // compact 6-room ED: fewer beds means fewer patients + a lighter quota
-    patients: d === 1 ? 6 : Math.min(8 + (d - 2) * 2, 16),
-    quota: d === 1 ? 4 : Math.min(8, 5 + (d - 2)),
-    tierWeights:
-      d === 1 ? [1, 0.15, 0, 0, 0] :
-      d === 2 ? [1, 0.7, 0.1, 0, 0] :
-      d === 3 ? [0.8, 1, 0.5, 0.1, 0] :
-      d === 4 ? [0.6, 1, 0.8, 0.3, 0.05] :
-      d === 5 ? [0.4, 0.9, 1, 0.5, 0.15] :
-      d === 6 ? [0.3, 0.7, 1, 0.7, 0.3] :
-                [0.2, 0.6, 1, 0.9, 0.5],
-    timeScale: d === 1 ? 1.2 : d === 2 ? 2.4 : 2.0, // day 1 runs at HALF pace — learn the building
+    // volume ramps from a trickle to a flood
+    patients: Math.round(5 + f * 21),          // 5 → 26
+    quota: Math.round(3 + f * 15),             // 3 → 18
+    // acuity mix: mostly walk-ins early, mostly resuscitations late. These are
+    // ESI weights [1..5] — the generator samples presentations by frequency and
+    // this biases which end of the acuity scale it draws from.
+    esiWeights: [
+      0.02 + f * 0.9,   // ESI 1 resuscitation
+      0.08 + f * 0.9,   // ESI 2 emergent
+      0.35 + f * 0.5,   // ESI 3 urgent
+      1.0 - f * 0.45,   // ESI 4 less urgent
+      0.8 - f * 0.6,    // ESI 5 nonurgent
+    ],
+    // clock speed: day 1 crawls so you can learn the building
+    timeScale: 1.1 + f * 1.6,                  // 1.1× → 2.7×
     edCapacity: 6,
-    // guaranteed lookalike pair from day 4: punishes CT skippers
-    forceCases: d >= 4 ? ['stroke_isch', 'stroke_sah'] : d === 3 ? ['stroke_isch'] : [],
+    // the lookalike stroke pair starts showing up once you can handle it
+    forceCases: d >= 12 ? ['stroke_isch', 'sah'] : d >= 6 ? ['stroke_isch'] : [],
   };
 }

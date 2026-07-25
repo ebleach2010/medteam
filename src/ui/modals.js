@@ -654,12 +654,21 @@ Your key stays in this browser only.</div>
         return;
       }
       if (choice === 'treat') {
-        g.ui.toast('💊 Processing the order...');
-        orderTreatment(sim2, text ?? '').then(({ medId, effect, reply }) => {
-          if (medId) { g.orderMedFetch(cur.patient, medId); return; }
-          if (effect) { g.applyIntervention(cur.patient, effect, reply, text); return; }
-          g.ui.toast('Staff blink at the order. “...do WHAT, exactly?”', 'bad');
-        });
+        // comma-separated orders are a whole prescription: "ativan, trazodone,
+        // fluids" is three orders carried out in sequence
+        const orders = String(text ?? '').split(/\s*,\s*|\s+then\s+/i)
+          .map((s) => s.trim()).filter(Boolean).slice(0, 5);
+        g.ui.toast(orders.length > 1
+          ? `💊 Processing ${orders.length} orders...` : '💊 Processing the order...');
+        (async () => {
+          for (const one of orders) {
+            const { medId, effect, reply } = await orderTreatment(sim2, one);
+            if (medId) g.orderMedFetch(cur.patient, medId);
+            else if (effect) g.applyIntervention(cur.patient, effect, reply, one);
+            else g.ui.toast(`Staff blink at “${one}”. “...do WHAT, exactly?”`, 'bad');
+            if (orders.length > 1) await new Promise((r) => setTimeout(r, 900)); // one at a time
+          }
+        })();
         this.workup(cur.patient);
         return;
       }

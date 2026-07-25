@@ -75,11 +75,53 @@ export function giveMed(game, patient, medId) {
     game.ui.toast('😬 Dosing blind without labs... it held. Barely.', 'bad');
   }
 
-  const needed = sim.case.treatment.meds;
   sim.medsGiven.add(medId);
-  // clinical equivalence: a defensible substitute counts (IV fluids for a
-  // dehydrated patient, any sensible antibiotic for a simple infection...).
-  // Specific antidotes still demand the exact agent — see data/equiv.js.
+
+  // ---- class-based judging (procedural cases) ----
+  // The presentation prescribes drug CLASSES and lists several acceptable
+  // routes, so anything defensible works. What varies is the PATIENT: some
+  // simply don't respond to an agent that should have worked, and you move on
+  // to the next option — variability, not a hidden single right answer.
+  const rx = sim.case.rx;
+  if (rx) {
+    const cls = med.cls ?? [];
+    const hits = (list) => list.some((c) => cls.includes(c));
+    const resisted = (sim.case.resist ?? []).includes(medId); // per-agent, not per-class
+    const isDefinitive = hits(rx.first) || hits(rx.alt);
+    const isAdjunct = hits(rx.adj);
+
+    if (isDefinitive && resisted) {
+      sim.resistSeen = true;
+      game.barks?.say('noResponse');
+      game.ui.toast(`${med.name} — no response from this one. Some people just don't.`, 'bad');
+      radioReport(game, sim, med, false, 'NO RESPONSE — SUGGEST AN ALTERNATIVE AGENT', 'bad');
+      return;
+    }
+    if (isDefinitive || (isAdjunct && sim.case.easyAdjunct)) {
+      game.barks?.say('better');
+      game.ui.toast(`✓ ${med.name} — ${name} is responding.`, 'good');
+      game.addScore(30, 'Effective treatment');
+      applyTreatment(game, sim);
+      radioReport(game, sim, med, true,
+        sim.dxPicked == null ? 'RESPONDING — DIAGNOSE FOR FULL CREDIT' : 'RESPONDING — READY FOR DISPO ONCE STABLE', 'good');
+      return;
+    }
+    if (isAdjunct) {
+      sim.adjunctsGiven = (sim.adjunctsGiven ?? 0) + 1;
+      game.ui.toast(`${med.name} helps, but it isn't the fix.`, 'good');
+      game.addScore(8, 'Reasonable adjunct');
+      radioReport(game, sim, med, false, 'SOME RELIEF — STILL NEEDS DEFINITIVE TREATMENT', 'good');
+      return;
+    }
+    game.barks?.say('wrongMed');
+    game.ui.toast(`${med.name} given... it does nothing for this.`);
+    game.addScore(-10, 'Unnecessary med');
+    radioReport(game, sim, med, false, 'NO BENEFIT — RECOMMEND FURTHER WORKUP', 'bad');
+    return;
+  }
+
+  // ---- legacy hand-authored cases: exact ids with clinical equivalence ----
+  const needed = sim.case.treatment.meds;
   if (needed.some((m) => satisfies(m, medId))) {
     game.ui.toast(`✓ ${med.name} given to ${name}`, 'good');
     game.addScore(30, 'Correct med');
