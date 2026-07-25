@@ -12,13 +12,32 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       workbox: {
-        globPatterns: ['**/*.{js,css,html,wasm,png,webmanifest,glb}'],
+        // Precache the hashed STATIC assets (immutable — safe to cache-first),
+        // but NOT index.html: a precached index that points at a deleted bundle
+        // hash is exactly what strands an installed PWA on the loading screen.
+        globPatterns: ['**/*.{js,css,wasm,png,webmanifest,glb}'],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
-        // a stale precache that points at a deleted bundle hash = white screen
-        // on an installed PWA. Sweep old caches and take over immediately.
         cleanupOutdatedCaches: true,
         skipWaiting: true,
         clientsClaim: true,
+        // drop the default precache navigation route (it would serve a stale/
+        // missing precached index and shadow the network-first route below)
+        navigateFallback: null,
+        // The document is NETWORK-FIRST: an online player always gets the
+        // current index.html (and therefore the current asset hashes), so a new
+        // deploy can never serve them a stale shell. Offline falls back to the
+        // last good copy, so the installed app still opens with no connection.
+        runtimeCaching: [
+          {
+            urlPattern: ({ request }) => request.mode === 'navigate',
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'medteam-html',
+              networkTimeoutSeconds: 4,
+              expiration: { maxEntries: 4 },
+            },
+          },
+        ],
       },
       manifest: {
         name: 'MedTeam — ED Chaos',
