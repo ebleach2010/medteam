@@ -16,15 +16,19 @@
     <div class="bootlogo">MED<span>TEAM</span></div>
     <div class="bootmsg">Loading…</div>
   </div>
-  <!-- Boot watchdog. If the module script never runs (classic PWA failure: a
-       cached index.html pointing at a bundle hash that no longer exists), the
-       page would just sit blank. Detect that, drop the service worker + caches
-       once, and reload clean. Inline + non-module so it runs regardless. -->
+  <!-- Boot watchdog. The classic PWA failure: a cached service worker serves a
+       stale index.html pointing at a bundle hash this deploy deleted, so the
+       page sits on the splash forever. We heal it: drop the SW + caches once
+       and reload with a cache-busting URL the stale worker can't satisfy from
+       precache. Triggered the instant the bundle fails to load (script onerror
+       / chunk error), with a slow timer as a backstop. Inline, non-module. -->
   <script>
   (function () {
     var KEY = 'medteam.selfheal';
-    setTimeout(function () {
-      if (window.__game) { try { sessionStorage.removeItem(KEY); } catch (e) {} return; }
+    var healing = false;
+    function heal(reason) {
+      if (healing || window.__game) return;
+      healing = true;
       var msg = document.querySelector('#boot .bootmsg');
       var tried = false;
       try { tried = sessionStorage.getItem(KEY) === '1'; } catch (e) {}
@@ -34,7 +38,12 @@
       }
       try { sessionStorage.setItem(KEY, '1'); } catch (e) {}
       if (msg) msg.textContent = 'Updating…';
-      var reload = function () { location.reload(); };
+      // reload to a fresh URL so a still-controlling stale worker can't serve
+      // the old cached navigation back to us
+      var fresh = function () {
+        var u = location.pathname + '?fresh=' + Date.now();
+        try { location.replace(u); } catch (e) { location.reload(); }
+      };
       try {
         var jobs = [];
         if (window.caches && caches.keys) {
@@ -47,12 +56,20 @@
             return Promise.all(rs.map(function (r) { return r.unregister(); }));
           }));
         }
-        Promise.all(jobs).then(reload, reload);
-        setTimeout(reload, 3000); // belt and braces
-      } catch (e) { reload(); }
-    }, 8000);
+        Promise.all(jobs).then(fresh, fresh);
+        setTimeout(fresh, 2500); // belt and braces
+      } catch (e) { fresh(); }
+    }
+    // (main.js clears the KEY latch itself once the game is up)
+    // the bundle itself failed to fetch/parse (the 404'd-chunk case) → heal now
+    window.addEventListener('error', function (e) {
+      var t = e && e.target;
+      if (t && t.tagName === 'SCRIPT' && /main\.js|index-.*\.js/.test(t.src || '')) heal('script');
+    }, true);
+    // backstop: if nothing has booted after a slow-phone-friendly wait, heal
+    setTimeout(function () { heal('timeout'); }, 9000);
   })();
   </script>
-  <script type="module" src="/src/main.js"></script>
+  <script type="module" src="/src/main.js" onerror="/* caught by capture listener above */"></script>
 </body>
 </html>
