@@ -173,7 +173,14 @@ export class Character {
       this.mesh.quaternion.copy(_yawQ).multiply(_tiltQ);
     } else {
       this.mesh.position.set(p.x, p.y - 0.8, p.z);
-      _tiltQ.set(q.x, q.y, q.z, q.w);
+      // The capsule tilts freely (X/Z rotation unlocked) for that HFF list.
+      // Un-clamped, a stagger, a drag reaction, or a shove rolls the body so
+      // far it reads as "running sideways". Clamp the physics tilt to a gentle
+      // list before it reaches the mesh, then face travel with the yaw.
+      _tiltQ.set(q.x, q.y, q.z, q.w).normalize();
+      const ang = 2 * Math.acos(Math.min(1, Math.abs(_tiltQ.w)));
+      const CAP = 0.2; // ~11° — a lean, never a topple
+      if (ang > CAP) { _tiltScratch.identity().slerp(_tiltQ, CAP / ang); _tiltQ.copy(_tiltScratch); }
       this.mesh.quaternion.copy(_tiltQ).multiply(_yawQ);
     }
     // gait driven by actual velocity
@@ -281,3 +288,4 @@ const _up = new THREE.Vector3(0, 1, 0);
 const _side = new THREE.Vector3(1, 0, 0);
 const _yawQ = new THREE.Quaternion();
 const _tiltQ = new THREE.Quaternion();
+const _tiltScratch = new THREE.Quaternion();

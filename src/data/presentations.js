@@ -22,7 +22,9 @@ const SYSTEM_OF = {'abdo_pain': 'gi', 'chest_pain_atyp': 'cardiac', 'uri': 'infe
 const P = (id, name, esi, w, complaint, o = {}) => ({
   id, name, esi, w,
   complaint: Array.isArray(complaint) ? complaint : [complaint],
-  history: o.hx ?? 'Nothing relevant.',
+  // hx may be a single string OR several variants — the generator picks one so
+  // the same presentation doesn't read identically every single time
+  history: Array.isArray(o.hx) ? o.hx : [o.hx ?? 'Nothing relevant.'],
   rx: { first: o.first ?? [], alt: o.alt ?? [], adj: o.adj ?? [] },
   dx: o.dx ?? [name],
   fail: o.fail ?? null,           // null = won't kill them, just miserable
@@ -45,8 +47,11 @@ const P = (id, name, esi, w, complaint, o = {}) => ({
 export const PRESENTATIONS = [
   // ======================= very common, low acuity =======================
   P('abdo_pain', 'Nonspecific abdominal pain', 4, 100,
-    ['My stomach has been killing me since last night.', 'Belly pain. Comes in waves.'],
-    { hx: 'No surgeries. Ate something questionable.', first: ['antispasmodic', 'analgesic-mild'],
+    ['My stomach has been killing me since last night.', 'Belly pain. Comes in waves.',
+      'My gut is cramping and I feel gross.', 'Sharp pain around my belly button.'],
+    { hx: ['No surgeries. Ate something questionable.', 'This happens now and then; it usually passes.',
+        'Stressed lately, eating on the run.', 'No blood, no fever, just this ache.'],
+      first: ['antispasmodic', 'analgesic-mild'],
       alt: ['antiemetic', 'acid-suppression'], adj: ['fluid'],
       dx: ['Nonspecific abdominal pain', 'Gastritis', 'Appendicitis', 'Constipation'], v: { hr: 88 } }),
 
@@ -58,8 +63,11 @@ export const PRESENTATIONS = [
       labs: { Troponin: 'negative ×2', ECG: 'sinus, no ischemia' } }),
 
   P('uri', 'Upper respiratory infection', 5, 88,
-    ['I have had this cough for a week and I feel awful.', 'Sore throat, stuffy, coughing.'],
-    { hx: 'Kids brought something home from school.', first: ['antipyretic'],
+    ['I have had this cough for a week and I feel awful.', 'Sore throat, stuffy, coughing.',
+      'Runny nose and I cannot stop sneezing.', 'My head is pounding and I am all congested.'],
+    { hx: ['Kids brought something home from school.', 'Half my office has it too.',
+        'Started as a tickle, now it is my whole chest.', 'No shots this year, figured it would pass.'],
+      first: ['antipyretic'],
       alt: ['analgesic-mild'], adj: ['fluid', 'supportive'], supportiveDefinitive: true,
       dx: ['Viral URI', 'Strep pharyngitis', 'Influenza', 'Pneumonia'], v: { temp: 37.9 } }),
 
@@ -72,7 +80,9 @@ export const PRESENTATIONS = [
 
   P('headache_tension', 'Tension headache', 4, 78,
     ['Band around my head. All day.', 'Headache that will not quit.'],
-    { hx: 'Deadlines. Poor sleep. Too much coffee.', first: ['analgesic-mild'],
+    { hx: ['Deadlines. Poor sleep. Too much coffee.', 'Staring at a screen all day.',
+        'These come on when I am stressed.', 'Forgot my glasses this week.'],
+      first: ['analgesic-mild'],
       alt: ['nsaid', 'antiemetic'], adj: ['fluid', 'supportive'], supportiveDefinitive: true,
       dx: ['Tension headache', 'Migraine', 'SAH', 'Meningitis'] }),
 
@@ -84,20 +94,26 @@ export const PRESENTATIONS = [
 
   P('gastro', 'Gastroenteritis', 4, 76,
     ['Both ends. For two days. It is grim.', 'Vomiting and diarrhoea since yesterday.'],
-    { hx: 'Roommate had it first.', first: ['antiemetic', 'fluid'],
+    { hx: ['Roommate had it first.', 'Ate at a new place last night.',
+        'A few of us got sick after the party.', 'Cannot keep water down.'],
+      first: ['antiemetic', 'fluid'],
       alt: ['antidiarrheal'], adj: ['analgesic-mild', 'supportive'], supportiveDefinitive: true,
       dx: ['Viral gastroenteritis', 'Food poisoning', 'C. diff', 'Appendicitis'],
       v: { hr: 98, sbp: 112 }, labs: { BMP: 'Cr 1.3, mild AKI' } }),
 
   P('uti', 'Urinary tract infection', 4, 72,
     ['It burns every time I pee.', 'Peeing constantly and it stings.'],
-    { hx: 'Had these before.', first: ['antibiotic-uti'], alt: ['antibiotic'], adj: ['analgesic-mild', 'fluid'],
+    { hx: ['Had these before.', 'Started a couple of days ago.', 'Been holding it too long at work.',
+        'Drinking cranberry juice did not help.'],
+      first: ['antibiotic-uti'], alt: ['antibiotic'], adj: ['analgesic-mild', 'fluid'],
       dx: ['UTI / cystitis', 'Pyelonephritis', 'Kidney stone', 'STI'],
       v: { temp: 37.6 }, labs: { UA: 'nitrite +, leuks +' } }),
 
   P('sprain', 'Ankle sprain', 4, 68,
     ['Rolled my ankle playing football. It is the size of a grapefruit.', 'Twisted my ankle on a kerb.'],
-    { hx: 'Weekend league. Heard a pop.', first: ['nsaid'], alt: ['analgesic-mild', 'analgesic-moderate'],
+    { hx: ['Weekend league. Heard a pop.', 'Missed a step on the stairs.', 'Rolled it on a trail run.',
+        'Landed wrong playing with the kids.'],
+      first: ['nsaid'], alt: ['analgesic-mild', 'analgesic-moderate'],
       adj: ['supportive'], supportiveDefinitive: true,
       dx: ['Ankle sprain', 'Ankle fracture', 'Achilles rupture', 'Gout'],
       img: { type: 'ankle', options: ['No fracture — sprain', 'Distal fibula fracture', 'Normal', 'Dislocation'] } }),
@@ -358,12 +374,18 @@ export const PRESENTATIONS = [
 
 // Weighted pick honouring the frequency column. `bias(p) → multiplier` lets a
 // day skew the draw toward its acuity mix (quiet Tuesday vs. everything on fire).
-export function pickPresentation(rng, bias) {
+export function pickPresentation(rng, bias, avoid) {
   const wOf = (p) => Math.max(0.0001, p.w * (bias ? bias(p) : 1));
-  const total = PRESENTATIONS.reduce((s, p) => s + wOf(p), 0);
-  let r = rng.next() * total;
-  for (const p of PRESENTATIONS) { r -= wOf(p); if (r <= 0) return p; }
-  return PRESENTATIONS[PRESENTATIONS.length - 1];
+  const draw = () => {
+    const total = PRESENTATIONS.reduce((s, p) => s + wOf(p), 0);
+    let r = rng.next() * total;
+    for (const p of PRESENTATIONS) { r -= wOf(p); if (r <= 0) return p; }
+    return PRESENTATIONS[PRESENTATIONS.length - 1];
+  };
+  // avoid the last few presentations so you don't get three URIs in a row
+  let pick = draw();
+  for (let tries = 0; tries < 5 && avoid && avoid.has(pick.id); tries++) pick = draw();
+  return pick;
 }
 
 export const presentationById = (id) => PRESENTATIONS.find((p) => p.id === id);

@@ -34,6 +34,7 @@ export function giveMed(game, patient, medId) {
   const contra = (sim.case.contra ?? []).find((c) => c.med === medId);
   if (contra) {
     if (contra.effect === 'death') {
+      sim.recordTx?.(med.name, 'harmful');
       game.ui.toast(`☠ ${contra.note}`, 'bad');
       sim._sayRaw('...that feels... very wrong...', 'critical');
       sim.accel = 10;
@@ -43,6 +44,7 @@ export function giveMed(game, patient, medId) {
       return;
     }
     if (contra.effect === 'accelerate') {
+      sim.recordTx?.(med.name, 'worsened them');
       game.ui.toast(`⚠ ${contra.note}`, 'bad');
       sim.accel *= 3;
       sim._say('worse', 'critical');
@@ -50,6 +52,7 @@ export function giveMed(game, patient, medId) {
       radioReport(game, sim, med, false, 'PATIENT WORSE — RECOMMEND IMMEDIATE RE-EVALUATION', 'bad');
       return;
     }
+    sim.recordTx?.(med.name, 'adverse reaction');
     game.ui.toast(`⚠ ${contra.note}`, 'bad');
     game.addScore(-30, 'Wrong med');
     radioReport(game, sim, med, false, 'ADVERSE REACTION NOTED — RECOMMEND DIFFERENT AGENT', 'bad');
@@ -97,12 +100,14 @@ export function giveMed(game, patient, medId) {
 
     if (isDefinitive && resisted) {
       sim.resistSeen = true;
+      sim.recordTx?.(med.name, 'no response');
       game.barks?.say('noResponse');
       game.ui.toast(`${med.name} — no response from this one. Some people just don't.`, 'bad');
       radioReport(game, sim, med, false, 'NO RESPONSE — SUGGEST AN ALTERNATIVE AGENT', 'bad');
       return;
     }
     if (isDefinitive || (isAdjunct && sim.case.easyAdjunct)) {
+      sim.recordTx?.(med.name, 'responded ✓');
       game.barks?.say('better');
       game.ui.toast(`✓ ${med.name} — ${name} is responding.`, 'good');
       game.addScore(30, 'Effective treatment');
@@ -115,6 +120,7 @@ export function giveMed(game, patient, medId) {
       supportiveCare(game, sim, med.name);
       return;
     }
+    sim.recordTx?.(med.name, 'no effect');
     game.barks?.say('wrongMed');
     game.ui.toast(`${med.name} given... it does nothing for this.`);
     game.addScore(-10, 'Unnecessary med');
@@ -125,15 +131,17 @@ export function giveMed(game, patient, medId) {
   // ---- legacy hand-authored cases: exact ids with clinical equivalence ----
   const needed = sim.case.treatment.meds;
   if (needed.some((m) => satisfies(m, medId))) {
+    const complete = regimenComplete(needed, sim.medsGiven);
+    sim.recordTx?.(med.name, complete ? 'responded ✓' : 'partial response');
     game.ui.toast(`✓ ${med.name} given to ${name}`, 'good');
     game.addScore(30, 'Correct med');
-    const complete = regimenComplete(needed, sim.medsGiven);
     if (complete) applyTreatment(game, sim);
     radioReport(game, sim, med, true,
       complete
         ? (sim.dxPicked == null ? 'READY FOR DISPO ONCE STABLE — DIAGNOSE FOR FULL CREDIT' : 'READY FOR DISPO ONCE STABLE')
         : 'PARTIAL RESPONSE — CONTINUE CURRENT PLAN', 'good');
   } else {
+    sim.recordTx?.(med.name, 'no effect');
     game.ui.toast(`${med.name} given... it does nothing useful.`);
     game.addScore(-10, 'Unnecessary med');
     radioReport(game, sim, med, false, 'RECOMMEND FURTHER WORKUP', 'bad');
@@ -147,6 +155,7 @@ export function giveMed(game, patient, medId) {
 // the line until the definitive agent arrives.
 export function supportiveCare(game, sim, label) {
   const bought = sim.stabiliseOnce();
+  sim.recordTx?.(label, sim.case.supportiveDefinitive ? 'settling ✓' : 'stabilised (temporary)');
   if (sim.case.supportiveDefinitive && !sim.treated) {
     if (!sim._supportivePending) {
       sim._supportivePending = true;

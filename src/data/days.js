@@ -10,9 +10,11 @@ export function dayConfig(day) {
   const f = (d - 1) / (MAX_DAY - 1);          // 0 on day 1 → 1 on day 100
 
   return {
-    // volume ramps from a trickle to a flood
-    patients: Math.round(5 + f * 21),          // 5 → 26
-    quota: Math.round(3 + f * 15),             // 3 → 18
+    // volume ramps from a busy-but-manageable start to a flood (early days used
+    // to trickle in too slowly — the floor is higher now, and _topUp keeps the
+    // department from ever going quiet)
+    patients: Math.round(9 + f * 19),          // 9 → 28
+    quota: Math.round(4 + f * 15),             // 4 → 19
     // acuity mix: mostly walk-ins early, mostly resuscitations late. These are
     // ESI weights [1..5] — the generator samples presentations by frequency and
     // this biases which end of the acuity scale it draws from.

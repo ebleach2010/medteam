@@ -35,6 +35,7 @@ export class PatientSim {
     this.imagingDone = false; this.imagingRead = null; // option index picked
     this.orders = new Set();
     this.medsGiven = new Set();
+    this.txLog = [];            // [{label, result}] — every therapy/op tried + how it went (for the chart)
     this.dxPicked = null;
     this.treated = false; this.tTreated = 0;
     this.wantsDischarge = false;
@@ -87,6 +88,35 @@ export class PatientSim {
     return (this.game.clock.minutes - this.tTreated) >= (MON[this.case.treatment.dispo] ?? 0);
   }
   get labsPending() { return ['drawn', 'spinning', 'ready'].includes(this.labState); }
+
+  // record a therapy/surgery attempt + its result for the patient chart. Collapses
+  // repeats of the same order into the latest result rather than stacking dupes.
+  recordTx(label, result) {
+    if (!label) return;
+    const prev = this.txLog.find((e) => e.label === label);
+    if (prev) prev.result = result;
+    else this.txLog.push({ label, result });
+  }
+
+  // the call light over the room, by acuity:
+  //   blue   = ready for discharge   green  = currently stable
+  //   yellow = deteriorating, needs treatment   orange = rapidly deteriorating
+  //   red    = crashing              (off = dead / no signal)
+  get acuityLight() {
+    if (this.state === 'dead') return 'off';
+    if (this.state === 'readyHome' || this.stabilized) return 'blue';   // ready to go home
+    if (this.critical) return 'red';                                    // crashing
+    if (this.treated || this.stabilisedOnce) return 'green';            // treated, holding steady
+    // untreated & alive — read the deterioration curve
+    const tl = this.case.timeline ?? [];
+    const t0 = tl[0]?.t;
+    const tc = tl.find((k) => k.event === 'critical')?.t;
+    if (t0 != null && this.elapsed >= t0) {
+      if (tc != null && this.elapsed >= t0 + (tc - t0) * 0.6) return 'orange'; // racing toward a crash
+      return 'yellow';                                                          // sliding, needs treatment
+    }
+    return 'green'; // benign, or not declining yet — stable for now
+  }
   isGrabbable() {
     // dead bodies are ABSOLUTELY grabbable — someone has to haul them to the pit
     return ['waiting', 'sedated', 'inbed', 'pinned', 'angry', 'dead', 'arriving', 'readyHome'].includes(this.state);

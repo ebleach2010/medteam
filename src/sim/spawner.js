@@ -13,18 +13,23 @@ export class Spawner {
     // Procedural: every patient is generated fresh from the presentation
     // engine, weighted by how often that complaint really turns up. Same
     // presentation twice in a day is fine — it'll be a different illness.
-    for (const id of cfg.forceCases) picks.push(generateCase(g.rng, day, { id }));
+    // track the last few presentations so the stream doesn't repeat itself
+    this._recent = [];
+    const remember = (c) => { this._recent.push(c.presentationId); if (this._recent.length > 3) this._recent.shift(); return c; };
+    for (const id of cfg.forceCases) picks.push(remember(generateCase(g.rng, day, { id })));
     while (picks.length < cfg.patients) {
-      picks.push(generateCase(g.rng, day, { esiWeights: cfg.esiWeights }));
+      picks.push(remember(generateCase(g.rng, day, { esiWeights: cfg.esiWeights, avoid: new Set(this._recent) })));
     }
-    // arrival minutes: first patient walks in almost immediately, the rest are
-    // spread evenly across the day with jitter — a steady drip, not a desert
+    // arrival minutes: first patient walks in almost immediately, the rest come
+    // in a brisk, steady stream — NOT spread thin across the whole 24h shift
+    // (that left minutes of dead air between arrivals on the early days). They
+    // land across the first ~55% of the day; _topUp keeps it alive after that.
     const n = picks.length;
     const times = [];
-    for (let i = 0; i < n; i++) times.push(15 + (i * 1000) / n + g.rng.range(-25, 25));
+    for (let i = 0; i < n; i++) times.push(10 + (i * 800) / n + g.rng.range(-14, 14));
     times.sort((a, b) => a - b);
-    times[0] = Math.min(times[0], 18);
-    for (let i = 1; i < times.length; i++) times[i] = Math.max(times[i], times[i - 1] + 12);
+    times[0] = Math.min(times[0], 14);
+    for (let i = 1; i < times.length; i++) times[i] = Math.max(times[i], times[i - 1] + 6);
     this.schedule = picks.map((c, i) => ({ at: times[i], caseData: c, done: false }));
   }
 
@@ -76,17 +81,22 @@ export class Spawner {
     const g = this.game;
     if (g.mode !== 'playing') return;
     const now = g.clock.minutes;
-    if (now > 24 * 60 - 75) return;             // last ~1h: let the shift wind down
-    if (this.activeCount() > 0) return;         // only refill an EMPTY department
-    if (this.schedule.some((s) => !s.done && s.at <= now + 45)) return; // one's already due soon
-    if (now - (this._lastFlowAt ?? -999) < 20) return; // a short beat, not a teleport
+    if (now > 24 * 60 - 60) return;             // last hour: let the shift wind down
+    // keep the department at a lively minimum — refill when it's QUIET (a couple
+    // of patients), not only when it's bone empty, so there's always something
+    // to do without waiting out dead air
+    const cfg = dayConfig(g.clock.day);
+    const floor = Math.min(3, Math.max(1, Math.round((cfg.edCapacity ?? 6) / 2)));
+    if (this.activeCount() >= floor) return;
+    if (this.schedule.some((s) => !s.done && s.at <= now + 25)) return; // one's already due soon
+    if (now - (this._lastFlowAt ?? -999) < 12) return; // a short beat, not a flood
     this._lastFlowAt = now;
     const next = this.schedule.find((s) => !s.done);
     if (next) { next.at = now; return; }        // bring the next planned arrival in now
     // planned load spent — generate a fresh walk-in so the ED never goes dead
-    const cfg = dayConfig(g.clock.day);
-    this.schedule.push({ at: now, done: false,
-      caseData: generateCase(g.rng, g.clock.day, { esiWeights: cfg.esiWeights }) });
+    const c = generateCase(g.rng, g.clock.day, { esiWeights: cfg.esiWeights, avoid: new Set(this._recent ?? []) });
+    (this._recent ??= []).push(c.presentationId); if (this._recent.length > 3) this._recent.shift();
+    this.schedule.push({ at: now, done: false, caseData: c });
   }
 }
 

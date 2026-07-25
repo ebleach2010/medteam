@@ -187,6 +187,18 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0e1420; t
   border: 1px solid #d8cdb2; }
 #modal .paper b { color: #b00020; }
 #modal img.scan { width: 100%; border-radius: 6px; margin-bottom: 10px; background: #000; }
+
+/* treatments-tried log on the chart */
+#modal .paper.txlog { white-space: normal; }
+#modal .txrow-log { display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+  padding: 5px 2px; border-bottom: 1px dashed #d8cdb2; }
+#modal .txrow-log:last-child { border-bottom: 0; }
+#modal .txrow-log .tx-what { font-weight: 700; color: #3a2f18; }
+#modal .txrow-log .tx-res { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; white-space: nowrap; }
+#modal .tx-good .tx-res { color: #1c7a3a; }
+#modal .tx-warn .tx-res { color: #b5721a; }
+#modal .tx-bad  .tx-res { color: #b00020; }
+#modal .tx-dim  .tx-res { color: #8a8272; }
 /* options: simple ruled rows on the paper, not app buttons */
 #modal .opt { display: block; width: 100%; margin: 0; padding: 12px 6px;
   border: none; border-bottom: 1px dashed #c9bd9e; background: transparent;
@@ -429,46 +441,6 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0e1420; t
 #modal.crtbox.blue h3 { color: #5db4ff; text-shadow: 0 0 7px rgba(93, 180, 255, 0.8); }
 #modal.crtbox.blue .crt-log { color: #58acf5; text-shadow: 0 0 5px rgba(88, 172, 245, 0.55); font-size: 11.5px; }
 #modal.crtbox.blue .close { background: #0c1420; color: #7cb2e0; border: 1px solid #1e3a5c; }
-
-/* 👀 THE ADAM COMPUTER — deliberately loud: neon green, high saturation, so it
-   reads as a different machine from the muted MED-DOC / triage screens */
-#modal.crtbox.adambox {
-  border-color: #00ff66; background: #001a0d;
-  box-shadow: 0 0 60px rgba(0, 255, 102, .45), inset 0 0 90px rgba(0, 200, 90, .22);
-  color: #66ffa0;
-}
-#modal.crtbox.adambox h3 { color: #7dff6a; text-shadow: 0 0 10px rgba(90, 255, 90, .95); letter-spacing: 3px; }
-#modal.crtbox.adambox .crt-log, #modal.crtbox.adambox .adammsg { color: #6effa0; text-shadow: 0 0 6px rgba(70, 255, 130, .6); }
-#modal.crtbox.adambox .adammsg { text-align: center; font-size: 13px; margin: 10px 0; }
-#modal.crtbox.adambox input { background: #002913; color: #7dff8a; border: 1px solid #0c6b30; text-shadow: 0 0 5px rgba(90,255,120,.5); caret-color: #7dff8a; }
-#modal.crtbox.adambox .adam-go, #modal.crtbox.adambox #adamkeygo { background: #0c5a2a; color: #adffbf; border-color: #0c6b30; }
-#modal.crtbox.adambox .close { background: #04220f; color: #8fe7a0; border: 1px solid #0c6b30; }
-#modal.crtbox.adambox .crt-ps { color: #7dff6a; }
-.adamgreet { opacity: .8; font-style: italic; }
-.adamlog .ats { color: #3aa860; font-size: 10px; }
-
-/* the googly face — two wobbling eyes over a bright pixel grin */
-.adamface { display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 4px 0 10px; }
-.adameyes { display: flex; gap: 22px; }
-.geye { width: 40px; height: 40px; border-radius: 50%; background: #fff;
-  border: 3px solid #0a2a16; display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 0 14px rgba(120,255,150,.5); }
-.geye b { width: 13px; height: 13px; border-radius: 50%; background: #0a1a10; display: block;
-  animation: googly 2.4s ease-in-out infinite; }
-.geye:nth-child(2) b { animation-delay: -1.1s; }
-@keyframes googly {
-  0%,100% { transform: translate(4px, 3px); }
-  25% { transform: translate(-4px, 2px); }
-  50% { transform: translate(3px, -4px); }
-  75% { transform: translate(-3px, 3px); }
-}
-.adamgrin { width: 74px; height: 30px; border: 5px solid #12ff5a; border-top: 0;
-  border-radius: 0 0 60px 60px; box-shadow: 0 0 14px rgba(30,255,110,.8); }
-
-.adamadminrow { display: flex; gap: 6px; margin: 6px 0; }
-.adamadminrow .opt { flex: 1; font-size: 12px; }
-#modal.crtbox.adamadmin { border-color: #ffd23c; box-shadow: 0 0 50px rgba(255,200,60,.4), inset 0 0 90px rgba(160,120,20,.2); }
-#modal.crtbox.adamadmin h3 { color: #ffd23c; text-shadow: 0 0 8px rgba(255,200,60,.9); }
 
 #btn-pager { left: 14px; bottom: 22px; width: 64px; height: 64px; background: #c95b84; }
 
