@@ -213,18 +213,16 @@ export function makeShelf(bandColor) {
   return g;
 }
 
-export function makeDesk() {
+export function makeDesk(w = 3.2) {
   // nurses' station: wood counter body, bone worktop, accent kick
   const g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.78, 1.05), mat(0xb98d5f));
+  const body = new THREE.Mesh(new THREE.BoxGeometry(w, 0.78, 1.05), mat(0xb98d5f));
   body.position.y = 0.44; body.castShadow = true;
-  const kick = new THREE.Mesh(new THREE.BoxGeometry(3.22, 0.14, 1.07), mat(0x8a6742));
+  const kick = new THREE.Mesh(new THREE.BoxGeometry(w + 0.02, 0.14, 1.07), mat(0x8a6742));
   kick.position.y = 0.09;
-  const top = new THREE.Mesh(new THREE.BoxGeometry(3.42, 0.07, 1.22), mat(0xefece2));
+  const top = new THREE.Mesh(new THREE.BoxGeometry(w + 0.22, 0.07, 1.22), mat(0xefece2));
   top.position.y = 0.865; top.castShadow = true;
-  const screen = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.35, 0.05), emat(0x6effe6, 0.7));
-  screen.position.set(-0.8, 1.12, 0);
-  g.add(body, kick, top, screen);
+  g.add(body, kick, top);
   return g;
 }
 

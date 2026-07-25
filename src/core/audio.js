@@ -104,6 +104,24 @@ export class Audio {
   cash() { // discharge / quota
     [784, 988, 1319].forEach((f, i) => this._tone(f, 0.12, { gain: 0.04, at: i * 0.07 }));
   }
+  coin() { // the arcade pickup: a bright two-note ping, gold-sounding
+    this._tone(1318, 0.08, { type: 'square', gain: 0.035 });
+    this._tone(1976, 0.22, { type: 'square', gain: 0.032, at: 0.07 });
+  }
+  insertCoin() { // five of them clattering into the slot
+    for (let i = 0; i < 5; i++) {
+      this._tone(880 + i * 90, 0.05, { type: 'square', gain: 0.03, at: i * 0.09 });
+      this._noise(0.05, { gain: 0.025, freq: 3000, q: 2, at: i * 0.09 + 0.01 });
+    }
+  }
+  boot() { // 1980s workstation POST: a low hum with a disk seek over the top
+    this._tone(70, 2.9, { type: 'sawtooth', gain: 0.016, glide: 96, curve: 'lin' });
+    for (let i = 0; i < 7; i++) this._noise(0.05, { gain: 0.02, freq: 1400, q: 5, at: 0.25 + i * 0.38 });
+    this._tone(880, 0.12, { type: 'square', gain: 0.035, at: 3.0 });
+  }
+  reject() { // INSUFFICIENT CREDIT — the machine spits it back
+    [0, 0.16, 0.32].forEach((at) => this._tone(160, 0.13, { type: 'square', gain: 0.05, at, glide: 110 }));
+  }
   death() {
     this._tone(300, 0.5, { type: 'sine', gain: 0.06, glide: 90, curve: 'lin' });
     this._tone(1000, 1.6, { type: 'sine', gain: 0.035, at: 0.15 }); // the flatline whine

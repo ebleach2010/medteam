@@ -72,6 +72,7 @@ export class Game {
     this.mode = 'title';
     this.paused = false; // Escape menu freezes the whole ED
     this.score = 0;
+    this.coins = 0;              // gold cross coins — the MED-DOC's only fuel
     this.dayStats = this._freshStats();
     this._acc = 0;
     this._scanJob = null;
@@ -103,7 +104,37 @@ export class Game {
   get active() { return this.activeIdx === 0 ? this.nurse : this.doctor; }
   get idle() { return this.activeIdx === 0 ? this.doctor : this.nurse; }
 
-  _freshStats() { return { treated: 0, died: 0, walkedOut: 0, score: 0 }; }
+  _freshStats() { return { treated: 0, died: 0, walkedOut: 0, score: 0, coins: 0 }; }
+
+  // ---------------- coins ----------------
+  // Every patient you treat correctly and send home drops a gold cross coin.
+  // It's the only currency in the building, and the MED-DOC eats five of them
+  // a session — so the terminal is paid for by the medicine you actually got
+  // right, not by standing around asking it questions.
+  awardCoin(atEntity, n = 1) {
+    this.coins = (this.coins ?? 0) + n;
+    this.dayStats.coins += n;
+    this.audio.coin();
+    const p = atEntity?.body?.translation?.() ?? atEntity ?? null;
+    this.ui.coins.fly(p ? { x: p.x, y: (p.y ?? 1) + 1.1, z: p.z } : null, n);
+  }
+
+  spendCoins(n) {
+    if ((this.coins ?? 0) < n) return false;
+    this.coins -= n;
+    this.audio.cash();
+    return true;
+  }
+
+  // stand up from a terminal chair — closes whatever was on the screen, and
+  // the MED-DOC session dies with it (next sitting costs another five)
+  leaveTerminal(char) {
+    if (!char?.seatedAt) return;
+    char.standUp();
+    this.medDocSession = null;   // the credit is spent; sitting again costs five more
+    this.medDocLog = null;
+    if (['meddoc', 'triage'].includes(this.ui.modals.current?.type)) this.ui.modals.close();
+  }
 
   // ---------------- day cycle ----------------
   startDay(day) {
@@ -188,6 +219,7 @@ export class Game {
         // quota missed: game over, back to day one, fresh score
         this.ui.screens.gameOver(this.dayStats, this.clock.day, this.quota, () => {
           this.score = 0;
+          this.coins = 0;   // fresh run, empty pockets
           this._clearAllPatients();
           this.ui.screens.fade(true);
           setTimeout(() => { this.ui.screens.fade(false); this.startDay(1); }, 700);
@@ -1471,16 +1503,28 @@ export class Game {
       return { ico: '🔪', label: 'CHOOSE SURGERY', color: '#9e4a56', run: () => this.ui.modals.surgeryPick(t2) };
     }
 
-    // MED-DOC 4000: the consult terminal at the east end of the staff desk
+    // the two terminals at the staff desk: you SIT DOWN to use them, in the
+    // free chair each one has, and the screen is turned to face the camera
     {
-      const md = this.map.medDoc;
       const pp = char.pos;
-      if (md && Math.hypot(pp.x - md.x, pp.z - md.z) < 1.4) {
-        return { ico: '🖥', label: 'MED-DOC 4000', color: '#2fae5f', run: () => this.ui.modals.medDoc() };
+      if (char.seatedAt) {
+        const k = char.seatedAt.kind;
+        return k === 'meddoc'
+          ? { ico: '🪙', label: 'MED-DOC 4000', color: '#2fae5f', run: () => this.ui.modals.medDoc() }
+          : { ico: '🗂', label: 'TRIAGE BOARD', color: '#3d8fd4', run: () => this.ui.modals.triageBoard() };
       }
-      const tp = this.map.triagePC;
-      if (tp && Math.hypot(pp.x - tp.x, pp.z - tp.z) < 1.4) {
-        return { ico: '🗂', label: 'TRIAGE BOARD', color: '#3d8fd4', run: () => this.ui.modals.triageBoard() };
+      for (const s of this.map.termSeats ?? []) {
+        if (Math.hypot(pp.x - s.x, pp.z - s.z) > 1.5) continue;
+        const green = s.kind === 'meddoc';
+        return {
+          ico: '🪑',
+          label: green ? 'SIT AT MED-DOC' : 'SIT AT TRIAGE BOARD',
+          color: green ? '#2fae5f' : '#3d8fd4',
+          run: () => {
+            char.sitAt(s);
+            if (green) this.ui.modals.medDoc(); else this.ui.modals.triageBoard();
+          },
+        };
       }
     }
     // med cabinet: any pharmacy shelf is a face of the same tabbed cabinet
@@ -1568,7 +1612,7 @@ export class Game {
       this.dayStats.treated += 1;
       this.addScore(Math.round(sim.case.score * (dxRight ? 1 : 0.55)), 'Discharged well');
       this.ui.toast(`🏠 ${sim.displayName} is going HOME! ${dxRight ? '' : '(dx was wrong, but they lived)'}`, 'good');
-      this.audio.cash();
+      this.awardCoin(pt);
       this.setPatientDynamic(pt);
       sim.state = 'leaving';
       pt.setFace('normal');
@@ -1638,6 +1682,7 @@ export class Game {
         pts = sim.case.score * (dxRight ? 1 : 0.5);
         this.dayStats.treated++;
         this.ui.toast(`🏠 ${sim.displayName} discharged! ${dxRight ? '' : '(dx was wrong, but hey)'}`, 'good');
+        this.awardCoin(pt);
         break;
       case 'discharged_sick':
         pts = -60;
@@ -1648,6 +1693,7 @@ export class Game {
         pts = sim.case.score * (dxRight ? 1.2 : 0.6);
         this.dayStats.treated++;
         this.ui.toast(`✓ ${note}`, 'good');
+        this.awardCoin(pt);
         break;
       case 'admitted_wrong':
         pts = sim.case.score * 0.35;

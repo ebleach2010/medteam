@@ -6,6 +6,7 @@ import { Monitors } from './monitor.js';
 import { Modals } from './modals.js';
 import { HUD } from './hud.js';
 import { Screens } from './screens.js';
+import { Coins } from './coins.js';
 
 export class UI {
   constructor(game) {
@@ -18,6 +19,7 @@ export class UI {
     this.monitors = new Monitors(root, game);
     this.modals = new Modals(root, game);
     this.hud = new HUD(root, game);
+    this.coins = new Coins(root, game);
     this.screens = new Screens(root, game);
     this.labels = []; // nearby-item name tags
     for (let i = 0; i < 6; i++) {

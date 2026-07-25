@@ -111,6 +111,31 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0e1420; t
 #hud .role { margin-left: auto; font-weight: 700; color: #9dc1ff; }
 #hud .quota { margin-right: 74px; font-weight: 800; font-variant-numeric: tabular-nums; }
 
+/* ---------- gold cross coins ---------- */
+#hud .coins { display: flex; align-items: center; gap: 5px; font-weight: 800;
+  font-variant-numeric: tabular-nums; color: #ffd75e; }
+#hud .coins .today { font-style: normal; font-size: 10px; font-weight: 700; color: #b39033; }
+#hud .coins.pop { animation: coinpop .42s cubic-bezier(.2,1.8,.5,1); }
+@keyframes coinpop { 40% { transform: scale(1.32); } }
+.coin-disc, .coinfly {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 17px; height: 17px; border-radius: 50%;
+  background: radial-gradient(circle at 34% 30%, #fff6c6 0%, #ffd75e 42%, #c9932a 78%, #8a6316 100%);
+  border: 1px solid #7d5a12; color: #8a1420; font-size: 11px; font-weight: 900;
+  line-height: 1; text-shadow: 0 1px 0 rgba(255,255,255,.45); }
+.coinfly { position: absolute; width: 34px; height: 34px; font-size: 21px;
+  z-index: 60; pointer-events: none; transform-style: preserve-3d;
+  box-shadow: 0 0 16px rgba(255, 200, 60, .65); }
+.coinplus { position: absolute; z-index: 60; pointer-events: none; opacity: 0;
+  transform: translate(-50%, -50%); font-weight: 900; font-size: 20px; color: #ffd75e;
+  text-shadow: 0 2px 0 #7d5a12, 0 0 14px rgba(255,200,60,.7); }
+.coinplus.go { animation: coinplus 1.15s ease-out forwards; }
+@keyframes coinplus {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(.6); }
+  18%  { opacity: 1; transform: translate(-50%, -110%) scale(1.15); }
+  100% { opacity: 0; transform: translate(-50%, -250%) scale(1); }
+}
+
 /* ---------- Vitals monitor cards ---------- */
 .mon { position: absolute; width: 148px; padding: 5px 8px; border-radius: 8px;
   background: rgba(8,14,24,.88); border: 1px solid #2c4166; color: #b9ffd0;
@@ -320,6 +345,42 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0e1420; t
 }
 #modal.crtbox .crt-go { background: #123c1e; color: #4dff7c; border-color: #1e4a28; }
 #modal.crtbox .close { background: #0c1a10; color: #7cc796; border: 1px solid #1e4a28; }
+
+/* ---- the MED-DOC is a coin-op machine ---- */
+.arcade { text-align: center; padding: 18px 8px 10px; font-family: 'Courier New', ui-monospace, monospace; }
+.arcade .big { font-size: 20px; letter-spacing: 3px; font-weight: 800; margin-bottom: 4px; }
+.arcade .credit { font-size: 12px; letter-spacing: 1.5px; color: #7cc796; margin-bottom: 16px; }
+.arcade .blink { animation: arcblink 1s steps(1, end) infinite; font-size: 17px;
+  letter-spacing: 3px; font-weight: 800; margin: 22px 0; }
+@keyframes arcblink { 50% { opacity: 0; } }
+.arcade .slot { background: #123c1e; color: #4dff7c; border: 2px solid #2e7a3e;
+  font-family: inherit; font-size: 15px; letter-spacing: 2px; font-weight: 800;
+  padding: 12px 18px; border-radius: 8px; width: 100%; margin-top: 6px; cursor: pointer; }
+.arcade .slot:active { transform: translateY(1px); }
+.arcade .slot[disabled] { opacity: .45; }
+.arcade .hint { font-size: 10.5px; color: #4f8a63; margin-top: 12px; line-height: 1.5; }
+
+/* insufficient credit: the whole tube goes red and screams */
+#modal.crtbox.errbox { border-color: #6b1414; color: #ff5d5d;
+  box-shadow: 0 0 44px rgba(255, 60, 60, .3), inset 0 0 90px rgba(140, 20, 20, .2);
+  animation: arcerr .34s steps(1, end) infinite; }
+@keyframes arcerr { 50% { background: #2a0606; } }
+#modal.crtbox.errbox .arcade .big,
+#modal.crtbox.errbox .arcade .credit,
+#modal.crtbox.errbox .arcade .blink { color: #ff8a8a; }
+#modal.crtbox.errbox h3 { color: #ff5d5d; text-shadow: 0 0 7px rgba(255, 93, 93, .8); }
+#modal.crtbox.errbox .arcade .hint { color: #a85454; }
+#modal.crtbox.errbox .close { background: #1e0808; color: #ff9a9a; border-color: #6b1414; }
+
+/* boot sequence */
+.bootbar { height: 16px; border: 2px solid #2e7a3e; border-radius: 3px;
+  margin: 16px 0 8px; overflow: hidden; background: #04150b; }
+.bootbar i { display: block; height: 100%; width: 0;
+  background: repeating-linear-gradient(90deg, #4dff7c 0 7px, #123c1e 7px 10px);
+  animation: bootfill 3s linear forwards; }
+@keyframes bootfill { to { width: 100%; } }
+.bootlog { text-align: left; font-size: 11px; line-height: 1.6; white-space: pre-wrap;
+  color: #49f07a; text-shadow: 0 0 5px rgba(73, 240, 122, .55); min-height: 9em; }
 
 .llmchip {
   font-size: 10px;

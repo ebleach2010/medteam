@@ -218,18 +218,20 @@ function chartFor(p, n) {
   return bits.filter(Boolean).join('\n');
 }
 
+// The MED-DOC is a REFERENCE terminal, not a consultant. It is deliberately
+// blind to the department: no roster, no charts, no idea who is in the building.
+// It answers medical questions — the same way a textbook or a colleague in
+// another hospital would — and the player still has to do the diagnosing.
 export async function medDocConsult(game, query) {
   if (!llmEnabled()) return medDocLocal(game, query);
   try {
-    const pts = [...game.world.byTag('patients')].filter((p) => p.sim.state !== 'dead' && !p.sim.resolved).slice(0, 10);
-    const roster = pts.map((p, i) => chartFor(p, i + 1)).join('\n') || '(no active patients)';
     const system = [
-      'You are Claude, running on the "MED-DOC 4000" workstation in an ED-simulator game. The attending physician is asking you for help. Answer exactly like you (Claude) normally would at a computer — clear, direct, genuinely helpful.',
-      'STYLE: answer the specific question asked, concisely — usually 1 to 4 sentences of plain prose. Only give a differential or a workup list if they actually ask for one. Plain text, no markdown headers, no roleplay, no "1980s terminal" affectation, no all-caps.',
-      'You can see the active patient CHARTS below but NOT the hidden answer key — reason from the findings like a real consult. If they ask about one patient, focus on that patient.',
-      'This is a fictional game — be decisive and practical; do not add disclaimers about consulting real professionals.',
-      '--- ACTIVE PATIENT CHARTS ---',
-      roster,
+      'You are the "MED-DOC 4000", a medical reference terminal in an ED-simulator game. A physician is looking something up.',
+      'You have NO access to this hospital: you cannot see any patients, charts, vitals, labs or imaging, and you do not know who is in the department. If asked about a specific patient, a room number, "my patient", or what is wrong with someone, say plainly that you are a reference terminal with no link to the department and answer the general medical question underneath it instead.',
+      'STYLE: answer the specific question asked, concisely — usually 1 to 3 sentences of plain prose. Only give a list if they ask for one. Plain text, no markdown headers, no roleplay, no all-caps.',
+      'SCOPE: general medicine — what a condition is, how a drug works, typical doses, what a test shows, how a procedure is done. Be accurate and practical.',
+      'Do not solve the case for them. Do not volunteer a diagnosis, a differential, or a treatment plan for an unnamed patient unless they explicitly describe the findings and ask. Answer what was asked and stop.',
+      'This is a fictional game — no disclaimers about consulting real professionals.',
     ].filter(Boolean).join('\n');
     const reply = await textCall(system, query);
     _lastMode = 'live';
@@ -257,11 +259,9 @@ function medDocLocal(game, query) {
       hit.rx.adj.length ? `Adjuncts: ${named(hit.rx.adj).join('; ')}` : null,
       `Disposition: ${hit.dispo}`].filter(Boolean).join('\n');
   }
-  if (/roster|patients|census|list/.test(q)) {
-    const pts = [...game.world.byTag('patients')].filter((p) => p.sim.state !== 'dead' && !p.sim.resolved);
-    return pts.length
-      ? `CENSUS (${pts.length}):\n` + pts.map((p, i) => chartFor(p, i + 1)).join('\n')
-      : 'CENSUS: 0 ACTIVE PATIENTS. ENJOY IT WHILE IT LASTS.';
+  // the terminal has no link to the department — it never had a census
+  if (/roster|patients|census|my patient|room \d/.test(q)) {
+    return 'NO DEPARTMENT LINK. THIS IS A REFERENCE TERMINAL — IT CANNOT SEE YOUR PATIENTS.\nASK A MEDICAL QUESTION, OR "LOOKUP <DIAGNOSIS>".';
   }
   // crude symptom index over the whole case library
   const scored = [];
@@ -276,7 +276,7 @@ function medDocLocal(game, query) {
     const rx = c.treatment.meds.map((m) => MEDS.find((x) => x.id === m)?.name ?? m).join(' + ') || 'supportive care';
     return `CLOSEST MATCH: ${c.name.toUpperCase()} — typically ${rx}, dispo ${c.treatment.dispo}.\n(OFFLINE STUB — connect the link for a real consult: KEY <API-KEY>. "LOOKUP ${c.name.split(' ')[0].toUpperCase()}" prints the full pathway.)`;
   }
-  return 'NO MATCH. ASK A SPECIFIC QUESTION, "LOOKUP <DIAGNOSIS>", "CENSUS" — OR CONNECT THE LINK: KEY <ANTHROPIC-API-KEY>';
+  return 'NO MATCH. ASK A SPECIFIC MEDICAL QUESTION, OR "LOOKUP <DIAGNOSIS>" — OR CONNECT THE LINK: KEY <ANTHROPIC-API-KEY>';
 }
 
 // ---------- curbside consults: ask the staff about a specific patient ----------

@@ -548,8 +548,8 @@ They'll evaluate at the bedside and file a note in the chart.</div>
       const waiting = pts.filter((q) => !q.sim.bed && !q.sim.resolved && q.sim.state !== 'dead').length;
       this.box.innerHTML = `<h3>🗂 TRIAGE BOARD</h3>
         <div class="crt-log" style="max-height:56vh">${rows.map(esc).join('\n')}\n\nWAITING ROOM: ${waiting} not yet roomed</div>
-        <button class="close">CLOSE</button>`;
-      this.box.querySelector('.close').addEventListener('click', () => this.close());
+        <button class="close">STAND UP</button>`;
+      this.box.querySelector('.close').addEventListener('click', () => this._medDocLeave());
     };
     render();
     this._open();
@@ -560,23 +560,135 @@ They'll evaluate at the bedside and file a note in the chart.</div>
     }, 1000);
   }
 
-  // 🖥 MED-DOC 4000 — the green-phosphor consult terminal at the station.
-  // Live Claude with the active charts when a key is connected; an offline
-  // symptom index otherwise. KEY <key> stores the API key right here.
+  // 🖥 MED-DOC 4000 — the coin-op consult terminal at the station.
+  //
+  // It's an arcade cabinet. Five gold cross coins buys a session; the machine
+  // takes three seconds to boot, then you can ask it as much as you like until
+  // you stand up. Walk away and the credit's gone — sitting back down costs
+  // another five. Coins come from patients you got RIGHT, so the terminal is
+  // funded by good medicine rather than by asking it what to do.
   medDoc() {
+    const g = this.game;
+    if (g.medDocSession === 'live') { this._medDocTerminal(); return; }
+    this._medDocInsert();
+  }
+
+  // ── screen 1: INSERT COINS TO PLAY ──
+  _medDocInsert() {
+    const g = this.game;
+    const have = g.coins ?? 0;
+    this.current = { type: 'meddoc', patient: null, options: [] };
+    this.box.classList.add('crtbox');
+    this.box.classList.remove('errbox');
+    this.box.innerHTML = `<h3>▓ MED-DOC 4000</h3>
+      <div class="arcade">
+        <div class="big">MED-DOC 4000</div>
+        <div class="credit">CREDIT: ${have} COIN${have === 1 ? '' : 'S'} · 5 PER SESSION</div>
+        <div class="blink">INSERT COINS TO PLAY</div>
+        <button class="slot" id="slotbtn">INSERT 5 COINS</button>
+        <div class="hint">Coins come from patients you treat correctly and send home.<br>
+          Stand up and the session ends — you pay again next time.</div>
+      </div>
+      <button class="close">STEP AWAY</button>`;
+    this._open();
+    this.box.querySelector('#slotbtn').addEventListener('click', () => {
+      if (!g.spendCoins(5)) { this._medDocError(); return; }
+      g.audio?.insertCoin?.();
+      this._medDocBoot();
+    });
+    this.box.querySelector('.close').addEventListener('click', () => this._medDocLeave());
+  }
+
+  // ── screen 2: not enough coins — the tube goes red and shouts ──
+  _medDocError() {
+    const g = this.game;
+    g.audio?.reject?.();
+    this.current = { type: 'meddoc', patient: null, options: [] };
+    this.box.classList.add('crtbox', 'errbox');
+    this.box.innerHTML = `<h3>▓ MED-DOC 4000</h3>
+      <div class="arcade">
+        <div class="big">✖ INSUFFICIENT CREDIT ✖</div>
+        <div class="credit">YOU HAVE ${g.coins ?? 0} · YOU NEED 5</div>
+        <div class="blink">GO TREAT SOMEBODY</div>
+        <div class="hint">Every patient you diagnose, treat and discharge in good shape<br>
+          drops one gold cross coin.</div>
+      </div>
+      <button class="close">STEP AWAY</button>`;
+    this._open();
+    this.box.querySelector('.close').addEventListener('click', () => this._medDocLeave());
+    // the machine sulks for a few seconds, then goes back to attract mode
+    clearTimeout(this._arcT);
+    this._arcT = setTimeout(() => {
+      if (this.current?.type === 'meddoc') this._medDocInsert();
+    }, 3200);
+  }
+
+  // ── screen 3: three seconds of 1980s POST ──
+  _medDocBoot() {
+    const g = this.game;
+    g.audio?.boot?.();
+    this.current = { type: 'meddoc', patient: null, options: [] };
+    this.box.classList.add('crtbox');
+    this.box.classList.remove('errbox');
+    this.box.innerHTML = `<h3>▓ MED-DOC 4000</h3>
+      <div class="arcade">
+        <div class="credit">CREDIT ACCEPTED — 5 COINS</div>
+        <div class="bootbar"><i></i></div>
+        <div class="bootlog" id="bootlog"></div>
+      </div>`;
+    this._open();
+    const lines = [
+      'MED-DOC 4000 · BIOS 2.7',
+      'MEMORY TEST ......... 640K OK',
+      'DISK 0 .............. READY',
+      'LOADING FORMULARY ... OK',
+      'LOADING PATHWAYS .... OK',
+      'ESTABLISHING LINK ...',
+      llmEnabled() ? `LINK ● LIVE — ${getModel()}` : 'LINK ○ OFFLINE (local index)',
+      'READY.',
+    ];
+    const el = this.box.querySelector('#bootlog');
+    let i = 0;
+    clearInterval(this._bootT);
+    this._bootT = setInterval(() => {
+      if (this.current?.type !== 'meddoc') { clearInterval(this._bootT); return; }
+      el.textContent += lines[i] + '\n';
+      g.audio?.type?.();
+      if (++i >= lines.length) clearInterval(this._bootT);
+    }, 3000 / lines.length);
+    clearTimeout(this._arcT);
+    this._arcT = setTimeout(() => {
+      if (this.current?.type !== 'meddoc') return;
+      g.medDocSession = 'live';
+      this._medDocTerminal();
+    }, 3050);
+  }
+
+  // stepping away from the machine also gets you out of the chair
+  _medDocLeave() {
+    const g = this.game;
+    this.close();
+    if (g.active?.seatedAt) g.leaveTerminal(g.active);
+  }
+
+  // ── screen 4: the terminal itself ──
+  _medDocTerminal() {
     const g = this.game;
     g.medDocLog ??= [{
       who: 'doc',
-      text: `MED-DOC 4000 — Claude, at your terminal.
-${llmEnabled() ? `Link: ● live — ${getModel()}. Ask me anything about your patients.` : 'Link: ○ offline. Type  key <your-anthropic-key>  to bring me online.'}
-Try: a plain question, "census", "lookup <diagnosis>", or "clear".`,
+      text: `MED-DOC 4000 — medical reference terminal.
+${llmEnabled() ? `Link: ● live — ${getModel()}.` : 'Link: ○ offline. Type  key <your-anthropic-key>  to bring me online.'}
+I answer medical questions. I cannot see your department, your patients or
+their charts — ask me about medicine, not about them.
+Try: a question, "lookup <diagnosis>", or "clear".`,
     }];
     this.current = { type: 'meddoc', patient: null, options: [] };
     this.box.classList.add('crtbox');
+    this.box.classList.remove('errbox');
     this.box.innerHTML = `<h3>▓ MED-DOC 4000</h3>
       <div class="crt-log" id="crtlog"></div>
       <div class="txrow"><span class="crt-ps">C:\\&gt;</span><input id="crtbar" autocomplete="off" spellcheck="false" placeholder="query..." /><button class="opt go-mini crt-go" id="crtgo">⏎</button></div>
-      <button class="close">POWER OFF</button>`;
+      <button class="close">EXIT</button>`;
     this._open();
     const logEl = this.box.querySelector('#crtlog');
     const paint = () => {
@@ -589,7 +701,7 @@ Try: a plain question, "census", "lookup <diagnosis>", or "clear".`,
     this._wireTyped('#crtbar', '#crtgo', async (text) => {
       const t = text.trim();
       input.value = '';
-      if (/^clear$/i.test(t)) { g.medDocLog = null; this.medDoc(); return; }
+      if (/^clear$/i.test(t)) { g.medDocLog = null; this._medDocTerminal(); return; }
       if (/^key\s+\S/i.test(t)) {
         setKey(t.replace(/^key\s+/i, '').trim());
         g.medDocLog.push({ who: 'doc', text: llmEnabled() ? `KEY STORED. LINK: ● LIVE — ${getModel()}` : 'KEY CLEARED. LINK: ○ OFFLINE' });
@@ -614,7 +726,9 @@ Try: a plain question, "census", "lookup <diagnosis>", or "clear".`,
       }, 45);
     });
     setTimeout(() => input?.focus(), 50);
-    this.box.querySelector('.close').addEventListener('click', () => this.close());
+    // EXIT ends the session — the five coins are spent, and sitting back down
+    // starts the whole thing over at INSERT COINS
+    this.box.querySelector('.close').addEventListener('click', () => this._medDocLeave());
   }
 
   // 🔑 connect the player's own Anthropic API key (stored in localStorage,
@@ -942,12 +1056,14 @@ Your key stays in this browser only.</div>
 
   close() {
     if (this.current) this.game.audio?.close?.();
+    clearTimeout(this._arcT);
+    clearInterval(this._bootT);
     clearInterval(this._vfT);
     clearInterval(this._ttT);
     this._cancelRebind();
     this.current = null;
     this.veil.style.display = 'none';
-    this.box.classList.remove('crtbox', 'blue', 'folders');
+    this.box.classList.remove('crtbox', 'blue', 'folders', 'errbox');
     this.game.paused = false; // only the pause/settings modals ever set it
   }
 }

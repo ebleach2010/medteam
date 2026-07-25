@@ -82,6 +82,31 @@ test('imaging orders: modality alone is rejected, regions and contrast parse', a
   expect(res.filmForCt).toBe(false);
 });
 
+// The MED-DOC is a blind reference terminal — it must not leak the roster.
+test('MED-DOC offline stays a reference terminal — no census leak', async ({ page }) => {
+  await page.addInitScript(() => { try { localStorage.setItem('medteam.seenTutorial','1'); } catch {} });
+  await page.goto('/?seed=5&lite=1');
+  await page.waitForFunction(() => window.__game?.ready);
+  await page.evaluate(() => window.__game.start());
+  await page.waitForTimeout(300);
+
+  const res = await page.evaluate(async () => {
+    const llm = await import('/src/sim/llm.js');
+    const g = window.__game.game;
+    window.__game.spawnCase('sepsis');   // someone IS in the building
+    // ...but the terminal can't see them
+    const census = await llm.medDocConsult(g, 'census');
+    const patient = await llm.medDocConsult(g, "what is wrong with my patient in room 1?");
+    const general = await llm.medDocConsult(g, 'lookup sepsis');
+    return { census, patient, general, npat: [...g.world.byTag('patients')].length };
+  });
+
+  expect(res.census.toLowerCase()).toContain('no department link');
+  expect(res.patient.toLowerCase()).toContain('reference terminal');
+  // but it still answers a genuine medical lookup
+  expect(res.general.toLowerCase()).toContain('sepsis');
+});
+
 // Supportive care buys time exactly once — stabilising, not curing.
 test('partial treatment resets the deterioration clock only once', async ({ page }) => {
   await page.addInitScript(() => { try { localStorage.setItem('medteam.seenTutorial','1'); } catch {} });

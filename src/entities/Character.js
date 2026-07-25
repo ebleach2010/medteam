@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { makeCharacterMesh } from '../render/meshes.js';
 import { animateRig } from '../render/rig.js';
-import { springToward, uprightSpring } from '../physics/physics.js';
+import { springToward, uprightSpring, RAPIER } from '../physics/physics.js';
 
 const SPRINT = 5.4;
 const ACCEL = 0.16;
@@ -49,8 +49,31 @@ export class Character {
 
   applyMove(x, z) { this.move.x = x; this.move.z = z; }
 
+  // park yourself in a terminal chair — same rooted, bolt-upright pose the
+  // staff use. Any real push on the stick gets you back on your feet.
+  sitAt(seat) {
+    this.seatedAt = seat;
+    this.release();
+    this.body.setTranslation({ x: seat.x, y: this.body.translation().y, z: seat.z }, true);
+    this.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    this.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
+    this.yaw = seat.yaw ?? Math.PI;
+    this.game.audio?.bed?.();
+  }
+
+  standUp() {
+    if (!this.seatedAt) return;
+    this.seatedAt = null;
+    this.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
+  }
+
   fixedUpdate(dt) {
     const body = this.body;
+    if (this.seatedAt) {
+      // seated: hold the pose until you actually shove the stick
+      if (Math.hypot(this.move.x, this.move.z) > 0.35) this.game.leaveTerminal?.(this);
+      else { this.applyMove(0, 0); return; }
+    }
     // movement: joystick magnitude → walk/jog/sprint target, chased by impulses
     const mag = Math.min(1, Math.hypot(this.move.x, this.move.z));
     let cap = targetSpeed(mag);
@@ -123,7 +146,7 @@ export class Character {
   syncMesh(dt, now) {
     const p = this.body.translation();
     const q = this.body.rotation();
-    const seated = !!this.atPost && !this.carrying && !this.dragging;
+    const seated = !!(this.atPost || this.seatedAt) && !this.carrying && !this.dragging;
     // seated staff go kinematic, which FREEZES whatever tilt the capsule had
     // when they sat — that's what made the crew look drunk in their chairs.
     // Sitting is always bolt upright; only walkers keep the physics wobble.
