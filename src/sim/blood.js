@@ -140,7 +140,9 @@ export class Blood {
       if (!wet || was) continue;                 // only on entering the pool
       if (ch.sprawlTimer > 0) continue;          // already down
       const v = ch.body.linvel();
-      if (Math.hypot(v.x, v.z) < 0.8) continue;  // creeping across is fine
+      // a true, independent 10% roll on EVERY crossing — the only thing that
+      // skips the roll is standing still ON the rim (you have to be crossing it)
+      if (Math.hypot(v.x, v.z) < 0.2) continue;
       if (!this.game.rng.chance(SLIP_CHANCE)) continue;
       ch.slip();
       if (ch === this.game.active) {

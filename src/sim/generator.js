@@ -149,6 +149,7 @@ export function generateCase(rng, day = 1, opts = {}) {
     treatment: { meds, dispo: P.dispo },
     // the class-based prescription — what treatment.js actually judges against
     rx: { first: [...P.rx.first], alt: [...P.rx.alt], adj: [...P.rx.adj] },
+    supportiveDefinitive: !!P.supportiveDefinitive, // supportive care alone cures this
     resist,                           // specific AGENTS that do nothing for THIS patient
     easyAdjunct: easy,
     contra: P.contra ?? [],

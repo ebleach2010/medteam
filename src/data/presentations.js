@@ -36,6 +36,10 @@ const P = (id, name, esi, w, complaint, o = {}) => ({
   psych: o.psych ?? false,
   tags: o.tags ?? [],
   sys: o.sys ?? SYSTEM_OF[id] ?? 'gi',
+  // self-limited: good SUPPORTIVE care (rest, warmth, comfort, a topical) is
+  // itself curative after a recheck window — you don't owe them a specific
+  // drug. Distinct from cases that genuinely need the right agent.
+  supportiveDefinitive: o.supportiveDefinitive ?? false,
 });
 
 export const PRESENTATIONS = [
@@ -56,19 +60,20 @@ export const PRESENTATIONS = [
   P('uri', 'Upper respiratory infection', 5, 88,
     ['I have had this cough for a week and I feel awful.', 'Sore throat, stuffy, coughing.'],
     { hx: 'Kids brought something home from school.', first: ['antipyretic'],
-      alt: ['analgesic-mild'], adj: ['fluid'],
+      alt: ['analgesic-mild'], adj: ['fluid', 'supportive'], supportiveDefinitive: true,
       dx: ['Viral URI', 'Strep pharyngitis', 'Influenza', 'Pneumonia'], v: { temp: 37.9 } }),
 
   P('lowback', 'Mechanical low back pain', 4, 84,
     ['I picked up a couch and my back went.', 'Lower back is in spasm.'],
     { hx: 'Moving apartments. No numbness, no incontinence.', first: ['nsaid', 'muscle-relaxant'],
-      alt: ['analgesic-mild', 'analgesic-moderate'], adj: ['neuropathic-analgesic'],
+      alt: ['analgesic-mild', 'analgesic-moderate'], adj: ['neuropathic-analgesic', 'supportive'],
+      supportiveDefinitive: true,
       dx: ['Mechanical back pain', 'Disc herniation', 'Cauda equina', 'Pyelonephritis'] }),
 
   P('headache_tension', 'Tension headache', 4, 78,
     ['Band around my head. All day.', 'Headache that will not quit.'],
     { hx: 'Deadlines. Poor sleep. Too much coffee.', first: ['analgesic-mild'],
-      alt: ['nsaid', 'antiemetic'], adj: ['fluid'],
+      alt: ['nsaid', 'antiemetic'], adj: ['fluid', 'supportive'], supportiveDefinitive: true,
       dx: ['Tension headache', 'Migraine', 'SAH', 'Meningitis'] }),
 
   P('migraine', 'Migraine', 3, 70,
@@ -80,7 +85,7 @@ export const PRESENTATIONS = [
   P('gastro', 'Gastroenteritis', 4, 76,
     ['Both ends. For two days. It is grim.', 'Vomiting and diarrhoea since yesterday.'],
     { hx: 'Roommate had it first.', first: ['antiemetic', 'fluid'],
-      alt: ['antidiarrheal'], adj: ['analgesic-mild'],
+      alt: ['antidiarrheal'], adj: ['analgesic-mild', 'supportive'], supportiveDefinitive: true,
       dx: ['Viral gastroenteritis', 'Food poisoning', 'C. diff', 'Appendicitis'],
       v: { hr: 98, sbp: 112 }, labs: { BMP: 'Cr 1.3, mild AKI' } }),
 
@@ -93,6 +98,7 @@ export const PRESENTATIONS = [
   P('sprain', 'Ankle sprain', 4, 68,
     ['Rolled my ankle playing football. It is the size of a grapefruit.', 'Twisted my ankle on a kerb.'],
     { hx: 'Weekend league. Heard a pop.', first: ['nsaid'], alt: ['analgesic-mild', 'analgesic-moderate'],
+      adj: ['supportive'], supportiveDefinitive: true,
       dx: ['Ankle sprain', 'Ankle fracture', 'Achilles rupture', 'Gout'],
       img: { type: 'ankle', options: ['No fracture — sprain', 'Distal fibula fracture', 'Normal', 'Dislocation'] } }),
 
@@ -125,12 +131,17 @@ export const PRESENTATIONS = [
 
   P('conjunctivitis', 'Conjunctivitis', 5, 40,
     ['My eye is glued shut and bright red.', 'Both eyes are gunky and sore.'],
-    { hx: 'Toddler had the same thing.', first: ['antibiotic'], alt: ['antihistamine'],
+    { hx: 'Toddler had the same thing.',
+      // a topical antibiotic is the textbook move; a systemic one also works but
+      // is second-line. Warm compresses + tears are curative supportive care.
+      first: ['antibiotic-eye'], alt: ['antibiotic', 'antihistamine'],
+      adj: ['ophthalmic-adjunct', 'ophthalmic', 'supportive'], supportiveDefinitive: true,
       dx: ['Conjunctivitis', 'Iritis', 'Corneal abrasion', 'Acute glaucoma'] }),
 
   P('constipation', 'Constipation', 5, 44,
     ['I have not been for a week and I am miserable.', 'Blocked up and bloated.'],
-    { hx: 'New pain meds after surgery.', first: ['laxative'], alt: ['antispasmodic'], adj: ['fluid'],
+    { hx: 'New pain meds after surgery.', first: ['laxative'], alt: ['antispasmodic'],
+      adj: ['fluid', 'supportive'], supportiveDefinitive: true,
       dx: ['Constipation', 'Bowel obstruction', 'Ileus', 'Colonic mass'] }),
 
   // ======================= common, moderate acuity =======================

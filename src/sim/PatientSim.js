@@ -4,6 +4,24 @@
 const CURSES = ['#@$%!!', '✱&@#!?', 'THIS IS %$#@!', 'I pay taxes!!', '@#$% this ER!!',
   'ONE STAR. ONE.', 'I’m calling the manager of HOSPITALS'];
 
+// nudge, by body system, for a roomed patient who's been worked up but never
+// actually TREATED — names the category, never the diagnosis, so it points the
+// player at the missing therapy without solving the case.
+const LIMBO_HINT = {
+  eye: 'still symptomatic — have we actually TREATED the eye, or only looked at it? Reassess the route.',
+  gi: 'still miserable — a workup isn’t a treatment. What are we actually giving them?',
+  gu: 'still symptomatic — have we started the definitive therapy, or just held them?',
+  infect: 'not improving — this needs actual treatment, not just observation.',
+  msk: 'still in pain — have we managed it, or only imaged it?',
+  neuro: 'no better — reassess: are we treating this or just watching it?',
+  psych: 'still in crisis — have we actually intervened, or only assessed?',
+  resp: 'still working to breathe — have we given the treatment, or only the workup?',
+  derm: 'still symptomatic — a look isn’t a treatment. What are we prescribing?',
+  cardiac: 'still symptomatic — have we treated it, or only monitored?',
+  endo: 'not corrected — reassess the actual therapy.',
+  tox: 'unchanged — have we given the treatment, or only watched?',
+};
+
 export class PatientSim {
   constructor(game, ent, caseData) {
     this.game = game; this.ent = ent; this.case = caseData;
@@ -188,6 +206,20 @@ export class PatientSim {
       else if (this.treated) this._say('better');
       else if (this.elapsed > (this.case.timeline[0]?.t ?? 1e9)) this._say('worse');
       else this._say('stable');
+    }
+
+    // limbo rescue: a roomed, worked-up patient who is never going to die
+    // (fail:null) and is still untreated will otherwise sit forever with no
+    // signal. Every so often the department nudges you toward the missing
+    // therapy — by body system, never naming the diagnosis.
+    // benign = no deterioration timeline (generator builds one only for cases
+    // that can crash); those are the ones that otherwise sit forever untreated.
+    if (this.state === 'inbed' && !this.treated && !this.resolved && this.everRoomed
+      && !this.case.timeline?.length && this.elapsed > 60 && now > (this._limboHintAt ?? 0)
+      && !this._supportivePending) {
+      this._limboHintAt = now + 55;
+      const hint = LIMBO_HINT[this.case.sys] ?? 'still symptomatic — reassess: have we actually treated this?';
+      this.game.ui.announce(`📻 ROOM ${this.bed?.roomNo ?? '?'} ${hint}`, 'bad');
     }
 
     // stabilized patients get up and wait by the bed (green light — take them

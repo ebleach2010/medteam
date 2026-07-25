@@ -27,6 +27,11 @@ export const MEDS = [
   M('colchicine', 'Colchicine', 'topicals', 0xd9d97b, ['antigout'], '1.2 mg PO then 0.6 mg', 60, 720),
   M('tetanus', 'Tetanus booster', 'topicals', 0xa1c9a1, ['vaccine', 'wound-care'], 'Td/Tdap 0.5 mL IM', 0, 0),
   M('lidocaine', 'Lidocaine (local)', 'topicals', 0xf0e0a1, ['local-anesthetic', 'wound-care'], '1% infiltration', 3, 90),
+  // ---------- ophthalmic / topical eye care ----------
+  M('erythromycin_eye', 'Erythromycin eye ointment', 'topicals', 0xf5e6a8, ['antibiotic-eye', 'ophthalmic', 'antibiotic-topical', 'topical'], '0.5% ribbon to eye QID', 30, 360),
+  M('moxifloxacin_eye', 'Moxifloxacin drops', 'topicals', 0xa8d8f5, ['antibiotic-eye', 'ophthalmic', 'antibiotic-topical', 'topical'], '1 drop TID', 20, 360),
+  M('artificial_tears', 'Artificial tears', 'topicals', 0xd0eef5, ['ophthalmic', 'lubricant', 'supportive'], '1–2 drops PRN', 5, 120),
+  M('warm_compress', 'Warm compress', 'topicals', 0xe8b48a, ['supportive', 'warm-compress', 'ophthalmic-adjunct', 'comfort'], 'Warm compress 10 min QID', 5, 240),
 
   // ---------- antibiotics / antimicrobials ----------
   M('amoxicillin', 'Amoxicillin', 'antibiotics', 0xf06e9c, ['antibiotic', 'penicillin'], '500 mg PO TID', 60, 480),

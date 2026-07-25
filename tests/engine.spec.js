@@ -82,6 +82,89 @@ test('imaging orders: modality alone is rejected, regions and contrast parse', a
   expect(res.filmForCt).toBe(false);
 });
 
+// Conjunctivitis: the reported bug. Topical eye care must be a definitive route
+// offline, and the case must be flagged self-limited so supportive care cures.
+test('conjunctivitis is curable by topical eye care and by supportive care', async ({ page }) => {
+  await page.addInitScript(() => { try { localStorage.setItem('medteam.seenTutorial','1'); } catch {} });
+  await page.goto('/?seed=5&lite=1');
+  await page.waitForFunction(() => window.__game?.ready);
+
+  const res = await page.evaluate(async () => {
+    const gen = await import('/src/sim/generator.js');
+    const meds = await import('/src/data/meds.js');
+    const { makeRng } = await import('/src/core/rng.js');
+    const c = gen.generateCase(makeRng(7), 1, { id: 'conjunctivitis' });
+    const isDef = (id) => {
+      const cls = meds.medById(id).cls;
+      return c.rx.first.some((x) => cls.includes(x)) || c.rx.alt.some((x) => cls.includes(x));
+    };
+    return {
+      eyeStocked: !!meds.medById('erythromycin_eye') && !!meds.medById('warm_compress'),
+      dropWorks: isDef('moxifloxacin_eye'),          // topical antibiotic is definitive
+      systemicWorks: isDef('ceftriaxone'),           // systemic still allowed (second-line)
+      selfLimited: c.supportiveDefinitive === true,  // supportive care can cure it
+    };
+  });
+  expect(res.eyeStocked).toBe(true);
+  expect(res.dropWorks).toBe(true);
+  expect(res.systemicWorks).toBe(true);
+  expect(res.selfLimited).toBe(true);
+});
+
+// Supportive care CURES a self-limited case (after the recheck window) but only
+// HOLDS a drug-requiring case — the flag must not over-apply.
+test('supportive care cures self-limited cases, holds drug-requiring ones', async ({ page }) => {
+  await page.addInitScript(() => { try { localStorage.setItem('medteam.seenTutorial','1'); } catch {} });
+  await page.goto('/?seed=5&lite=1');
+  await page.waitForFunction(() => window.__game?.ready);
+
+  const res = await page.evaluate(async () => {
+    const { supportiveCare, applyTreatment } = await import('/src/sim/treatment.js');
+    const mk = (supportiveDefinitive) => {
+      const timers = [];
+      const game = {
+        clock: { minutes: 100 }, timeReal: 0, timers,
+        addScore() {}, barks: { say() {} },
+        ui: { toast() {}, announce() {} }, audio: { blip() {} },
+      };
+      const sim = {
+        game, treated: false, resolved: false, state: 'inbed', critical: false,
+        stabilisedOnce: false, displayName: 'Test', bed: { roomNo: 1 },
+        _say() {}, ent: { setFace() {} }, case: { supportiveDefinitive, timeline: [] },
+        stabiliseOnce() { if (this.stabilisedOnce) return false; this.stabilisedOnce = true; return true; },
+      };
+      supportiveCare(game, sim, 'warm compress');
+      // fire any scheduled recheck timers
+      for (const t of timers) t.fn();
+      return sim.treated;
+    };
+    return { selfLimited: mk(true), drugRequiring: mk(false) };
+  });
+  expect(res.selfLimited).toBe(true);    // recheck window resolved it
+  expect(res.drugRequiring).toBe(false); // only held — still needs the drug
+});
+
+// The freeform arbiter cures a clinically-correct typed order (mocked verdict).
+test('a definitive freeform order cures via applyIntervention', async ({ page }) => {
+  await page.addInitScript(() => { try { localStorage.setItem('medteam.seenTutorial','1'); } catch {} });
+  await page.goto('/?seed=5&lite=1');
+  await page.waitForFunction(() => window.__game?.ready);
+  await page.evaluate(() => window.__game.start());
+  await page.waitForTimeout(200);
+
+  const res = await page.evaluate(async () => {
+    const g = window.__game.game;
+    const id = window.__game.spawnCase('conj', -20, 8);  // legacy conj case
+    const pt = [...g.world.byTag('patients')].find((p) => p.id === id);
+    pt.sim.state = 'inbed';
+    const before = pt.sim.treated;
+    g.applyIntervention(pt, 'cure', 'Warm compresses and antibiotic drops — it settles.', 'warm compress + drops');
+    return { before, after: pt.sim.treated };
+  });
+  expect(res.before).toBe(false);
+  expect(res.after).toBe(true);
+});
+
 // The MED-DOC is a blind reference terminal — it must not leak the roster.
 test('MED-DOC offline stays a reference terminal — no census leak', async ({ page }) => {
   await page.addInitScript(() => { try { localStorage.setItem('medteam.seenTutorial','1'); } catch {} });

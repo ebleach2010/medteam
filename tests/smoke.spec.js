@@ -24,8 +24,10 @@ test('boots to title without console errors and starts a day', async ({ page }) 
   expect(st.day).toBe(1);
   await page.screenshot({ path: 'test-results/shots/day1-start.png' });
 
-  // the first patient must walk in within the first ~20 real seconds
-  await page.waitForFunction(() => window.__game.state().patients.length >= 1, null, { timeout: 25000 });
+  // the first patient must walk in on its own. The in-game clock is driven off
+  // rendered frames, and headless software-GL runs at ~0.5 game-min/s, so the
+  // ~18-min first arrival needs a generous real-time budget here.
+  await page.waitForFunction(() => window.__game.state().patients.length >= 1, null, { timeout: 50000 });
   await page.screenshot({ path: 'test-results/shots/first-patient.png' });
   expect(errors).toEqual([]);
 });

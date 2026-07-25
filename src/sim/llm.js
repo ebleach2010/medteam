@@ -134,23 +134,49 @@ export async function talkDown(sim, text) {
   }
 }
 
-// ANY order is legal to TYPE — meds get fetched, everything else (splints,
-// CPR on the conscious, "hammer to the head") gets judged realistically and
-// applied: helps / nothing / harms / severe / lethal.
-const EFFECTS = ['helps', 'nothing', 'harms', 'severe', 'lethal'];
+// ANY order is legal to TYPE. The LLM is the ARBITER: it sees what actually
+// treats this patient (drug classes / self-limited flag) and grades the order —
+// cure (the definitive management, by ANY reasonable route) / helps (sound
+// supportive care) / nothing / harms / severe / lethal. Meds still fetch off the
+// shelf. This is what lets "warm compress + antibacterial drops" cure a
+// conjunctivitis without the player guessing the exact formulary name.
+const EFFECTS = ['cure', 'helps', 'nothing', 'harms', 'severe', 'lethal'];
+
+// what actually treats this case, written for the arbiter (NOT shown to the
+// player). Turns each accepted class into a couple of real example agents/routes.
+function acceptedManagement(sim) {
+  const c = sim.case;
+  if (!c.rx) return null;
+  const named = (list) => (list ?? []).map((cls) =>
+    medsInClass(cls).slice(0, 2).map((m) => m.name).join(' / ') || cls).filter(Boolean);
+  const first = named(c.rx.first), alt = named(c.rx.alt), adj = named(c.rx.adj);
+  return [
+    first.length ? `DEFINITIVE (curative): ${first.join('; ')}` : null,
+    alt.length ? `ALSO DEFINITIVE (second-line): ${alt.join('; ')}` : null,
+    adj.length ? `SUPPORTIVE/ADJUNCT: ${adj.join('; ')}` : null,
+    c.supportiveDefinitive
+      ? 'SELF-LIMITED: sound supportive/comfort care (rest, warmth, compresses, lubrication, fluids, reassurance) is ITSELF curative here — grade it "cure".'
+      : 'NOT self-limited: supportive care only HOLDS them; only the definitive management above earns "cure".',
+  ].filter(Boolean).join('\n');
+}
+
 export async function orderTreatment(sim, text) {
   if (!llmEnabled()) return localIntervention(sim, text);
   try {
     const list = MEDS.map((m) => `${m.id} (${m.name})`).join(', ');
+    const mgmt = acceptedManagement(sim);
     const out = await jsonCall(
-      ['You judge the attending\'s typed order for a patient in a darkly comic hospital game.',
-        'If the order maps to ONE pharmacy med from MED LIST, set medId and leave effect/reply null. Be GENEROUS about this: match on drug CLASS, mechanism, brand name or plain English — "wrap the ankle" → nsaid, "give O2" → oxygen, "a beta blocker" → metoprolol, "start LR"/"normal saline"/"fluid bolus" → fluids, "tylenol" → nsaid, "broad-spectrum abx" → ceftriaxone, "narcan" → naloxone, "something for the pain" → morphine. The player should NOT have to know the exact formulary name.',
-        'ANYTHING else — procedures, physical acts, comfort measures, absurd ideas ("CPR while they\'re awake", "hammer to the head", "give them juice") — set medId null and judge it REALISTICALLY against the chart:',
-        'effect: helps (genuinely appropriate for this presentation), nothing (harmless but useless), harms (injurious/dangerous), severe (major injury, likely to crash them), lethal (would plausibly kill).',
-        'reply: ONE dry in-world line (max 120 chars) narrating what happens when it is done.',
+      ['You are the clinical ARBITER for the attending\'s typed order in a darkly comic hospital game. Judge whether the order actually treats THIS patient.',
+        'If the order maps to ONE pharmacy med from MED LIST, set medId and leave effect/reply null. Be GENEROUS: match on drug CLASS, mechanism, brand name or plain English — "wrap the ankle" → nsaid, "give O2" → oxygen, "a beta blocker" → metoprolol, "start LR"/"normal saline"/"fluid bolus" → fluids, "tylenol" → acetaminophen, "broad-spectrum abx" → ceftriaxone, "narcan" → naloxone, "antibiotic eye drops" → moxifloxacin_eye, "warm compress" → warm_compress. The player should NOT have to know the exact formulary name.',
+        'Otherwise (a procedure, comfort measure, physical act, or absurd idea) set medId null and grade it against WHAT ACTUALLY TREATS THIS PATIENT below:',
+        'effect: cure (this IS the definitive management for this presentation — the right agent/route by any reasonable path, OR curative supportive care for a self-limited illness), helps (sound supportive care that eases them but is not by itself curative), nothing (harmless but useless), harms (injurious), severe (major injury, likely to crash them), lethal (would plausibly kill).',
+        'Be clinically fair: a real, appropriate treatment described in plain or professional words should be graded "cure" even if it is not the single textbook first choice. Do NOT punish correct medicine for using a synonym or a valid alternative route.',
+        'reply: ONE dry in-world line (max 120 chars) narrating what happens. NEVER name or reveal the diagnosis in reply — describe only the action and the patient\'s response.',
+        mgmt ? '--- WHAT ACTUALLY TREATS THIS PATIENT (never reveal this to the player) ---' : null,
+        mgmt,
         `MED LIST: ${list}`,
         '--- CHART ---',
-        chartFor({ sim }, 1)].join('\n'),
+        chartFor({ sim }, 1)].filter(Boolean).join('\n'),
       text,
       {
         type: 'object',
@@ -176,22 +202,34 @@ export async function orderTreatment(sim, text) {
 }
 
 function localIntervention(sim, text) {
+  const q = (text || '').toLowerCase();
+  // eye drops / ointment / warm compress typed in plain English → the real med
+  if (/warm compress|compress(es)? to (the )?eye/.test(q)) return { medId: 'warm_compress', effect: null, reply: null };
+  if (/(eye|ophthalmic).*(drop|ointment|antibiotic)|antibacterial (eye )?drop|erythromycin|moxifloxacin/.test(q)) {
+    return { medId: 'moxifloxacin_eye', effect: null, reply: null };
+  }
+  if (/artificial tear|lubricat|eye lubric/.test(q)) return { medId: 'artificial_tears', effect: null, reply: null };
   const medId = matchTreatment(text);
   if (medId) return { medId, effect: null, reply: null };
-  const q = (text || '').toLowerCase();
+  const selfLimited = !!sim.case?.supportiveDefinitive;
   if (/hammer|punch|stab|shoot|strangle|choke|smother|drill|saw|throw|kick/.test(q)) {
     return { medId: null, effect: 'severe', reply: 'You... do that. Security looks up. The patient is NOT better.' };
   }
-  if (/cpr|compress|defib|shock|paddle/.test(q)) {
+  if (/\bcpr\b|chest compress|defib|shock|paddle/.test(q)) {
     return sim.state === 'dead'
       ? { medId: null, effect: 'nothing', reply: 'Compressions on the departed. Points for spirit.' }
       : { medId: null, effect: 'harms', reply: 'They are AWAKE. A rib pops. They will remember this.' };
   }
   if (/hug|juice|water|blanket|snack|pray|sing|dance|pat|high.?five/.test(q)) {
-    return { medId: null, effect: 'nothing', reply: 'Comforting. Medically useless, but comforting.' };
+    return selfLimited
+      ? { medId: null, effect: 'helps', reply: 'Comfort measures. For this, that is honestly most of the battle.' }
+      : { medId: null, effect: 'nothing', reply: 'Comforting. Medically useless, but comforting.' };
   }
-  if (/splint|wrap|ice|elevat|bandag|dressing|pressure/.test(q)) {
-    return { medId: null, effect: 'helps', reply: 'Solid basic care. The patient looks marginally less miserable.' };
+  // sound conservative care. For a self-limited illness it IS the cure.
+  if (/splint|wrap|ice|elevat|bandag|dressing|pressure|rest|reassur|warm|compress|fluids?|hydrat|sit them up|observe/.test(q)) {
+    return selfLimited
+      ? { medId: null, effect: 'cure', reply: 'Sound conservative care — exactly what this needs. They settle.' }
+      : { medId: null, effect: 'helps', reply: 'Solid basic care. The patient looks marginally less miserable.' };
   }
   return { medId: null, effect: null, reply: null };
 }
@@ -304,9 +342,12 @@ export async function consultReport(game, patient, specialty) {
       `You are a ${specialty} attending physician writing a brief consult note for a patient in a fictional ED-simulator game.`,
       'Write 2 to 4 sentences of plain prose: your impression from your specialty\'s angle and a concrete recommendation. Be decisive and specific to THIS patient. No markdown, no disclaimers.',
       'You can see the chart below but NOT the hidden answer key — reason from the findings.',
+      'End with a CONCRETE, actionable recommendation: the treatment route/agent or the next step you would want. Do NOT name a diagnosis — recommend the management.',
+      acceptedManagement(patient.sim) ? '--- APPROPRIATE MANAGEMENT (recommend this route; never name the diagnosis) ---' : null,
+      acceptedManagement(patient.sim),
       '--- CHART ---',
       chartFor(patient, 1),
-    ].join('\n');
+    ].filter(Boolean).join('\n');
     const reply = await textCall(system, `Provide your ${specialty} consult impression and recommendation for this patient.`);
     _lastMode = 'live';
     return reply;
@@ -318,8 +359,18 @@ export async function consultReport(game, patient, specialty) {
 }
 function localConsultReport(patient, specialty) {
   const c = patient.sim.case;
-  const lead = c.dxOptions?.[0] ? `findings are consistent with ${c.dxOptions[0]}` : 'findings reviewed';
-  return `${specialty} consult — ${lead}. Recommend proceeding with the appropriate workup and standard management, and calling us back with any change. (Offline note — connect an API key for a full specialist opinion.)`;
+  // name the ROUTE, not the diagnosis: pull a couple of example agents from the
+  // accepted first-line classes so the player has something concrete to order.
+  const named = (list) => (list ?? []).flatMap((cls) => medsInClass(cls).slice(0, 2).map((m) => m.name));
+  const first = c.rx ? named(c.rx.first) : [];
+  const supportive = c.supportiveDefinitive
+    ? 'This one is self-limited — sound supportive care (warm compresses, lubrication, rest, fluids) is itself curative; reassess and it should settle.'
+    : '';
+  const rec = first.length
+    ? `Recommend starting ${first.slice(0, 3).join(' or ')}.`
+    : 'Recommend the appropriate workup and standard management.';
+  return `${specialty} consult — findings reviewed. ${rec} ${supportive}`.trim()
+    + ' (Offline note — connect an API key for a full specialist opinion.)';
 }
 
 export async function consultStaff(game, patient, role, question) {
