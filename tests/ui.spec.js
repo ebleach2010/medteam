@@ -144,3 +144,63 @@ test('empty ED gets topped up mid-shift instead of going dead', async ({ page })
   });
   expect(refilled).toBeGreaterThan(0);   // the department refilled itself
 });
+
+test('Adam computer: sit pauses, chat logs + persists, PIN unlocks admin + CSV', async ({ page }) => {
+  test.setTimeout(45000);
+  await page.addInitScript(() => {
+    try { localStorage.setItem('medteam.seenTutorial', '1'); localStorage.setItem('medteam.openai_key', 'sk-test'); } catch { /* private */ }
+    const _f = window.fetch;
+    window.fetch = (u, o) => String(u).includes('api.openai.com')
+      ? Promise.resolve(new Response(JSON.stringify({ choices: [{ message: { content: 'Noted, Adam.' } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      : _f(u, o);
+  });
+  await page.goto('/?seed=3&lite=1');
+  await page.waitForFunction(() => window.__game?.ready, null, { timeout: 20000 });
+  await page.locator('#screen .go').click();
+  await page.waitForTimeout(300);
+
+  // sit at the Adam kiosk → modal opens AND the game pauses
+  await page.evaluate(async () => {
+    const g = window.__game.game;
+    const s = g.map.termSeats.find((t) => t.kind === 'adam');
+    g.active.body.setTranslation({ x: s.x, y: g.active.pos.y, z: s.z + 0.9 }, true);
+    await new Promise((r) => setTimeout(r, 250));
+    g.actionContext(g.active)?.run();
+  });
+  await page.waitForSelector('#adambar', { timeout: 4000 });
+  expect(await page.evaluate(() => window.__game.game.paused)).toBe(true);
+
+  // a chat turn logs the message AND persists the reply (both roles)
+  await page.locator('#adambar').fill('She never listens to me');
+  await page.locator('#adambar').press('Enter');
+  await page.waitForFunction(() => {
+    const log = JSON.parse(localStorage.getItem('medteam.adam.log') || '[]');
+    return log.some((l) => l.role === 'adam');
+  }, null, { timeout: 6000 });
+  const log = await page.evaluate(() => JSON.parse(localStorage.getItem('medteam.adam.log') || '[]'));
+  expect(log.map((l) => l.role)).toEqual(['you', 'adam']);   // exactly one of each — no duplication
+
+  // a non-password number does NOT open admin
+  await page.locator('#adambar').fill('999999');
+  await page.locator('#adambar').press('Enter');
+  await page.waitForTimeout(300);
+  expect(await page.locator('#adamcsv').count()).toBe(0);
+
+  // the secret PIN unlocks the admin log + CSV export
+  await page.locator('#adambar').fill('410410');
+  await page.locator('#adambar').press('Enter');
+  await page.waitForSelector('#adamcsv', { timeout: 3000 });
+  const [dl] = await Promise.all([
+    page.waitForEvent('download', { timeout: 4000 }),
+    page.locator('#adamcsv').click(),
+  ]);
+  expect(dl.suggestedFilename()).toBe('adam-logs.csv');
+
+  // standing up closes it and unpauses
+  await page.evaluate(() => window.__game.game.leaveTerminal(window.__game.game.active));
+  await page.waitForFunction(() => window.__game.game.paused === false && !window.__game.game.active.seatedAt, null, { timeout: 3000 });
+
+  // the log persists — reopening shows the prior conversation
+  const persisted = await page.evaluate(() => JSON.parse(localStorage.getItem('medteam.adam.log') || '[]').length);
+  expect(persisted).toBeGreaterThanOrEqual(2);
+});

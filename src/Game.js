@@ -133,7 +133,7 @@ export class Game {
     char.standUp();
     this.medDocSession = null;   // the credit is spent; sitting again costs five more
     this.medDocLog = null;
-    if (['meddoc', 'triage'].includes(this.ui.modals.current?.type)) this.ui.modals.close();
+    if (['meddoc', 'triage', 'adam'].includes(this.ui.modals.current?.type)) this.ui.modals.close();
   }
 
   // ---------------- day cycle ----------------
@@ -1516,23 +1516,21 @@ export class Game {
     // free chair each one has, and the screen is turned to face the camera
     {
       const pp = char.pos;
+      const TERM = {
+        meddoc: { ico: '🪙', label: 'MED-DOC 4000', sit: 'SIT AT MED-DOC', color: '#2fae5f', open: () => this.ui.modals.medDoc() },
+        triage: { ico: '🗂', label: 'TRIAGE BOARD', sit: 'SIT AT TRIAGE BOARD', color: '#3d8fd4', open: () => this.ui.modals.triageBoard() },
+        adam: { ico: '👀', label: 'ADAM COMPUTER', sit: 'SIT AT ADAM', color: '#25c85a', open: () => this.ui.modals.adamComputer() },
+      };
       if (char.seatedAt) {
-        const k = char.seatedAt.kind;
-        return k === 'meddoc'
-          ? { ico: '🪙', label: 'MED-DOC 4000', color: '#2fae5f', run: () => this.ui.modals.medDoc() }
-          : { ico: '🗂', label: 'TRIAGE BOARD', color: '#3d8fd4', run: () => this.ui.modals.triageBoard() };
+        const t = TERM[char.seatedAt.kind] ?? TERM.meddoc;
+        return { ico: t.ico, label: t.label, color: t.color, run: t.open };
       }
       for (const s of this.map.termSeats ?? []) {
         if (Math.hypot(pp.x - s.x, pp.z - s.z) > 1.5) continue;
-        const green = s.kind === 'meddoc';
+        const t = TERM[s.kind] ?? TERM.meddoc;
         return {
-          ico: '🪑',
-          label: green ? 'SIT AT MED-DOC' : 'SIT AT TRIAGE BOARD',
-          color: green ? '#2fae5f' : '#3d8fd4',
-          run: () => {
-            char.sitAt(s);
-            if (green) this.ui.modals.medDoc(); else this.ui.modals.triageBoard();
-          },
+          ico: '🪑', label: t.sit, color: t.color,
+          run: () => { char.sitAt(s); t.open(); },
         };
       }
     }
