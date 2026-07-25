@@ -266,3 +266,40 @@ test('Adam computer: an OpenAI error surfaces the real reason (not a mystery)', 
   expect(reply.toLowerCase()).toContain('credit');   // tells the player it's a billing problem
   expect(reply).not.toContain('crackles');            // no more mystery message
 });
+
+test('surgery board: tabbed categories, live filter, tap resolves the operation', async ({ page }) => {
+  await boot(page);
+  await page.locator('#screen .go').click();
+  await page.waitForTimeout(300);
+
+  const setup = await page.evaluate(async () => {
+    const g = window.__game.game;
+    const id = window.__game.spawnCase('appy', -20, 8);
+    const pt = [...g.world.byTag('patients')].find((x) => x.id === id);
+    pt.sim.state = 'inbed';
+    window.__surgTask = { type: 'surgery', patient: pt };   // keep a ref to read .surgery
+    g.ui.modals.surgeryPick(window.__surgTask);
+    await new Promise((r) => setTimeout(r, 150));
+    return {
+      rows: document.querySelectorAll('.surgrow').length,
+      tabs: document.querySelectorAll('.tab').length,
+      hasKidney: [...document.querySelectorAll('.surgrow')].some((b) => b.dataset.s === 'stone_removal'),
+    };
+  });
+  expect(setup.rows).toBeGreaterThan(30);      // a big menu, not one generic list
+  expect(setup.tabs).toBeGreaterThanOrEqual(9);
+  expect(setup.hasKidney).toBe(true);          // the reported case is now an option
+
+  // live filter narrows without losing the modal
+  const filtered = await page.evaluate(async () => {
+    const i = document.querySelector('#surgbar');
+    i.value = 'kidney'; i.dispatchEvent(new Event('input'));
+    await new Promise((r) => setTimeout(r, 80));
+    return [...document.querySelectorAll('.surgrow')].filter((b) => b.style.display !== 'none').map((b) => b.dataset.s);
+  });
+  expect(filtered).toEqual(['stone_removal']);
+
+  // the checkmark commits the top visible match through the intent pipe
+  await page.locator('#surggo').click();
+  await page.waitForFunction(() => window.__surgTask?.surgery?.id === 'stone_removal' && !window.__game.game.ui.modals.current, null, { timeout: 3000 });
+});
