@@ -27,7 +27,19 @@ export const setModel = (m) => { try { localStorage.setItem(MODEL_STORE, m); } c
 export const llmEnabled = () => !!getKey();
 
 // ---------- the ADAM computer: a separate ChatGPT-powered terminal ----------
-// Its own OpenAI key, stored ONLY in the player's browser (never in the repo).
+//
+// Preferred path: a backend key-PROXY (worker/adam-proxy.js) holds the OpenAI
+// key as a server secret and relays to ChatGPT. The game just posts to the
+// proxy URL — no key ever touches the browser, and players enter nothing.
+// Set this to your deployed worker URL to go keyless (the URL is NOT secret):
+const ADAM_PROXY_URL = ''; // e.g. 'https://adam-proxy.you.workers.dev'
+// the URL is NOT secret, so it can also be injected at runtime (single-file
+// builds, quick tests) without a rebuild — the baked const wins if set
+const adamProxyUrl = () => ADAM_PROXY_URL || (typeof globalThis !== 'undefined' && globalThis.__ADAM_PROXY_URL) || '';
+export const adamProxied = () => !!adamProxyUrl();
+
+// Fallback path (no proxy configured): the player pastes their own key, stored
+// ONLY in their browser (never in the repo).
 const OPENAI_KEY_STORE = 'medteam.openai_key';
 const ADAM_LOG_STORE = 'medteam.adam.log';
 const ADAM_MODEL = 'gpt-4o';
@@ -36,7 +48,8 @@ export const getOpenAIKey = () => { try { return localStorage.getItem(OPENAI_KEY
 export const setOpenAIKey = (k) => {
   try { k ? localStorage.setItem(OPENAI_KEY_STORE, k.trim()) : localStorage.removeItem(OPENAI_KEY_STORE); } catch { /* private */ }
 };
-export const openaiEnabled = () => !!getOpenAIKey();
+// the terminal is "on" if the proxy is wired up OR a local key is present
+export const openaiEnabled = () => adamProxied() || !!getOpenAIKey();
 
 // the whole cross-session memory: {t, role:'you'|'adam', text}, oldest first
 export function getAdamLog() {
@@ -65,7 +78,8 @@ const ADAM_SYSTEM = [
 
 /**
  * Ask the Adam computer. `history` is the running log ([{role:'you'|'adam',text}]).
- * Uses the player's own OpenAI key, straight from the browser.
+ * Routes through the backend proxy when one is configured (keyless, key hidden
+ * server-side); otherwise falls back to the player's own browser-stored key.
  */
 export async function askAdam(history, userText) {
   if (!openaiEnabled()) return 'The screen is dark. (No API key — enter one to wake me up.)';
@@ -75,6 +89,18 @@ export async function askAdam(history, userText) {
   }
   msgs.push({ role: 'user', content: userText });
   try {
+    // proxy path — the browser never sees the key; the worker adds it
+    if (adamProxied()) {
+      const res = await fetch(adamProxyUrl(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: msgs }),
+      });
+      if (!res.ok) return '…the line crackles and drops. Try me again in a moment, Adam.';
+      const data = await res.json();
+      return (data?.reply || '').trim() || '…';
+    }
+    // fallback path — direct to OpenAI with the player's own stored key
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getOpenAIKey()}` },
