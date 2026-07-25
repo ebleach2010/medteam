@@ -66,3 +66,53 @@ test('contextual prompt button opens the med cabinet', async ({ page }) => {
   await page.locator('#modal .medbtn').first().click();
   await page.waitForFunction(() => !!window.__game.state().chars[1].carrying);
 });
+
+test('MED-DOC is coin-op: sit → no credit blocks, coins boot the terminal', async ({ page }) => {
+  test.setTimeout(45000);
+  await boot(page);
+  await page.locator('#screen .go').click();
+  await page.waitForTimeout(400);
+
+  // sit down at the green terminal's chair — the context action is SIT
+  await page.evaluate(() => {
+    const g = window.__game.game;
+    const s = g.map.termSeats.find((t) => t.kind === 'meddoc');
+    g.active.body.setTranslation({ x: s.x, y: g.active.pos.y, z: s.z + 0.9 }, true);
+  });
+  await page.waitForTimeout(400);
+  await page.evaluate(() => window.__game.game.actionContext(window.__game.game.active)?.run());
+  await page.waitForFunction(() => window.__game.game.active.seatedAt);
+
+  // broke → INSERT COINS, and the slot click throws the red error screen
+  expect(await page.locator('#modal .blink').textContent()).toContain('INSERT COINS');
+  await page.locator('#slotbtn').click();
+  await page.waitForSelector('#modal.errbox');
+  expect(await page.locator('#modal .big').textContent()).toContain('INSUFFICIENT');
+
+  // fund it, re-enter, insert — three-second boot, then the live terminal
+  await page.evaluate(() => { window.__game.game.coins = 6; window.__game.game.ui.modals._medDocInsert(); });
+  await page.locator('#slotbtn').click();
+  await page.waitForSelector('.bootbar');                       // booting
+  expect(await page.evaluate(() => window.__game.game.coins)).toBe(1); // five taken
+  await page.waitForSelector('#crtbar', { timeout: 5000 });     // terminal up
+  expect(await page.evaluate(() => window.__game.game.medDocSession)).toBe('live');
+
+  // EXIT stands you up and burns the session — sitting again would cost 5 more
+  await page.locator('#modal .close').click();
+  await page.waitForFunction(() => !window.__game.game.active.seatedAt);
+  expect(await page.evaluate(() => window.__game.game.medDocSession)).toBe(null);
+});
+
+test('treating a patient well drops a coin in the counter', async ({ page }) => {
+  await boot(page);
+  await page.locator('#screen .go').click();
+  const before = await page.evaluate(() => window.__game.game.coins);
+  await page.evaluate(() => {
+    const g = window.__game.game;
+    g.awardCoin(g.active);
+  });
+  expect(await page.evaluate(() => window.__game.game.coins)).toBe(before + 1);
+  // the flying coin element is live and the HUD tally moved
+  await page.waitForFunction(() => document.querySelector('.coinfly')?.style.display === 'block');
+  expect(await page.locator('#hud .coins .n').textContent()).toBe(String(before + 1));
+});

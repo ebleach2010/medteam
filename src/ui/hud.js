@@ -6,8 +6,12 @@ export class HUD {
     this.el.id = 'hud';
     this.el.innerHTML = `
       <span class="day"></span><span class="clock"></span><span class="score"></span>
+      <span class="coins"><b class="coin-disc">✚</b><i class="n">0</i><u class="today"></u></span>
       <span class="cap"></span><span class="role"></span><span class="quota"></span>`;
     root.appendChild(this.el);
+    this.coinEl = this.el.querySelector('.coins');
+    this.coinN = this.el.querySelector('.coins .n');
+    this.coinToday = this.el.querySelector('.coins .today');
     this.day = this.el.querySelector('.day');
     this.clock = this.el.querySelector('.clock');
     this.score = this.el.querySelector('.score');
@@ -51,8 +55,18 @@ export class HUD {
     this._toastT = setTimeout(() => (this.toastEl.className = ''), ms);
   }
 
+  // the counter jolts when a coin lands in it
+  coinPop() {
+    this.coinEl.classList.remove('pop');
+    void this.coinEl.offsetWidth;
+    this.coinEl.classList.add('pop');
+  }
+
   update() {
     const g = this.game;
+    this.coinN.textContent = g.coins ?? 0;
+    const today = g.dayStats.coins ?? 0;
+    this.coinToday.textContent = today ? `+${today} today` : '';
     this.day.textContent = `DAY ${g.clock.day}`;
     this.clock.textContent = g.clock.format();
     this.score.textContent = `★ ${g.score}`;

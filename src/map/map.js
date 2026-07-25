@@ -728,11 +728,14 @@ export function buildMap(scene, physics) {
   });
 
   // ---- staff station (Z2 south strip) ----
-  const desk = makeDesk();
-  desk.position.set(-16, 0, -1.2);
+  // Six seats in one row at 1.1 m spacing: the four staff in the middle, and a
+  // free chair at each END for YOU, one per terminal. The desk was widened to
+  // carry them.
+  const desk = makeDesk(6.1);
+  desk.position.set(-15.85, 0, -1.2);
   statics.add(desk);
-  physics.staticBox(-16, 0.45, -1.2, 1.6, 0.45, 0.55);
-  shadowBlob(-16, -1.2, 4.0, 1.8, 0.26);
+  physics.staticBox(-15.85, 0.45, -1.2, 3.05, 0.45, 0.55);
+  shadowBlob(-15.85, -1.2, 6.9, 1.8, 0.26);
   // the nurses' station: idle staff SIT here (in wheeled office chairs) until
   // dispatched. Evenly spaced across the desk, chairs aligned exactly under
   // each seat so nobody clips or clusters, all facing the desk.
@@ -751,7 +754,9 @@ export function buildMap(scene, physics) {
     statics.add(c);
     shadowBlob(s.x, s.z + 0.1, 0.85, 0.85, 0.24);
   }
-  // MED-DOC 4000: green-phosphor consult terminal on the desk's east end
+  // MED-DOC 4000: green-phosphor consult terminal on the desk's east end.
+  // rotation 0 puts the screen face on +z — which is where the camera lives,
+  // so you can actually READ it, and it's also the side the chairs are on.
   const crt = new THREE.Group();
   const crtCase = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.48, 0.5), mat(0xd8d2bd));
   crtCase.position.y = 0.24;
@@ -763,11 +768,12 @@ export function buildMap(scene, physics) {
   const crtLed = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), emat(0x39ff6e, 1.4).clone());
   crtLed.position.set(-0.22, 0.06, 0.26);
   crt.add(crtCase, crtScreen, crtKeys, crtLed);
-  crt.position.set(-14.6, 0.9, -1.25);
-  crt.rotation.y = Math.PI; // screen faces the corridor side
+  crt.position.set(-13.1, 0.9, -1.3);
+  crt.rotation.y = 0;        // screen toward the camera (and toward the chair)
   crt.scale.setScalar(2.1);  // ABSURDLY large — you can read it from the door
   statics.add(crt);
-  const medDoc = { x: -14.75, z: -2.6 }; // stand here → MED-DOC prompt
+  // sit HERE to use it (the arcade cabinet of the ED)
+  const medDoc = { x: -13.1, z: -0.2, yaw: Math.PI, kind: 'meddoc' };
 
   // TRIAGE terminal: MED-DOC's blue twin on the desk's west end
   const crt2 = new THREE.Group();
@@ -781,11 +787,19 @@ export function buildMap(scene, physics) {
   const crt2Led = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), emat(0x4aa8ff, 1.4).clone());
   crt2Led.position.set(-0.22, 0.06, 0.26);
   crt2.add(crt2Case, crt2Screen, crt2Keys, crt2Led);
-  crt2.position.set(-17.4, 0.9, -1.25);
-  crt2.rotation.y = Math.PI;
+  crt2.position.set(-18.6, 0.9, -1.3);
+  crt2.rotation.y = 0;
   crt2.scale.setScalar(2.1); // matching giant twin
   statics.add(crt2);
-  const triagePC = { x: -17.25, z: -2.6 }; // stand here → TRIAGE BOARD prompt
+  const triagePC = { x: -18.6, z: -0.2, yaw: Math.PI, kind: 'triage' };
+  // a free chair at each terminal, matching the staff row
+  for (const s of [medDoc, triagePC]) {
+    const c = makeOfficeChair(Math.PI);
+    c.position.set(s.x, 0, s.z + 0.16);
+    statics.add(c);
+    shadowBlob(s.x, s.z + 0.1, 0.85, 0.85, 0.24);
+  }
+  const termSeats = [medDoc, triagePC];
   const stationLights = [
     { mesh: crtLed, mat: crtLed.material, phase: 0 },
     { mesh: crt2Led, mat: crt2Led.material, phase: 1.6 },
@@ -794,9 +808,11 @@ export function buildMap(scene, physics) {
   // when dispatched they round the desk via a fixed lane, then sprint
   // lanes bow NORTH around the seated row first, then round the desk end —
   // running along the row itself just body-checks your seated colleagues
+  // the lanes clear the WIDENED desk — running them at the old x now walks
+  // staff straight through the counter
   const stationExit = {
-    west: [{ x: -19.4, z: 0.9 }, { x: -19.2, z: -2.7 }],
-    east: [{ x: -13.6, z: 0.9 }, { x: -13.6, z: -2.7 }],
+    west: [{ x: -19.8, z: 0.9 }, { x: -19.6, z: -2.7 }],
+    east: [{ x: -12.3, z: 0.9 }, { x: -12.3, z: -2.7 }],
   };
 
   // ---- THE ETHER DOOR (east wall of the ward) ----
@@ -867,8 +883,8 @@ export function buildMap(scene, physics) {
   floorRing(discharge.x, discharge.z, 0x4dd07a, 2.0);
   floorRing(firePit.x, firePit.z, 0xff6a2c, 1.35);
   floorRing(etherDoor.x - 0.9, etherDoor.z, 0x8aa0c0, 1.1); // the staff ether door
-  floorRing(medDoc.x, medDoc.z, 0x39ff6e, 1.0);   // stand-here spot for the green consult terminal
-  floorRing(triagePC.x, triagePC.z, 0x4aa8ff, 1.0); // …and the blue triage board
+  floorRing(medDoc.x, medDoc.z + 0.1, 0x39ff6e, 0.85);   // the green terminal's chair
+  floorRing(triagePC.x, triagePC.z + 0.1, 0x4aa8ff, 0.85); // …and the blue one's
 
   const dropRing = new THREE.Mesh(new THREE.RingGeometry(1.0, 1.3, 36),
     new THREE.MeshBasicMaterial({ color: 0x4dd07a, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }));
@@ -883,7 +899,7 @@ export function buildMap(scene, physics) {
 
   return {
     beds, seats, shelfUnits, rings, dropRing,
-    roomDesks, roomLights, roomMonitors, knockSpots, triageDesk, receptionSeat, staffSeats, stationExit, medDoc, triagePC,
+    roomDesks, roomLights, roomMonitors, knockSpots, triageDesk, receptionSeat, staffSeats, stationExit, medDoc, triagePC, termSeats,
     discharge, gateOut, firePit, fire, fadeWalls, stationLights,
     etherDoor, etherHold, etherFx,
     floorYAt: () => 0,
