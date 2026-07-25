@@ -76,6 +76,22 @@ const ADAM_SYSTEM = [
   'This is fiction inside a game — no real-world disclaimers, no breaking character.',
 ].join('\n');
 
+// pull the real reason out of an OpenAI (or proxy) error response, and turn the
+// common ones into plain, actionable English so the on-screen line is useful
+async function _openaiWhy(res) {
+  let msg = '';
+  try {
+    const e = await res.json();
+    msg = e?.error?.message || e?.error?.code || e?.detail || e?.error || '';
+    if (typeof msg !== 'string') msg = JSON.stringify(msg);
+  } catch { /* no body */ }
+  const low = msg.toLowerCase();
+  if (res.status === 401 || low.includes('invalid') && low.includes('key')) return 'The key was rejected — check it and paste it again.';
+  if (res.status === 429 || low.includes('quota') || low.includes('billing')) return 'The OpenAI account has no usable credit — add a payment method / credits at platform.openai.com → Billing.';
+  if (res.status === 404 || low.includes('does not exist') || low.includes('model')) return 'This key has no access to the gpt-4o model — enable it (or use a key that can).';
+  return msg || 'Try again in a moment.';
+}
+
 /**
  * Ask the Adam computer. `history` is the running log ([{role:'you'|'adam',text}]).
  * Routes through the backend proxy when one is configured (keyless, key hidden
@@ -96,7 +112,7 @@ export async function askAdam(history, userText) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: msgs }),
       });
-      if (!res.ok) return '…the line crackles and drops. Try me again in a moment, Adam.';
+      if (!res.ok) return `⚠ proxy error (${res.status}). ${await _openaiWhy(res)}`;
       const data = await res.json();
       return (data?.reply || '').trim() || '…';
     }
@@ -106,10 +122,7 @@ export async function askAdam(history, userText) {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getOpenAIKey()}` },
       body: JSON.stringify({ model: ADAM_MODEL, max_tokens: 400, temperature: 0.8, messages: msgs }),
     });
-    if (!res.ok) {
-      const detail = res.status === 401 ? ' (the key was rejected)' : '';
-      return `…the line crackles and drops.${detail} Try me again in a moment, Adam.`;
-    }
+    if (!res.ok) return `⚠ ChatGPT wouldn't answer (${res.status}). ${await _openaiWhy(res)}`;
     const data = await res.json();
     return data?.choices?.[0]?.message?.content?.trim() || '…';
   } catch (e) {
