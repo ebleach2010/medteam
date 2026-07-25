@@ -1,6 +1,5 @@
 import { generateScan } from '../render/xray.js';
-import { askPatient, talkDown, orderTreatment, judgeDx, medDocConsult, consultStaff, CONSULT_ROLES, parsePage, llmEnabled, getKey, setKey, getModel, setModel, MODELS,
-  askAdam, openaiEnabled, setOpenAIKey, getAdamLog, appendAdamLog, clearAdamLog } from '../sim/llm.js';
+import { askPatient, talkDown, orderTreatment, judgeDx, medDocConsult, consultStaff, CONSULT_ROLES, parsePage, llmEnabled, getKey, setKey, getModel, setModel, MODELS } from '../sim/llm.js';
 import { MEDS, SHELVES } from '../data/meds.js';
 import { PANELS, filterLabs } from '../data/labs.js';
 import { spawnCarryable } from '../entities/Carryable.js';
@@ -103,6 +102,9 @@ export class Modals {
       key: 'consult' + i, label: c.specialty.toUpperCase(),
       render: () => `<div class="paper"><b>${esc(c.specialty)} consult</b>\n\n${esc(c.text)}</div>`,
     }));
+    if (sim.txLog?.length) {
+      tabs.push({ key: 'tx', label: 'TREATMENTS', render: () => this._txHtml(patient) });
+    }
     if (!tabs.length) { this.game.ui.toast('No reports on file for this patient yet.'); return; }
 
     this.current = { type: 'reportview', patient, options: [] };
@@ -127,6 +129,26 @@ export class Modals {
     this._open();
     // reviewing labs still counts as read (score + it stops the pester)
     if (sim.labState === 'ready') { sim.labState = 'read'; this.game.addScore(20, 'Labs reviewed'); }
+  }
+
+  // the running MAR/procedure log: what's been tried on this patient and how it
+  // went, so you can see at a glance that (say) the first antibiotic did nothing
+  // and you need a different agent
+  _txHtml(patient) {
+    const log = patient.sim.txLog ?? [];
+    if (!log.length) return '<div class="paper">Nothing given yet.</div>';
+    const TONE = {
+      'responded ✓': 'good', 'resolved ✓': 'good', 'curative ✓': 'good', 'settling ✓': 'good',
+      'helped': 'good', 'partial response': 'warn', 'stabilised (temporary)': 'warn',
+      'no effect': 'dim', 'no response': 'dim', 'not indicated': 'dim',
+      'adverse reaction': 'bad', 'worsened them': 'bad', 'harmful': 'bad', 'serious harm': 'bad', 'fatal': 'bad',
+    };
+    const rows = log.map((e) => {
+      const tone = TONE[e.result] ?? 'dim';
+      return `<div class="txrow-log tx-${tone}"><span class="tx-what">${esc(e.label)}</span>`
+        + `<span class="tx-res">${esc(e.result)}</span></div>`;
+    }).join('');
+    return `<div class="paper txlog"><b>Treatments &amp; procedures tried</b>${rows}</div>`;
   }
 
   // 🧪 the phlebotomist's order board: toggle panels, then SEND. Used both at
@@ -225,6 +247,7 @@ export class Modals {
       w.neuro ? `NEURO          ${c.neuro ? `<b>${c.neuro}</b>` : 'Grossly intact'}` : null,
       sim.labState === 'read' ? 'LABS           on file (see printout)' : null,
       sim.imagingDone ? 'IMAGING        done (interpreted)' : null,
+      sim.txLog?.length ? `TREATMENTS     ${sim.txLog.map((e) => `${e.label} (${e.result})`).join('; ')}` : null,
     ].filter(Boolean).join('\n');
     this.current = { type: 'workup', patient, options: [] };
     this.box.innerHTML = `<h3>📋 Chart — ${sim.displayName}</h3>
@@ -239,8 +262,8 @@ export class Modals {
       ${sim.case.labs ? `<button class="opt" data-w="labs">🩸 Order labs ${
         sim.labState === 'read' || sim.labState === 'ready' ? '✓'
         : sim.labState !== 'none' ? '…drawing' : ''}</button>` : ''}
-      ${(sim.labState === 'ready' || sim.labState === 'read' || sim.imagingReport || (sim.consultReports ?? []).length)
-        ? '<button class="opt" data-w="chart">🗂 Open chart folder (labs · imaging · consults)</button>' : ''}
+      ${(sim.labState === 'ready' || sim.labState === 'read' || sim.imagingReport || (sim.consultReports ?? []).length || sim.txLog?.length)
+        ? '<button class="opt" data-w="chart">🗂 Open chart folder (labs · imaging · consults · treatments)</button>' : ''}
       <button class="opt" data-w="dx">✅ Diagnose</button>
       <button class="close">Close</button>`;
     this._open();
@@ -771,146 +794,6 @@ Try: a question, "lookup <diagnosis>", or "clear".`,
     this.box.querySelector('.close').addEventListener('click', () => this._medDocLeave());
   }
 
-  // 👀 THE ADAM COMPUTER — a googly-eyed ChatGPT terminal at the station.
-  // Runs on the player's own OpenAI key (browser-only). Freezes the ED while
-  // you talk. Remembers every session. A secret admin PIN reveals the logs.
-  adamComputer() {
-    const g = this.game;
-    g.paused = true;                       // the whole department holds while you talk
-    if (!openaiEnabled()) { this._adamKeyPrompt(); return; }
-    this._adamChat();
-  }
-
-  _adamHead() {
-    // the high-contrast googly face — two wobbling eyes + a green pixel grin
-    return `<div class="adamface"><div class="adameyes">
-        <span class="geye"><b></b></span><span class="geye"><b></b></span>
-      </div><div class="adamgrin"></div></div>`;
-  }
-
-  _adamKeyPrompt() {
-    this.current = { type: 'adam', patient: null, options: [] };
-    this.box.classList.add('crtbox', 'adambox');
-    this.box.innerHTML = `<h3>▓ THE ADAM COMPUTER</h3>
-      ${this._adamHead()}
-      <p class="adammsg">please enter a ChatGPT API key to access the Adam computer</p>
-      <div class="txrow"><input id="adamkey" type="password" autocomplete="off" placeholder="sk-..." /><button class="opt go-mini" id="adamkeygo">✅</button></div>
-      <button class="close">STAND UP</button>`;
-    this._open();
-    this._wireTyped('#adamkey', '#adamkeygo', (text) => {
-      setOpenAIKey(text);
-      if (openaiEnabled()) this._adamChat();
-    });
-    this.box.querySelector('.close').addEventListener('click', () => this._adamLeave());
-  }
-
-  _adamChat() {
-    const g = this.game;
-    clearInterval(this._ttT);              // stop any in-flight typewriter
-    this.current = { type: 'adam', patient: null, options: [] };
-    this._adamView = getAdamLog();
-    this.box.classList.add('crtbox', 'adambox');
-    this.box.classList.remove('adamadmin');
-    this.box.innerHTML = `<h3>▓ THE ADAM COMPUTER</h3>
-      ${this._adamHead()}
-      <div class="crt-log adamlog" id="adamlog"></div>
-      <div class="txrow"><span class="crt-ps">&gt;</span><input id="adambar" autocomplete="off" spellcheck="false" placeholder="talk to me, Adam..." /><button class="opt go-mini adam-go" id="adamgo">⏎</button></div>
-      <button class="close">STAND UP</button>`;
-    this._open();
-    const logEl = this.box.querySelector('#adamlog');
-    const greetEmpty = !this._adamView.length;
-    const paint = () => {
-      const rows = this._adamView.length
-        ? this._adamView.map((l) => l.role === 'you'
-          ? `<div class="you">&gt; ${esc(l.text)}</div>` : `<div>${esc(l.text)}</div>`).join('')
-        : '<div class="adamgreet">…hello again, Adam. Pick up where we left off.</div>';
-      logEl.innerHTML = rows;
-      logEl.scrollTop = logEl.scrollHeight;
-    };
-    paint();
-    const input = this.box.querySelector('#adambar');
-    this._wireTyped('#adambar', '#adamgo', async (text) => {
-      const t = text.trim();
-      input.value = '';
-      if (!t) return;
-      // the secret admin key — reveals every logged conversation. Any OTHER
-      // string of digits is just ignored input, and nothing hints this exists.
-      if (t === '410410') { this._adamAdmin(); return; }
-      if (/^\d+$/.test(t)) return;          // other bare numbers do nothing
-      // a real turn. History = everything BEFORE this line (askAdam appends the
-      // new line itself, so don't double it). Persist the user turn now, show it.
-      const history = getAdamLog();
-      this._adamView = appendAdamLog('you', t);
-      paint();
-      const reply = await askAdam(history, t);
-      // persist the reply IMMEDIATELY so it's never lost (e.g. if you jump to
-      // the admin view mid-type); the typewriter is now purely cosmetic.
-      this._adamView = appendAdamLog('adam', reply);
-      const idx = this._adamView.length - 1;
-      if (this.current?.type !== 'adam') return;
-      clearInterval(this._ttT);
-      let i = 0;
-      this._ttT = setInterval(() => {
-        if (this.current?.type !== 'adam') { clearInterval(this._ttT); return; }
-        i += 1;
-        this._adamView[idx] = { role: 'adam', text: reply.slice(0, i) + (i < reply.length ? ' ▮' : '') };
-        paint();
-        if (i % 3 === 0 && reply[i - 1] !== ' ') g.audio?.type?.();
-        if (i >= reply.length) { clearInterval(this._ttT); this._adamView[idx] = { role: 'adam', text: reply }; paint(); }
-      }, 45);
-    });
-    if (greetEmpty) paint();
-    setTimeout(() => input?.focus(), 50);
-    this.box.querySelector('.close').addEventListener('click', () => this._adamLeave());
-  }
-
-  // 🔒 admin: the PIN unlocked the full cross-session log + a CSV export
-  _adamAdmin() {
-    clearInterval(this._ttT);              // a reply mid-type shouldn't repaint over admin
-    const log = getAdamLog();
-    this.current = { type: 'adam', patient: null, options: [] };
-    this.box.classList.add('crtbox', 'adambox', 'adamadmin');
-    this.box.innerHTML = `<h3>▓ ADAM · ADMIN</h3>
-      <div class="crt-log adamlog" id="adamlog">${
-        log.length ? log.map((l) => {
-          const d = new Date(l.t);
-          const ts = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-          return `<div class="${l.role === 'you' ? 'you' : ''}"><span class="ats">${ts}</span> ${esc(l.role.toUpperCase())}: ${esc(l.text)}</div>`;
-        }).join('') : '<div class="adamgreet">No sessions logged yet.</div>'}</div>
-      <div class="adamadminrow">
-        <button class="opt" id="adamcsv">⤓ Export CSV</button>
-        <button class="opt" id="adamwipe">Wipe logs</button>
-        <button class="opt" id="adamback">◀ Back</button>
-      </div>
-      <button class="close">STAND UP</button>`;
-    this._open();
-    this.box.querySelector('#adamcsv').addEventListener('click', () => this._adamExportCsv());
-    this.box.querySelector('#adamwipe').addEventListener('click', () => { clearAdamLog(); this._adamAdmin(); });
-    this.box.querySelector('#adamback').addEventListener('click', () => this._adamChat());
-    this.box.querySelector('.close').addEventListener('click', () => this._adamLeave());
-  }
-
-  _adamExportCsv() {
-    const log = getAdamLog();
-    const q = (s) => `"${String(s).replace(/"/g, '""')}"`;
-    const rows = [['timestamp', 'iso', 'role', 'text'],
-      ...log.map((l) => [l.t, new Date(l.t).toISOString(), l.role, l.text])];
-    const csv = rows.map((r) => r.map(q).join(',')).join('\r\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'adam-logs.csv';
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 2000);
-    this.game.ui.toast('📤 Logs exported to adam-logs.csv', 'good');
-  }
-
-  _adamLeave() {
-    const g = this.game;
-    this.close();                          // close() clears g.paused
-    if (g.active?.seatedAt) g.leaveTerminal(g.active);
-  }
-
   // 🔑 connect the player's own Anthropic API key (stored in localStorage,
   // sent only to api.anthropic.com). Reachable from the title screen.
   apiSettings() {
@@ -1243,7 +1126,7 @@ Your key stays in this browser only.</div>
     this._cancelRebind();
     this.current = null;
     this.veil.style.display = 'none';
-    this.box.classList.remove('crtbox', 'blue', 'folders', 'errbox', 'adambox', 'adamadmin');
-    this.game.paused = false; // only the pause/settings + Adam modals set it
+    this.box.classList.remove('crtbox', 'blue', 'folders', 'errbox');
+    this.game.paused = false; // only the pause/settings modals set it
   }
 }

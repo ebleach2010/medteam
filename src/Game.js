@@ -37,7 +37,8 @@ export class Game {
     this.rng = makeRng(seed);
     this.save = loadSave();
     this.audio = new Audio();
-    this.map = buildMap(this.renderer.scene, physics);
+    this.lite = lite;
+    this.map = buildMap(this.renderer.scene, physics, lite);
     this.spawner = new Spawner(this);
     this.blood = new Blood(this); // bleeders pool on the floor; you can slip in it
     this.barks = new Barks(this); // the attending has opinions about all of this
@@ -133,7 +134,7 @@ export class Game {
     char.standUp();
     this.medDocSession = null;   // the credit is spent; sitting again costs five more
     this.medDocLog = null;
-    if (['meddoc', 'triage', 'adam'].includes(this.ui.modals.current?.type)) this.ui.modals.close();
+    if (['meddoc', 'triage'].includes(this.ui.modals.current?.type)) this.ui.modals.close();
   }
 
   // ---------------- day cycle ----------------
@@ -364,7 +365,7 @@ export class Game {
   // The single ward↔lobby door sits behind the 6 m staff desk (x∈[-18.9,-12.8]),
   // so a straight room→door run jams patients against the desk's south face.
   // These two helpers bow the path around the desk's EAST end (a clear lane at
-  // x=-12.3, just east of the desk and west of the Adam kiosk).
+  // x=-12.3, just east of the desk).
   DESK_LANE_X = -12.3;
 
   // room bed → out of the ward, into the lobby (used by discharge self-walkout)
@@ -565,6 +566,8 @@ export class Game {
   applyIntervention(pt, effect, reply, label) {
     const sim = pt.sim;
     const line = reply || 'It... happens. Nobody is sure it helped.';
+    const RESULT = { cure: 'resolved ✓', helps: 'helped', nothing: 'no effect', harms: 'harmful', severe: 'serious harm', lethal: 'fatal' };
+    if (label) sim.recordTx(label, RESULT[effect] ?? 'tried');
     if (effect === 'cure') {
       // the arbiter judged this the DEFINITIVE management for the presentation
       // (right drug by any route, or curative supportive care for a self-
@@ -1225,11 +1228,13 @@ export class Game {
       if (t.wait > 0) return;
       sim.surgeryDone = t.surgery.id;
       if (sim.case.surgery && sim.case.surgery === t.surgery.id) {
+        sim.recordTx(`🔪 ${t.surgery.label}`, 'curative ✓');
         applyTreatment(this, sim);
         this.addScore(140, 'Correct surgery');
         this.ui.toast(`✅ ${t.surgery.label} went beautifully.`, 'good');
         this.audio.good();
       } else {
+        sim.recordTx(`🔪 ${t.surgery.label}`, 'not indicated');
         this.addScore(-80, 'Unnecessary surgery');
         this.ui.toast(`⚠ ${t.surgery.label}... that was NOT the operation they needed.`, 'bad');
         sim.accel *= 2;
@@ -1435,23 +1440,40 @@ export class Game {
         p.mesh.position.y -= (1 - f) * 0.9;
       }
     }
-    // room status lights: green stable · yellow waiting on results · red crashing
+    // day/night: drift the whole ward from a bright noon to a dark 12 AM lit
+    // mostly by its own fixtures + the call lights
+    this.renderer.setTimeOfDay(this.clock.running ? this.clock.minutes : 660);
+    const dark = 1 - this.renderer.daylight;   // 0 midday … 1 midnight
+
+    // per-room CALL LIGHTS, by acuity:
+    //   blue ready-for-discharge · green stable · yellow deteriorating ·
+    //   orange rapidly deteriorating · red crashing
     this.map.beds.forEach((bed, i) => {
       const L = this.map.roomLights[i];
       if (!L) return;
       const sim2 = bed.occupant?.sim;
       let c = 0x8a94a4, inten = 0.25;
-      if (sim2) {
-        const queued = sim2.imagingOrder?.phase === 'queued' || sim2.labState === 'queued' || sim2._surgQueued;
-        if (sim2.state === 'dead') { c = 0x60646e; inten = 0.4; }
-        else if (sim2.critical) { c = 0xff2e2e; inten = 1.4 + Math.sin(now * 10) * 1.2; }
-        else if (queued) { c = 0xff8c1a; inten = (now % 0.9) < 0.45 ? 1.6 : 0.15; } // in line — blink orange
-        else if (sim2.stabilized) { c = 0x35e06a; inten = 1.3; }
-        else if (sim2.labsPending || sim2.imagingOrder) { c = 0xffc23c; inten = 1.0; }
-        else { c = 0x6fa8ff; inten = 0.55; }
+      const status = sim2?.acuityLight ?? 'empty';
+      switch (status) {
+        case 'off': c = 0x60646e; inten = 0.4; break;                                  // dead
+        case 'red': c = 0xff2e2e; inten = 1.5 + Math.sin(now * 10) * 1.2; break;        // crashing (pulse)
+        case 'orange': c = 0xff8c1a; inten = 1.2 + Math.sin(now * 5) * 0.5; break;      // rapidly deteriorating
+        case 'yellow': c = 0xffc23c; inten = 1.0; break;                               // deteriorating, needs tx
+        case 'green': c = 0x35e06a; inten = 0.95; break;                               // stable
+        case 'blue': c = 0x4aa8ff; inten = 1.1 + Math.sin(now * 3) * 0.3; break;       // ready for discharge
+        default: c = 0x8a94a4; inten = 0.22;                                           // empty room
       }
       L.mat.color.setHex(c); L.mat.emissive.setHex(c); L.mat.emissiveIntensity = inten;
+      if (L.pt) { // the fixture actually throws light — and burns brighter after dark
+        L.pt.color.setHex(c);
+        L.pt.intensity = status === 'empty' ? 0 : (0.5 + inten * 0.7) * (0.4 + dark * 1.7);
+      }
     });
+    // warm wall sconces: near-off in daylight, the ward's main light after dark
+    for (const s of this.map.sconces ?? []) {
+      s.mat.emissiveIntensity = 0.35 + dark * 1.2;
+      if (s.pt) s.pt.intensity = dark * 2.2;
+    }
 
     animateRig(this.receptionist, dt, now, 0, { sitting: true }); // typing away forever
 
@@ -1668,7 +1690,6 @@ export class Game {
       const TERM = {
         meddoc: { ico: '🪙', label: 'MED-DOC 4000', sit: 'SIT AT MED-DOC', color: '#2fae5f', open: () => this.ui.modals.medDoc() },
         triage: { ico: '🗂', label: 'TRIAGE BOARD', sit: 'SIT AT TRIAGE BOARD', color: '#3d8fd4', open: () => this.ui.modals.triageBoard() },
-        adam: { ico: '👀', label: 'ADAM COMPUTER', sit: 'SIT AT ADAM', color: '#25c85a', open: () => this.ui.modals.adamComputer() },
       };
       if (char.seatedAt) {
         const t = TERM[char.seatedAt.kind] ?? TERM.meddoc;

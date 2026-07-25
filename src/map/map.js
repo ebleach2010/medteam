@@ -77,7 +77,7 @@ function skyTexture() {
   return t;
 }
 
-export function buildMap(scene, physics) {
+export function buildMap(scene, physics, lite = false) {
   const statics = new THREE.Group();
   scene.add(statics);
   const tex = tileTexture();
@@ -538,14 +538,17 @@ export function buildMap(scene, physics) {
     monG.add(monFrame, monScreen);
     statics.add(monG);
     roomMonitors.push({ index: i, roomNo: i + 1, canvas: monCanvas, tex: monTex, screen: monScreen, standby: false });
-    // status light over the door — on a stem so it reads as a fixture
+    // call light over the door — on a stem so it reads as a fixture. Doubles
+    // as a real light source so it actually glows on the ward after dark.
     const lightMat = new THREE.MeshStandardMaterial({ color: 0x8a94a4, emissive: 0x8a94a4, emissiveIntensity: 0.25, roughness: 0.4 });
     const stem = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.26, 0.06), mat(0x5b6874));
     stem.position.set(cx, WALL_H + 0.12, -7);
     const light = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), lightMat);
     light.position.set(cx, WALL_H + 0.34, -7);
     statics.add(stem, light);
-    roomLights.push({ mesh: light, mat: lightMat });
+    const pt = lite ? null : new THREE.PointLight(0x8a94a4, 0, 7, 2);
+    if (pt) { pt.position.set(cx, WALL_H + 0.34, -6.4); statics.add(pt); }
+    roomLights.push({ mesh: light, mat: lightMat, pt });
     // status board over the bed (reference's check-board) — shares the door
     // light's material, so it flips green/orange/red in sync for free
     const boardFrame = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.42, 0.05), mat(0xf5f6f3));
@@ -554,6 +557,26 @@ export function buildMap(scene, physics) {
     board.position.set(cx - 0.7, 2.0, -11.77);
     statics.add(boardFrame, board);
   });
+
+  // ---- wall sconces: warm fixtures that keep the ward readable after dark,
+  // when the daylight has drained away and only the fixtures + call lights burn.
+  // Emissive puck in both modes; a real warm PointLight in full mode.
+  const sconces = [];
+  const SCONCE_AT = [
+    [-26, WALL_H + 0.55, -11.6], [-18, WALL_H + 0.55, -11.6], [-10, WALL_H + 0.55, -11.6], // ward back wall
+    [-26.5, 2.2, 9.4], [-16, 2.2, 16.2], [-9.5, 2.2, 4.5],                                   // lobby / station
+  ];
+  for (const [x, y, z] of SCONCE_AT) {
+    const puck = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8),
+      new THREE.MeshStandardMaterial({ color: 0xffe6b0, emissive: 0xffca7a, emissiveIntensity: 0.6, roughness: 0.5 }));
+    puck.position.set(x, y, z);
+    const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.16, 0.14, 10), mat(0x6a5c4a));
+    cup.position.set(x, y - 0.14, z);
+    statics.add(puck, cup);
+    const pt = lite ? null : new THREE.PointLight(0xffcaa0, 0, 9, 2);
+    if (pt) { pt.position.set(x, y, z + (z < 0 ? 0.5 : -0.5)); statics.add(pt); }
+    sconces.push({ mat: puck.material, pt });
+  }
 
   // ---- triage: reception + waiting + KNOCKABLE props ----
   const seats = [];
@@ -793,56 +816,17 @@ export function buildMap(scene, physics) {
   statics.add(crt2);
   const triagePC = { x: -18.6, z: -0.2, yaw: Math.PI, kind: 'triage' };
 
-  // 👀 THE ADAM COMPUTER — a standout googly-eyed kiosk, deliberately louder
-  // and more saturated than anything else, on its own stand east of the desk.
-  const adamFaceTex = (() => {
-    const c = document.createElement('canvas'); c.width = c.height = 128;
-    const x = c.getContext('2d');
-    x.fillStyle = '#04381e'; x.fillRect(0, 0, 128, 128);          // deep green screen
-    // two white googly eyes with dark pupils
-    for (const ex of [46, 82]) {
-      x.fillStyle = '#ffffff'; x.beginPath(); x.arc(ex, 52, 17, 0, 7); x.fill();
-      x.fillStyle = '#0a1a10'; x.beginPath(); x.arc(ex + 4, 56, 6, 0, 7); x.fill();
-    }
-    // bright green grin
-    x.strokeStyle = '#25ff6a'; x.lineWidth = 7; x.lineCap = 'round';
-    x.beginPath(); x.arc(64, 78, 26, 0.15 * Math.PI, 0.85 * Math.PI); x.stroke();
-    const t = new THREE.CanvasTexture(c); t.magFilter = THREE.NearestFilter; return t;
-  })();
-  const adam = new THREE.Group();
-  const adamCase = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.5, 0.5), mat(0xf3ead0)); // bright cream body
-  adamCase.position.y = 0.25; adamCase.castShadow = true;
-  const adamScreen = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.32),
-    new THREE.MeshBasicMaterial({ map: adamFaceTex, toneMapped: false })); // full-bright face
-  adamScreen.position.set(0, 0.27, 0.253);
-  const adamKeys = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.05, 0.2), mat(0xe6dcc0));
-  adamKeys.position.set(0, 0.03, 0.42);
-  const adamStand = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 0.86, 12), mat(0x2a6f45));
-  adamStand.position.y = -0.43;
-  const adamLed = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 6), emat(0x25ff6a, 1.8).clone());
-  adamLed.position.set(-0.24, 0.07, 0.26);
-  adam.add(adamCase, adamScreen, adamKeys, adamStand, adamLed);
-  adam.position.set(-11.0, 1.3, -1.2);
-  adam.rotation.y = 0;         // face toward the camera / the chair
-  adam.scale.setScalar(2.0);
-  statics.add(adam);
-  // a saturated green glow so it pops out of the beige station
-  const adamGlow = glowSprite ? glowSprite(0x25ff6a, 3.4, 0.5) : null;
-  if (adamGlow) { adamGlow.position.set(-11.0, 1.4, -1.0); statics.add(adamGlow); }
-  const adamPC = { x: -11.0, z: 0.0, yaw: Math.PI, kind: 'adam' };
-
   // a free chair at each terminal, matching the staff row
-  for (const s of [medDoc, triagePC, adamPC]) {
+  for (const s of [medDoc, triagePC]) {
     const c = makeOfficeChair(Math.PI);
     c.position.set(s.x, 0, s.z + 0.16);
     statics.add(c);
     shadowBlob(s.x, s.z + 0.1, 0.85, 0.85, 0.24);
   }
-  const termSeats = [medDoc, triagePC, adamPC];
+  const termSeats = [medDoc, triagePC];
   const stationLights = [
     { mesh: crtLed, mat: crtLed.material, phase: 0 },
     { mesh: crt2Led, mat: crt2Led.material, phase: 1.6 },
-    { mesh: adamLed, mat: adamLed.material, phase: 0.8 },
   ];
 
   // when dispatched they round the desk via a fixed lane, then sprint
@@ -925,7 +909,6 @@ export function buildMap(scene, physics) {
   floorRing(etherDoor.x - 0.9, etherDoor.z, 0x8aa0c0, 1.1); // the staff ether door
   floorRing(medDoc.x, medDoc.z + 0.1, 0x39ff6e, 0.85);   // the green terminal's chair
   floorRing(triagePC.x, triagePC.z + 0.1, 0x4aa8ff, 0.85); // …and the blue one's
-  floorRing(adamPC.x, adamPC.z + 0.1, 0x25ff6a, 0.9);    // …and the googly Adam kiosk
 
   const dropRing = new THREE.Mesh(new THREE.RingGeometry(1.0, 1.3, 36),
     new THREE.MeshBasicMaterial({ color: 0x4dd07a, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }));
@@ -941,7 +924,7 @@ export function buildMap(scene, physics) {
   return {
     beds, seats, shelfUnits, rings, dropRing,
     roomDesks, roomLights, roomMonitors, knockSpots, triageDesk, receptionSeat, staffSeats, stationExit, medDoc, triagePC, termSeats,
-    discharge, gateOut, firePit, fire, fadeWalls, stationLights,
+    discharge, gateOut, firePit, fire, fadeWalls, stationLights, sconces,
     etherDoor, etherHold, etherFx,
     floorYAt: () => 0,
     zoneOf, zoneDoors: ZONE_DOORS,
