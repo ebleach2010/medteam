@@ -37,6 +37,24 @@ const game = new Game(document.getElementById('game'), physics, {
   lite: params.has('lite'),
 });
 installTestApi(game);
+// iOS audio unlock: the FIRST real gesture anywhere resumes the AudioContext
+// and claims a 'playback' audio session, so a Home-Screen PWA isn't silenced
+// by the ringer switch. Keeps listening until it actually takes.
+{
+  const unlock = () => {
+    game.audio.unlock();
+    if (game.audio._unlocked) {
+      for (const ev of ['pointerdown', 'touchend', 'mousedown', 'keydown'])
+        window.removeEventListener(ev, unlock, true);
+    }
+  };
+  for (const ev of ['pointerdown', 'touchend', 'mousedown', 'keydown'])
+    window.addEventListener(ev, unlock, true);   // capture: fires before anything swallows it
+  // returning to a backgrounded PWA suspends the context again
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) game.audio.ctx?.resume?.();
+  });
+}
 game.start();
 // ?scene=ending — an isolated jump straight to the finale: the dead ward in
 // daylight, the mop in hand, and the gunman about a minute out
