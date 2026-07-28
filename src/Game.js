@@ -652,11 +652,11 @@ export class Game {
         else this._startJanitorScene();                 // anyone died: the janitor has had enough
       }
       this._cutTick(dt);
-      // the mopping clock: three minutes of pushing that mop is all a grieving
-      // family will allow
+      // the mopping clock: ONE minute of pushing that mop is all a grieving
+      // family will allow. Counts while you're holding it.
       if (this._mop?.heldBy && !this._shotFired && !this._cut) {
         this._mopT = (this._mopT ?? 0) + dt;
-        if (this._mopT >= 180 && this._chaosPatients?.some((p) => p.sim.state === 'dead')) {
+        if (this._mopT >= 60 && this._chaosPatients?.some((p) => p.sim.state === 'dead')) {
           this._startGunmanScene();
         }
       }

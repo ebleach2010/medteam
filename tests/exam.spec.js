@@ -169,7 +169,7 @@ test('chaos: two-minute die-off, then janitor → mop → gunman → You Died �
   await page.evaluate(() => {
     const g = window.__game.game;
     if (g._cut) { g._despawnConsultant(g._cut.npc); g._cut = null; }  // hurry the janitor out
-    g._mopT = 180;
+    g._mopT = 60;
   });
   await page.waitForFunction(() => window.__game.game._cut?.phase?.startsWith('gunman'), null, { timeout: 10000 });
   await page.evaluate(() => {
