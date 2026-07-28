@@ -5,7 +5,7 @@ import * as THREE from 'three';
 // spreads from wherever they happen to be. Drag a bleeder down the corridor and
 // you'll trail it into the hallway, which is where it becomes YOUR problem:
 // every time you walk onto a pool you roll a 10% chance to wipe out.
-const MAX_POOLS = 56;
+const MAX_POOLS = 128;   // ten simultaneous bleeders need room to make a mess
 const POOL_MAX_R = 0.85;      // a single blob caps here, then spreads to a new one
 const SLIP_CHANCE = 0.1;      // independent roll per crossing, not every 10th
 
@@ -64,9 +64,12 @@ export class Blood {
 
   // how hard is this patient bleeding right now? 0 = not at all
   _rate(sim) {
-    if (sim.case?.fail !== 'bleed') return 0;
     if (sim.treated || sim.resolved) return 0;         // haemostasis achieved
     if (sim.state === 'dead') return 0;
+    // chaos: every one of the ten is a catastrophe — while they're crashing
+    // they bleed where they lie, so every pool on the floor is traceably THEIRS
+    if (this.game.chaos) return sim.critical ? 0.05 : 0.008;
+    if (sim.case?.fail !== 'bleed') return 0;
     const tier = sim.case.tier ?? 2;
     let r = 0.02 + (tier - 1) * 0.022;                 // sicker cases bleed harder
     if (sim.critical) r *= 2.4;                        // actively exsanguinating
@@ -107,14 +110,14 @@ export class Blood {
     this._slipChecks();
   }
 
-  // the mop. It does not clean. Dragging it across a pool only smears fresh
-  // blood along wherever you walk — the floor can only ever get worse.
+  // the mop. It does not clean. Dragging its head across a pool only smears
+  // fresh blood along wherever the HEAD travels — the floor only gets worse.
   _mopSmear() {
     const g = this.game;
     const mop = g._mop;
     if (!mop?.heldBy) return;
     const ch = mop.heldBy;
-    const t = ch.body.translation();
+    const t = mop.body.translation();          // the head is what smears
     const v = ch.body.linvel();
     if (Math.hypot(v.x, v.z) < 0.6) return;    // you have to be pushing it
     for (const p of this.pools) {
@@ -122,7 +125,7 @@ export class Blood {
       if (Math.hypot(p.x - t.x, p.z - t.z) < p.r + 0.55) {
         this._smearAcc = (this._smearAcc ?? 0) + 1;
         if (this._smearAcc % 8 === 0) {
-          this.addAt(t.x + Math.sin(ch.yaw) * 0.55, t.z + Math.cos(ch.yaw) * 0.55, 0.11);
+          this.addAt(t.x + Math.sin(ch.yaw) * 0.45, t.z + Math.cos(ch.yaw) * 0.45, 0.11);
         }
         return;
       }

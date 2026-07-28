@@ -109,8 +109,16 @@ export class Character {
 
     // carry springs
     if (this.carrying) {
-      const a = this.handAnchor();
-      springToward(this.carrying.body, a, { k: 55, c: 4, maxForce: 30, dt });
+      if (this.carrying.data?.mop) {
+        // the mop is DRAGGED, not carried: its head stays planted on the floor
+        // ahead of you, sliding along the tiles as you move
+        const mp = this.pos;
+        const a = { x: mp.x + Math.sin(this.yaw) * 0.95, y: 0.14, z: mp.z + Math.cos(this.yaw) * 0.95 };
+        springToward(this.carrying.body, a, { k: 42, c: 6, maxForce: 26, dt });
+      } else {
+        const a = this.handAnchor();
+        springToward(this.carrying.body, a, { k: 55, c: 4, maxForce: 30, dt });
+      }
     }
     if (this.dragging) {
       // staff wheeling a patient thread tight doorways, so they keep the looser

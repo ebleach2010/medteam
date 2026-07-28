@@ -129,21 +129,24 @@ test('chaos: 10-min grace, then janitor → mop → gunman → You Died → BSOD
   expect(await page.evaluate(() => window.__game.game._lockNoon)).toBe(true);
   expect(await page.evaluate(() => !window.__game.game._chaosAlarms)).toBe(true);
 
-  // the mop only ever spreads the blood
+  // the mop only ever spreads the blood — drag the head through a pool on
+  // open floor and the pool count goes UP, never down
   const smear = await page.evaluate(async () => {
     const g = window.__game.game;
+    for (let k = 0; k < 6; k++) g.blood.addAt(-20 + k * 0.01, 8, 0.3); // a saturated pool, clear of furniture
     const poolsBefore = g.blood.pools.length;
     const ch = g._mop.heldBy;
-    const pool = g.blood.pools[0];
-    ch.body.setTranslation({ x: pool.x, y: 1, z: pool.z }, true);
-    ch.body.setLinvel({ x: 2.5, y: 0, z: 0 }, true);
     let grew = false;
-    for (let i = 0; i < 240; i++) {
+    for (let i = 0; i < 300; i++) {
+      ch.body.setTranslation({ x: -20.6, y: 1, z: 8 }, true);
+      ch.yaw = Math.PI / 2;                                  // pushing the mop toward +x
+      ch.body.setLinvel({ x: 2.5, y: 0, z: 0 }, true);
+      g._mop.body.setTranslation({ x: -20.0, y: 0.18, z: 8 }, true);
       g.blood._mopSmear();
       if (g.blood.pools.length > poolsBefore) { grew = true; break; }
       await new Promise((r) => setTimeout(r, 10));
     }
-    return { grew };
+    return { grew, poolsBefore, poolsAfter: g.blood.pools.length };
   });
   expect(smear.grew).toBe(true);
 

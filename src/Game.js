@@ -179,13 +179,6 @@ export class Game {
     this.mode = 'playing';
     this._spawnLobbyProps();
     this.blood.clear();
-    // the floor is already wet — this started long before you finished Q1
-    const SPOTS = [[-14, -4], [-18, -5], [-22, -4.5], [-12, 1], [-20, 2.5], [-24, 8], [-16, -8.5], [-9, -3], [-26, -6]];
-    for (const [x, z] of SPOTS) {
-      for (let i = 0; i < 5; i++) {
-        this.blood.addAt(x + (this.rng.next() - 0.5) * 1.8, z + (this.rng.next() - 0.5) * 1.8, 0.28);
-      }
-    }
     // ten patients, ten different catastrophes — six in the beds, four dying in
     // the waiting row until a bed frees up
     const IDS = ['stemi', 'sah', 'gi_bleed', 'dka', 'sepsis', 'meningitis',
@@ -216,6 +209,26 @@ export class Game {
         if (sim.treated || sim.resolved || sim.state === 'dead') return;
         sim.die?.(`untreated ${c.name}`);
       } });
+    });
+    // the blood is THEIRS: it starts under each patient (they'd been bleeding
+    // the whole time you were taking that test), and the ones who got hauled
+    // into rooms left a drag-trail from the corridor to their bed
+    for (const p of this._chaosPatients) {
+      const t = p.body.translation();
+      for (let k = 0; k < 3; k++) {
+        this.blood.addAt(t.x + (this.rng.next() - 0.5) * 1.0, t.z + (this.rng.next() - 0.5) * 1.0, 0.3);
+      }
+    }
+    this._chaosPatients.slice(0, 4).forEach((p) => {
+      const bed = p.sim.bed;
+      if (!bed) return;
+      const door = this.map.roomDoor(bed.index);
+      const from = { x: this.DESK_LANE_X, z: 1.5 };
+      for (let k = 0; k <= 8; k++) {
+        const f = k / 8;
+        this.blood.addAt(from.x + (door.x - from.x) * f + this.rng.range(-0.4, 0.4),
+          from.z + (door.z - from.z) * f + this.rng.range(-0.4, 0.4), 0.15);
+      }
     });
     this._chaosAlarms = true;
     this._buildChaosFx();
@@ -304,13 +317,19 @@ export class Game {
   // Every chaos patient is now either discharged or dead. Either way: the mop.
   // It cleans nothing — it only smears the blood around. Nothing is announced.
   // This is the ending.
+  // a real mop: stringy head at the origin, wooden handle leaning to whoever
+  // holds it. The body is the HEAD — it slides along the floor when dragged.
+  _spawnMop(x, z) {
+    return spawnCarryable(this, 'mop', x, 0.3, z,
+      { mop: true, label: 'Mop', size: { hx: 0.09, hy: 0.1, hz: 0.09, mass: 1.4 } });
+  }
+
   _grantMop() {
     if (this._mopGranted) return;
     this._mopGranted = true;
     this._silentEternity = this._chaosPatients.every((p) => p.sim.resolved); // never told to anyone
     this._chaosAlarms = false;                        // the alarms just... stop
-    this._mop = spawnCarryable(this, 'prop', -15, 1.0, 2.5,
-      { color: 0x9a8a6a, label: 'Mop', size: { hx: 0.06, hy: 0.75, hz: 0.06, mass: 1.0 } });
+    this._mop = this._spawnMop(-15, 2.5);
   }
 
   // ---- the ending, when anyone died ----
@@ -371,8 +390,7 @@ export class Game {
       const ch = this.active;                          // the mop changes hands
       if (ch.carrying) this._consumeHeld(ch);
       const a = ch.handAnchor();
-      this._mop = spawnCarryable(this, 'prop', a.x, 1.0, a.z,
-        { color: 0x9a8a6a, label: 'Mop', size: { hx: 0.06, hy: 0.75, hz: 0.06, mass: 1.0 } });
+      this._mop = this._spawnMop(a.x, a.z);
       ch.carrying = this._mop; this._mop.heldBy = ch;
       c.phase = 'npc-out'; c.t = 0;
       c.route = [...this._routeTo(np, this.map.insideWaypoint), { ...this.map.spawnOutside }];
@@ -1941,6 +1959,22 @@ export class Game {
     for (const it of this.world.byTag('items')) {
       const t = it.body.translation(), r = it.body.rotation();
       it.mesh.position.set(t.x, t.y, t.z);
+      if (it.data?.mop) {
+        // the mop renders head-down: held, the head is planted on the floor
+        // and the handle leans up toward whoever's dragging it; loose, it lies
+        // flat where it was dropped
+        if (it.heldBy) {
+          const hp = it.heldBy.pos;
+          _lean.set(hp.x - t.x, 1.15, hp.z - t.z).normalize();
+          it.mesh.quaternion.setFromUnitVectors(_upY, _lean);
+          it.mesh.position.y = Math.min(t.y, 0.06);
+        } else {
+          _lean.set(0.98, 0.06, 0.14).normalize();
+          it.mesh.quaternion.setFromUnitVectors(_upY, _lean);
+          it.mesh.position.y = 0.06;
+        }
+        continue;
+      }
       it.mesh.quaternion.set(r.x, r.y, r.z, r.w);
     }
     const ap = this.active.pos;
@@ -2337,3 +2371,5 @@ export class Game {
 }
 
 const _v3 = new THREE.Vector3();
+const _upY = new THREE.Vector3(0, 1, 0);
+const _lean = new THREE.Vector3();
