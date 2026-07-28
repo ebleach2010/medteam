@@ -8,7 +8,9 @@ import { Audio } from './core/audio.js';
 import { Renderer } from './render/renderer.js';
 import { buildMap } from './map/map.js';
 import { Character } from './entities/Character.js';
-import { syncPatientMesh } from './entities/Patient.js';
+import { syncPatientMesh, spawnPatient } from './entities/Patient.js';
+import { generateCase } from './sim/generator.js';
+import { showBoardsExam } from './ui/examScreen.js';
 import { makeCharacterMesh } from './render/meshes.js';
 import { animateRig } from './render/rig.js';
 import { spawnCarryable } from './entities/Carryable.js';
@@ -99,7 +101,9 @@ export class Game {
       this.fx.dusts.push({ sp, life: 0 });
     }
 
-    this.ui.screens.title(() => this.startDay(1));
+    // THE OPENING: the Board has shut the ED down. There is an exam. It cannot
+    // be passed. What comes after the exam is the rest of the game.
+    showBoardsExam(this, () => this.startChaos());
   }
 
   get active() { return this.activeIdx === 0 ? this.nurse : this.doctor; }
@@ -156,6 +160,132 @@ export class Game {
     let seen = false;
     try { seen = localStorage.getItem('medteam.seenTutorial') === '1'; } catch { /* private */ }
     if (!seen && day === 1) setTimeout(() => { if (this.mode === 'playing' && !this.ui.modals.open) this.ui.modals.howToPlay(false); }, 400);
+  }
+
+  // ---------------- THE DISASTER ----------------
+  // What the A-DUMB exam was hiding: while you took it, ten patients started
+  // crashing. Every bed full, four more dying in the lobby, alarms, sparks off
+  // the breaker, small fires, blood everywhere. Each has 1–5 minutes to live.
+  // There is no quota, no next day, and no ending but the mop.
+  startChaos() {
+    this.chaos = true;
+    this.clock.day = 1;
+    this.clock.minutes = 0;           // 12:00 AM — the disaster happens in the dark
+    this.clock.timeScale = 1.2;
+    this.clock.running = true;
+    this.quota = 10;
+    this.dayStats = this._freshStats();
+    this.mode = 'playing';
+    this._spawnLobbyProps();
+    this.blood.clear();
+    // the floor is already wet — this started long before you finished Q1
+    const SPOTS = [[-14, -4], [-18, -5], [-22, -4.5], [-12, 1], [-20, 2.5], [-24, 8], [-16, -8.5], [-9, -3], [-26, -6]];
+    for (const [x, z] of SPOTS) {
+      for (let i = 0; i < 5; i++) {
+        this.blood.addAt(x + (this.rng.next() - 0.5) * 1.8, z + (this.rng.next() - 0.5) * 1.8, 0.28);
+      }
+    }
+    // ten patients, ten different catastrophes — six in the beds, four dying in
+    // the waiting row until a bed frees up
+    const IDS = ['stemi', 'sah', 'gi_bleed', 'dka', 'sepsis', 'meningitis',
+      'status_epilepticus', 'ectopic', 'hyperkalemia', 'pneumothorax'];
+    this._chaosPatients = [];
+    IDS.forEach((id, i) => {
+      const c = generateCase(this.rng, 40, { id });
+      const p = spawnPatient(this, c, this.map.insideWaypoint.x, this.map.insideWaypoint.z + 2);
+      this._chaosPatients.push(p);
+      const sim = p.sim;
+      if (i < this.map.beds.length) {
+        this.bedPatient(p, this.map.beds[i]);
+      } else {
+        const seat = this.map.seats.find((s) => !s.taken);
+        if (seat) {
+          seat.taken = p; sim.seat = seat;
+          p.body.setTranslation({ x: seat.x, y: 1.0, z: seat.z }, true);
+          this.seatPatient(sim);
+        }
+        sim.state = 'waiting';
+      }
+      sim._goCritical?.();
+      sim._sayRaw?.(c.complaint[0], 'critical');       // they moan their symptoms
+      // the fuse: 1–5 minutes of real time, staggered so they fall one by one
+      const fuse = 58 + i * 26 + this.rng.range(-8, 8);
+      this.timers.push({ at: this.timeReal + fuse, fn: () => {
+        if (sim.treated || sim.resolved || sim.state === 'dead') return;
+        sim.die?.(`untreated ${c.name}`);
+      } });
+    });
+    this._chaosAlarms = true;
+    this._buildChaosFx();
+    this.ui.screens.fade(false);
+    this.audio.alarm();
+  }
+
+  // breaker sparks, scattered small fires, and the red strobe state the render
+  // loop drives. Built once, on entering chaos.
+  _buildChaosFx() {
+    if (this._chaosFx) return;
+    const scene = this.renderer.scene;
+    const fx = { flames: [], sparks: [], breaker: { x: -6.8, z: -3.6 }, nextSparkAt: 1.5, flash: null };
+    // the breaker box, hanging half-off the ward's east wall
+    const box = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.9, 0.22),
+      new THREE.MeshStandardMaterial({ color: 0x4c5563, roughness: 0.6 }));
+    box.position.set(fx.breaker.x, 1.5, fx.breaker.z);
+    box.rotation.z = 0.09;                      // knocked crooked
+    scene.add(box);
+    // dangling wires
+    for (let i = 0; i < 3; i++) {
+      const w = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.55, 5),
+        new THREE.MeshStandardMaterial({ color: i ? 0x28303c : 0xb03a2e }));
+      w.position.set(fx.breaker.x - 0.18 + i * 0.16, 0.95, fx.breaker.z + 0.05);
+      w.rotation.x = 0.35 - i * 0.3;
+      scene.add(w);
+    }
+    if (!this.lite) {
+      fx.flash = new THREE.PointLight(0xffc46a, 0, 11, 2);
+      fx.flash.position.set(fx.breaker.x, 1.6, fx.breaker.z + 0.6);
+      scene.add(fx.flash);
+    }
+    // spark sprites, pooled
+    for (let i = 0; i < 14; i++) {
+      const sp = glowSprite(0xffb43c, 0.34, 0);
+      sp.visible = false;
+      scene.add(sp);
+      fx.sparks.push({ sp, life: 0, vx: 0, vy: 0, vz: 0, x: 0, y: 0, z: 0 });
+    }
+    // small realistic-enough fires, scattered where fires have no business being
+    const flameGeo = new THREE.ConeGeometry(0.22, 0.8, 7);
+    const FLAME_AT = [[-7.4, -2.6], [-23.2, 13.2], [-13.6, 5.6], [-27.2, -4.2], [-10.4, 12.4]];
+    for (const [x, z] of FLAME_AT) {
+      const grp = [];
+      for (let i = 0; i < 3; i++) {
+        const f = new THREE.Mesh(flameGeo, new THREE.MeshStandardMaterial({
+          color: i % 2 ? 0xff8a3c : 0xffb43c, emissive: i % 2 ? 0xff8a3c : 0xffb43c, emissiveIntensity: 1.5 }));
+        const a = (i / 3) * Math.PI * 2;
+        f.position.set(x + Math.cos(a) * 0.18, 0.4, z + Math.sin(a) * 0.18);
+        scene.add(f);
+        grp.push(f);
+      }
+      const glow = glowSprite(0xff7a2c, 2.6, 0.4);
+      glow.position.set(x, 0.9, z);
+      scene.add(glow);
+      const pt = this.lite ? null : new THREE.PointLight(0xff9040, 1.6, 7, 2);
+      if (pt) { pt.position.set(x, 1.1, z); scene.add(pt); }
+      fx.flames.push({ x, z, grp, glow, pt, phase: this.rng.next() * 6 });
+    }
+    this._chaosFx = fx;
+  }
+
+  // Every chaos patient is now either discharged or dead. Either way: the mop.
+  // It cleans nothing — it only smears the blood around. Nothing is announced.
+  // This is the ending.
+  _grantMop() {
+    if (this._mopGranted) return;
+    this._mopGranted = true;
+    this._silentEternity = this._chaosPatients.every((p) => p.sim.resolved); // never told to anyone
+    this._chaosAlarms = false;                        // the alarms just... stop
+    this._mop = spawnCarryable(this, 'prop', -15, 1.0, 2.5,
+      { color: 0x9a8a6a, label: 'Mop', size: { hx: 0.06, hy: 0.75, hz: 0.06, mass: 1.0 } });
   }
 
   // waiting-room physics props, reset fresh each day — angry patients shove
@@ -257,6 +387,12 @@ export class Game {
       ch.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
     });
     this.score -= this.dayStats.score; // the scrapped shift's points go with it
+    if (this.chaos) {
+      // there is no do-over from the disaster — only the disaster, again
+      this._mopGranted = false; this._mop = null; this._silentEternity = false;
+      this.startChaos();
+      return;
+    }
     this.startDay(this.clock.day);
   }
 
@@ -267,6 +403,9 @@ export class Game {
       requestAnimationFrame(frame);
       let dt = Math.min((now - last) / 1000, 0.25);
       last = now;
+      // while the A-DUMB exam owns the screen there is nothing 3D to see —
+      // idle the whole engine so the CRT (and weak phones) get the main thread
+      if (this._exam) return;
       this._acc += dt;
       let steps = 0;
       while (this._acc >= FIXED_DT && steps < 5) {
@@ -320,14 +459,27 @@ export class Game {
     this._postPhysics(dt);
     this.blood.tick(dt);
     this.barks.tick(dt);
-    this.spawner.tick();
+    if (!this.chaos) this.spawner.tick();       // nobody ELSE is coming. it's just these ten.
 
     // scheduled one-shots (fatal med errors etc.)
     for (let i = this.timers.length - 1; i >= 0; i--) {
       if (this.timeReal >= this.timers[i].at) { const t = this.timers.splice(i, 1)[0]; t.fn(); }
     }
 
-    if (this.clock.dayDone) this.endDay();
+    if (this.chaos) {
+      // the alarm keeps blaring for as long as anyone is still savable
+      if (this._chaosAlarms && this.timeReal - (this._lastAlarmAt ?? -9) > 1.9) {
+        this._lastAlarmAt = this.timeReal;
+        this.audio.alarm();
+      }
+      // when every one of the ten is discharged or dead, the mop is provided
+      if (!this._mopGranted && this._chaosPatients?.length &&
+          this._chaosPatients.every((p) => p.sim.resolved || p.sim.state === 'dead')) {
+        this._grantMop();
+      }
+      // days roll over silently, forever — there is no shift change coming
+      if (this.clock.dayDone) { this.clock.minutes -= 24 * 60; this.clock.day += 1; }
+    } else if (this.clock.dayDone) this.endDay();
   }
 
   // ---------------- autonomous staff ----------------
@@ -865,6 +1017,52 @@ export class Game {
       }
       ch.applyMove(0, 0);
       this['_task_' + t.type]?.(ch, t, dt);
+    }
+  }
+
+  // per-frame chaos dressing: flames lick, the breaker spits glowing sparks
+  _chaosFxFrame(dt, now) {
+    const fx = this._chaosFx;
+    if (!fx) return;
+    for (const fl of fx.flames) {
+      fl.grp.forEach((f, i) => {
+        const k = now * 11 + fl.phase + i * 2.1;
+        f.scale.y = 0.8 + Math.sin(k) * 0.28 + Math.sin(k * 2.7) * 0.12;
+        f.scale.x = f.scale.z = 0.9 + Math.sin(k * 1.6) * 0.15;
+        f.material.emissiveIntensity = 1.2 + Math.max(0, Math.sin(k * 1.3)) * 0.9;
+      });
+      fl.glow.material.opacity = 0.3 + Math.sin(now * 9 + fl.phase) * 0.12;
+      if (fl.pt) fl.pt.intensity = 1.3 + Math.sin(now * 13 + fl.phase) * 0.6;
+    }
+    // the breaker: random bursts of sparks that light the wall as they fly
+    fx.nextSparkAt -= dt;
+    if (fx.nextSparkAt <= 0) {
+      fx.nextSparkAt = 1.2 + this.rng.next() * 2.6;
+      this.audio.spark?.();
+      if (fx.flash) fx.flash.intensity = 9;
+      let fired = 0;
+      for (const s of fx.sparks) {
+        if (s.life > 0 || fired >= 10) continue;
+        fired++;
+        s.life = 0.35 + this.rng.next() * 0.3;
+        s.x = fx.breaker.x + (this.rng.next() - 0.5) * 0.3;
+        s.y = 1.4 + (this.rng.next() - 0.5) * 0.3;
+        s.z = fx.breaker.z + 0.15;
+        s.vx = (this.rng.next() - 0.5) * 3.4;
+        s.vy = 1.5 + this.rng.next() * 2.4;
+        s.vz = 1.2 + this.rng.next() * 2.2;
+      }
+    }
+    if (fx.flash && fx.flash.intensity > 0) fx.flash.intensity = Math.max(0, fx.flash.intensity - dt * 42);
+    for (const s of fx.sparks) {
+      if (s.life <= 0) { s.sp.visible = false; continue; }
+      s.life -= dt;
+      s.vy -= 9.8 * dt;                       // sparks fall like sparks
+      s.x += s.vx * dt; s.y += s.vy * dt; s.z += s.vz * dt;
+      if (s.y < 0.03) { s.y = 0.03; s.life = Math.min(s.life, 0.08); }
+      s.sp.visible = true;
+      s.sp.position.set(s.x, s.y, s.z);
+      s.sp.material.opacity = Math.min(0.9, s.life * 2.6);
     }
   }
 
@@ -1469,11 +1667,21 @@ export class Game {
         L.pt.intensity = status === 'empty' ? 0 : (0.5 + inten * 0.7) * (0.4 + dark * 1.7);
       }
     });
-    // warm wall sconces: near-off in daylight, the ward's main light after dark
-    for (const s of this.map.sconces ?? []) {
-      s.mat.emissiveIntensity = 0.35 + dark * 1.2;
-      if (s.pt) s.pt.intensity = dark * 2.2;
-    }
+    // warm wall sconces: near-off in daylight, the ward's main light after dark.
+    // In chaos they become the red alarm strobes.
+    this.map.sconces?.forEach((s, i) => {
+      if (this.chaos && this._chaosAlarms) {
+        const pulse = Math.max(0, Math.sin(now * 6.5 + i * 1.1));
+        s.mat.color.setHex(0xff2626); s.mat.emissive.setHex(0xff2626);
+        s.mat.emissiveIntensity = 0.3 + pulse * 2.4;
+        if (s.pt) { s.pt.color.setHex(0xff3030); s.pt.intensity = pulse * 3.4; }
+      } else {
+        s.mat.color.setHex(0xffe6b0); s.mat.emissive.setHex(0xffca7a);
+        s.mat.emissiveIntensity = 0.35 + dark * 1.2;
+        if (s.pt) { s.pt.color.setHex(0xffcaa0); s.pt.intensity = dark * 2.2; }
+      }
+    });
+    this._chaosFxFrame(dt, now);
 
     animateRig(this.receptionist, dt, now, 0, { sitting: true }); // typing away forever
 

@@ -7,14 +7,15 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => { try { localStorage.setItem('medteam.seenTutorial', '1'); } catch { /* private */ } });
 });
 
-test('boots to title without console errors and starts a day', async ({ page }) => {
+test('boots to the A-DUMB exam without console errors and starts a day', async ({ page }) => {
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
   await page.goto(url);
   await page.waitForFunction(() => window.__game?.ready, null, { timeout: 20000 });
-  await expect(page.locator('#screen h1')).toContainText('MED');
+  // the opening is the Board's shutdown notice on the A-DUMB CRT
+  await expect(page.locator('#adumb .crt-body')).toContainText('SHUT DOWN', { timeout: 15000 });
   await page.screenshot({ path: 'test-results/shots/title.png' });
 
   await page.evaluate(() => window.__game.start());

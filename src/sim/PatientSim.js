@@ -185,7 +185,8 @@ export class PatientSim {
 
     // waiting-room patience → anger → walkout. Once they've been ROOMED the
     // clock stops for good — nobody storms out of a bed over athlete's foot.
-    if ((this.state === 'waiting' || this.state === 'angry') && !this.everRoomed) {
+    // And nobody CRASHING storms out of anywhere: critical patients stay put.
+    if ((this.state === 'waiting' || this.state === 'angry') && !this.everRoomed && !this.critical) {
       const waited = now - this.tArrive;
       const overCap = g.edOverCapacity();
       if (this.state === 'waiting' && (waited > this.case.patienceMin || (overCap && waited > 25))) {
