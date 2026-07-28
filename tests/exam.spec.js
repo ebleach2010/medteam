@@ -115,6 +115,19 @@ test('chaos: two-minute die-off, then janitor → mop → gunman → You Died �
   expect(fuses[0]).toBeGreaterThan(8);
   expect(fuses[fuses.length - 1]).toBeLessThan(140);
 
+  // the diseases are FAKE and have no cure — any help kills instantly
+  const helped = await page.evaluate(async () => {
+    const g = window.__game.game;
+    const pt = [...g.world.byTag('patients')][0];
+    const { giveMed } = await import('/src/sim/treatment.js');
+    const { MEDS } = await import('/src/data/meds.js');
+    giveMed(g, pt, MEDS[0].id);
+    return { state: pt.sim.state, fake: pt.sim.case.name, tx: pt.sim.txLog.at(-1)?.result };
+  });
+  expect(helped.state).toBe('dead');
+  expect(helped.tx).toBe('fatal');
+  expect(helped.fake).toBe('Reverse Hiccups');   // a disease that does not exist
+
   // burn every fuse → they die off → the janitor scene begins
   await page.evaluate(() => { const g = window.__game.game; for (const t of g.timers) t.at = g.timeReal; });
   await page.waitForFunction(() =>

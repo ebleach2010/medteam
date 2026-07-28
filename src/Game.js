@@ -179,16 +179,34 @@ export class Game {
     this.mode = 'playing';
     this._spawnLobbyProps();
     this.blood.clear();
-    // ten patients, ten different catastrophes — six in the beds, four dying in
-    // the waiting row until a bed frees up
+    // ten patients, ten FAKE diseases — six in the beds, four dying in the
+    // waiting row until a bed frees up. None of these conditions exist. None
+    // of them have a cure. Anything done to help kills the patient instantly.
     const IDS = ['stemi', 'sah', 'gi_bleed', 'dka', 'sepsis', 'meningitis',
       'status_epilepticus', 'ectopic', 'hyperkalemia', 'pneumothorax'];
+    const FAKE = [
+      ['Reverse Hiccups', 'My hiccups go INWARD. Each one takes something with it.'],
+      ['Crystalline Bone Fever', 'I can hear my skeleton chiming.'],
+      ['Total Body Déjà Vu', 'I keep being sick five seconds ago.'],
+      ['Spontaneous Organ Shuffle', 'My heart is where my lunch should be.'],
+      ['The Wednesday Sickness', 'It is not even Wednesday. That is how bad this is.'],
+      ['Inverted Fever', 'I am freezing on the outside and boiling in the middle.'],
+      ['Borrowed Pulse', 'This heartbeat is not mine and its owner wants it back.'],
+      ['Vanishing Blood', 'My blood keeps leaving me. Look at it. There it goes.'],
+      ['Chronic Echo Syndrome', 'Everything I feel happens twice. Everything I feel happens twice.'],
+      ['Terminal Mondays', 'Doc, it has been Monday for six days.'],
+    ];
     this._chaosPatients = [];
     IDS.forEach((id, i) => {
       const c = generateCase(this.rng, 40, { id });
+      c.name = FAKE[i][0];                    // a disease that does not exist
+      c.complaint = [FAKE[i][1]];
+      c.dxOptions = FAKE.map((f) => f[0]);    // a differential of pure fiction
+      c.correctDx = i;                        // "correct" — for all the good it does
       const p = spawnPatient(this, c, this.map.insideWaypoint.x, this.map.insideWaypoint.z + 2);
       this._chaosPatients.push(p);
       const sim = p.sim;
+      sim.incurable = true;                   // help IS the fatal dose
       if (i < this.map.beds.length) {
         this.bedPatient(p, this.map.beds[i]);
       } else {
@@ -887,6 +905,15 @@ export class Game {
   // rules) and applied with proportionate consequences
   applyIntervention(pt, effect, reply, label) {
     const sim = pt.sim;
+    // fake diseases: ANY attempted intervention — cure, comfort, hug, juice —
+    // kills them instantly. Helping is the one thing they cannot survive.
+    if (sim.incurable && sim.state !== 'dead') {
+      sim.recordTx?.(label || 'intervention', 'fatal');
+      this.ui.announce(`☠ You try "${label || 'something'}" — they die instantly. There was never a cure.`, 'bad');
+      sim.die?.(`${label || 'an intervention'} — there was no cure`, true);
+      this.addScore(-50, 'You tried to help');
+      return;
+    }
     const line = reply || 'It... happens. Nobody is sure it helped.';
     const RESULT = { cure: 'resolved ✓', helps: 'helped', nothing: 'no effect', harms: 'harmful', severe: 'serious harm', lethal: 'fatal' };
     if (label) sim.recordTx(label, RESULT[effect] ?? 'tried');
@@ -1620,7 +1647,13 @@ export class Game {
       t.wait -= dt;
       if (t.wait > 0) return;
       sim.surgeryDone = t.surgery.id;
-      if (sim.case.surgery && sim.case.surgery === t.surgery.id) {
+      if (sim.incurable) {
+        // you cannot operate on a disease that does not exist
+        sim.recordTx?.(`🔪 ${t.surgery.label}`, 'fatal');
+        this.ui.toast(`☠ ${t.surgery.label} — they die on the table instantly. There was never a cure.`, 'bad');
+        sim.die?.(`${t.surgery.label} — there was no cure`, true);
+        this.addScore(-50, 'You tried to help');
+      } else if (sim.case.surgery && sim.case.surgery === t.surgery.id) {
         sim.recordTx(`🔪 ${t.surgery.label}`, 'curative ✓');
         applyTreatment(this, sim);
         this.addScore(140, 'Correct surgery');
@@ -1634,6 +1667,12 @@ export class Game {
         if (!sim.case.surgery && this.rng.chance(0.25)) sim._goCritical();
       }
       this._exitEther(ch, t.patient);
+      if (sim.state === 'dead') {              // the table claimed them — leave the body, go home
+        if (ch.dragging) { ch.dragging.draggedBy = null; ch.dragging = null; }
+        t.phase = 'home';
+        t.route = this._routeTo(ch.pos, this.map.doctorSpawn);
+        return;
+      }
       sim.state = 'transport';
       t.phase = 'toRoomBack';
       const rd2 = this.map.roomDoor(t.bed.index);

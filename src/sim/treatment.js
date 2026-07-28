@@ -18,6 +18,16 @@ export function giveMed(game, patient, medId) {
   const med = medById(medId);
   const name = sim.displayName;
 
+  // the fake diseases: there is no cure, and anything given to help kills
+  // them on the spot. Every med, every route, every time.
+  if (sim.incurable && sim.state !== 'dead') {
+    sim.recordTx?.(med?.name ?? medId, 'fatal');
+    game.ui.toast(`☠ The ${med?.name ?? medId} hits ${name}... and they die instantly. There was never a cure.`, 'bad');
+    sim.die?.(`${med?.name ?? medId} — there was no cure`, true);
+    game.addScore(-50, 'You tried to help');
+    return;
+  }
+
   // the sound of giving it: a syringe for anything parenteral, a rattle of
   // tablets for anything swallowed
   const parenteral = /\b(IV|IM|SC|SubQ|neb|inhal)/i.test(med?.dose ?? '');
