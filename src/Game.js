@@ -335,6 +335,26 @@ export class Game {
   // Every chaos patient is now either discharged or dead. Either way: the mop.
   // It cleans nothing — it only smears the blood around. Nothing is announced.
   // This is the ending.
+  // preview jump (?scene=ending): straight to the finale — everyone already
+  // lost, daylight over the wreckage, mop in hand, the gunman a minute out.
+  jumpToEnding() {
+    this._exam?.destroy?.();
+    this.startChaos();
+    for (const p of this._chaosPatients) {
+      if (p.sim.state !== 'dead') p.sim.die?.(`untreated ${p.sim.case.name}`, true);
+    }
+    this.timers = [];                     // the fuses are moot now
+    this._chaosAlarms = false;
+    this._mopGranted = true;              // the janitor already came and went
+    this._lockNoon = true;
+    const ch = this.active;
+    if (ch.carrying) this._consumeHeld(ch);
+    const a = ch.handAnchor();
+    this._mop = this._spawnMop(a.x, a.z);
+    ch.carrying = this._mop; this._mop.heldBy = ch;
+    this._mopT = 55;                      // the gunman is seconds away
+  }
+
   // a real mop: stringy head at the origin, wooden handle leaning to whoever
   // holds it. The body is the HEAD — it slides along the floor when dragged.
   _spawnMop(x, z) {
