@@ -96,7 +96,9 @@ export class Character {
       this.yaw = smoothAngle(this.yaw, Math.atan2(this.move.x, this.move.z), 10, dt);
     }
     // upright spring — stays limp for most of the sprawl so you lie flat and
-    // slide, then re-stiffens near the end to shove you back to your feet
+    // slide, then re-stiffens near the end to shove you back to your feet.
+    // downForever (the shotgun) pins the sprawl: shot people do not get up.
+    if (this.downForever) { this.sprawlTimer = Math.max(this.sprawlTimer, 0.65); this.slipMax = Math.max(this.slipMax ?? 3, 3); }
     this.sprawlTimer = Math.max(0, this.sprawlTimer - dt);
     const k = this.sprawlTimer > 0.6 ? 24 : this.sprawlTimer > 0 ? 420 : this.uprightK;
     uprightSpring(body, { k, c: 95, dt });
