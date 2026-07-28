@@ -12,6 +12,44 @@ export class Audio {
     this._lastStep = 0;
   }
 
+  // iOS, and ESPECIALLY a Home-Screen (standalone) PWA, needs three things or
+  // the whole game plays silent:
+  //   1. the AudioContext must be RESUMED from inside a real user gesture —
+  //      ours can first get built from a timer (the exam typewriter), which
+  //      leaves it suspended forever;
+  //   2. a standalone PWA's audio session defaults to a category the physical
+  //      Silent switch mutes, so we ask for 'playback' explicitly;
+  //   3. some iOS versions only honour that once a real <audio> element has
+  //      played, so we hold a looping silent clip open as the session anchor.
+  // Called from the first pointerdown/touch/key anywhere in the document.
+  unlock() {
+    if (this._unlocked) return;
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { /* not supported */ }
+    if (!this._holder) {
+      try {
+        const a = document.createElement('audio');
+        a.setAttribute('playsinline', '');
+        a.loop = true;
+        a.volume = 0.0001;
+        a.src = 'data:audio/wav;base64,UklGRqQCAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YYACAACA'
+          + 'gICA'.repeat(160);
+        a.play().catch(() => { /* still needs a gesture */ });
+        this._holder = a;
+      } catch { /* no audio element */ }
+    }
+    const ctx = this._ensure();
+    if (!ctx) return;
+    ctx.resume?.();
+    try { // priming a one-sample buffer is what actually flips iOS out of suspended
+      const b = ctx.createBuffer(1, 1, 22050);
+      const s = ctx.createBufferSource();
+      s.buffer = b;
+      s.connect(ctx.destination);
+      s.start(0);
+    } catch { /* already running */ }
+    if (ctx.state === 'running') this._unlocked = true;
+  }
+
   _ensure() {
     if (!this.ctx) {
       try {
