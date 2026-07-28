@@ -215,8 +215,8 @@ export function showBoardsExam(game, onDone) {
     await textInput();
     if (done) return;
     game.audio?.alarm?.();
-    await say('IDK AIF THAT WAS RIGHT OR NOT BUT TEN PATIENTS STARTED CRASHING AS YOU TOOK THAT TEST WTF ARE YOU DOING', 'wtf', 24);
-    await sleep(1400);
+    await say('IDK IF THAT WAS RIGHT OR NOT BUT TEN PATIENTS STARTED CRASHING AS YOU TOOK THAT TEST WTF ARE YOU DOING XD', 'wtf', 24);
+    await sleep(6000);                                    // the last message hangs there
     finish();
   })();
 }

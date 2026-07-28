@@ -202,9 +202,9 @@ export class Game {
       }
       sim._goCritical?.();
       sim._sayRaw?.(c.complaint[0], 'critical');       // they moan their symptoms
-      // the fuse: ten minutes of real time to treat everyone. After that,
-      // whoever's still untreated starts dying off, one by one.
-      const fuse = 600 + i * 22 + this.rng.range(-6, 6);
+      // the fuses: the untreated die off one by one across the first TWO
+      // minutes — first at ~15s, last at ~2:00. Move.
+      const fuse = 15 + (i * 105) / 9 + this.rng.range(-4, 4);
       this.timers.push({ at: this.timeReal + fuse, fn: () => {
         if (sim.treated || sim.resolved || sim.state === 'dead') return;
         sim.die?.(`untreated ${c.name}`);
