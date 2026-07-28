@@ -100,18 +100,20 @@ test('the exam is unpassable and every scripted answer is wrong on cue', async (
   expect(state.alarms).toBe(true);
 });
 
-test('chaos: 10-min grace, then janitor → mop → gunman → You Died → BSOD', async ({ page }) => {
+test('chaos: two-minute die-off, then janitor → mop → gunman → You Died → BSOD', async ({ page }) => {
   test.setTimeout(150000);
   await boot(page);
   await page.evaluate(() => window.__game.startChaos());
   await page.waitForFunction(() => window.__game.game.chaos === true, null, { timeout: 10000 });
 
-  // nobody dies inside the ten-minute grace window — every fuse sits out past it
-  const graceOk = await page.evaluate(() => {
+  // the die-off is a TWO-MINUTE arc: first fuse ~15s out, last ~2:00, all staggered
+  const fuses = await page.evaluate(() => {
     const g = window.__game.game;
-    return g.timers.filter((t) => t.at - g.timeReal > 500).length >= 10;
+    return g.timers.map((t) => t.at - g.timeReal).sort((a, b) => a - b);
   });
-  expect(graceOk).toBe(true);
+  expect(fuses.length).toBeGreaterThanOrEqual(10);
+  expect(fuses[0]).toBeGreaterThan(8);
+  expect(fuses[fuses.length - 1]).toBeLessThan(140);
 
   // burn every fuse → they die off → the janitor scene begins
   await page.evaluate(() => { const g = window.__game.game; for (const t of g.timers) t.at = g.timeReal; });
