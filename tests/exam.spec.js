@@ -71,14 +71,18 @@ test('the exam is unpassable and every scripted answer is wrong on cue', async (
   await page.locator('#adumb .inrow button').click();
   await awaitResp(page, 'this many');
 
-  // QUESTION SIX — and the mask comes off
-  await page.waitForSelector('#adumb input[type=text]', { timeout: 20000 });
-  await page.locator('#adumb input[type=text]').fill('666');
-  await page.locator('#adumb .inrow button').click();
-  await page.waitForFunction(
-    () => [...document.querySelectorAll('#adumb .wtf')].some((el) => el.textContent.includes('TEN PATIENTS STARTED CRASHING')),
-    null, { timeout: 20000 },
-  );
+  // QUESTION SIX — a real, immaculately-written board question. It does not
+  // matter which option you pick.
+  await page.waitForSelector('#adumb .mcqopt', { timeout: 30000 });
+  const stem = await page.locator('#adumb .crt-body').textContent();
+  expect(stem).toContain('34-year-old woman');
+  expect(stem).toContain('Plasma aldosterone: Elevated');
+  expect(await page.locator('#adumb .mcqopt').count()).toBe(4);
+  await page.locator('#adumb .mcqopt').nth(2).click();          // C, for all the good it does
+  // red verdict + the whole machine shaking itself apart
+  await page.waitForSelector('#adumb.quake .verdict', { timeout: 20000 });
+  expect(await page.locator('#adumb .verdict').textContent())
+    .toContain('confident enough to handle this');
 
   // the CRT powers down onto the disaster: chaos mode, ten patients, all dire
   await page.waitForFunction(() => window.__game.game.chaos === true, null, { timeout: 15000 });
@@ -125,7 +129,8 @@ test('chaos: two-minute die-off, then janitor → mop → gunman → You Died �
     return { state: pt.sim.state, fake: pt.sim.case.name, tx: pt.sim.txLog.at(-1)?.result };
   });
   expect(helped.state).toBe('dead');
-  expect(helped.tx).toBe('fatal');
+  expect(helped.tx).toMatch(/^☠ /);              // logged as a named catastrophe
+  expect(helped.tx.length).toBeGreaterThan(4);   // ...an actual clinical one
   expect(helped.fake).toBe('Reverse Hiccups');   // a disease that does not exist
 
   // burn every fuse → they die off → the janitor scene begins

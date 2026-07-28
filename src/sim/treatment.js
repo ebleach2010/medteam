@@ -18,12 +18,14 @@ export function giveMed(game, patient, medId) {
   const med = medById(medId);
   const name = sim.displayName;
 
-  // the fake diseases: there is no cure, and anything given to help kills
-  // them on the spot. Every med, every route, every time.
+  // the fake diseases: there is no cure, and anything given to help triggers
+  // a fresh, entirely real catastrophe. Every med, every route, every time.
   if (sim.incurable && sim.state !== 'dead') {
-    sim.recordTx?.(med?.name ?? medId, 'fatal');
-    game.ui.toast(`☠ The ${med?.name ?? medId} hits ${name}... and they die instantly. There was never a cure.`, 'bad');
-    sim.die?.(`${med?.name ?? medId} — there was no cure`, true);
+    const cat = sim.catastrophe(med?.name ?? medId);
+    sim.recordTx?.(med?.name ?? medId, `☠ ${cat.short}`);
+    game.ui.announce(`☠ ${cat.line}`, 'bad');
+    game.ui.toast(`☠ ${name}: ${cat.short.toUpperCase()}`, 'bad');
+    sim.die?.(cat.short, true);
     game.addScore(-50, 'You tried to help');
     return;
   }

@@ -89,6 +89,28 @@ export class PatientSim {
   }
   get labsPending() { return ['drawn', 'spinning', 'ready'].includes(this.labState); }
 
+  // The fake diseases have no cure, and the body finds a new way to fail for
+  // every single thing you try. Returns { short, line } — a chart entry and a
+  // sentence for the screen.
+  catastrophe(what) {
+    const CATS = [
+      ['acute kidney failure', 'their kidneys shut down within seconds — anuric, potassium climbing off the chart'],
+      ['cardiac arrest', 'they arrest on the spot — the monitor goes to a flat, screaming line'],
+      ['massive PE', 'a clot lets go from a deep vein and wedges in the lung — they go grey mid-sentence'],
+      ['ruptured appendix', 'something bursts low in the belly and the abdomen goes board-rigid'],
+      ['fulminant hepatic failure', 'the liver quits — they go yellow, then confused, then still'],
+      ['catastrophic GI haemorrhage', 'they bring up what looks like a litre of blood and do not stop'],
+      ['malignant hyperthermia', 'they go rigid and cook from the inside; the thermometer refuses to keep up'],
+      ['tension pneumothorax', 'one lung collapses and shoves everything else across the chest'],
+      ['aortic dissection', 'the aorta splits — the pain arrives before the pulse disappears'],
+      ['anaphylactic collapse', 'the airway swells shut in under a minute and nothing gets past it'],
+      ['disseminated intravascular coagulation', 'they start bleeding from every puncture site at once'],
+      ['massive intracranial haemorrhage', 'one pupil blows and the bleeding does not stop'],
+    ];
+    const c = CATS[Math.floor(this.game.rng.next() * CATS.length)];
+    return { short: c[0], line: `${what} — ${c[1]}.` };
+  }
+
   // record a therapy/surgery attempt + its result for the patient chart. Collapses
   // repeats of the same order into the latest result rather than stacking dupes.
   recordTx(label, result) {

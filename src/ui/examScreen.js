@@ -35,11 +35,39 @@ export function showBoardsExam(game, onDone) {
 
   // the googly pupils drift this way and that, never settling
   const pupils = [...el.querySelectorAll('.ceye b')];
-  iv(() => {
+  const drift = iv(() => {
     for (const p of pupils) {
       p.style.transform = `translate(${Math.round(Math.random() * 16 - 8)}px, ${Math.round(Math.random() * 12 - 6)}px)`;
     }
   }, 1100);
+
+  // ...until the machine starts shaking, at which point they become actual
+  // googly eyes: pupils bouncing around inside the sockets, off the walls.
+  const shakeEyes = (on) => {
+    if (!on) return;
+    clearInterval(drift);
+    for (const p of pupils) p.style.transition = 'none';
+    const R = 13;                                          // how far a pupil can travel before it hits the rim
+    const st = pupils.map(() => ({ x: 0, y: 0, vx: (Math.random() * 2 - 1) * 3.6, vy: (Math.random() * 2 - 1) * 3.6 }));
+    iv(() => {
+      for (let i = 0; i < pupils.length; i++) {
+        const s = st[i];
+        s.vx += (Math.random() * 2 - 1) * 1.5;             // the shaking keeps kicking them
+        s.vy += (Math.random() * 2 - 1) * 1.5 + 0.5;       // and gravity has opinions
+        s.x += s.vx; s.y += s.vy;
+        const d = Math.hypot(s.x, s.y);
+        if (d > R) {                                       // bounce off the inside of the eye
+          const nx = s.x / d, ny = s.y / d;
+          s.x = nx * R; s.y = ny * R;
+          const dot = s.vx * nx + s.vy * ny;
+          s.vx = (s.vx - 2 * dot * nx) * 0.72;
+          s.vy = (s.vy - 2 * dot * ny) * 0.72;
+        }
+        s.vx *= 0.94; s.vy *= 0.94;
+        pupils[i].style.transform = `translate(${s.x.toFixed(1)}px, ${s.y.toFixed(1)}px)`;
+      }
+    }, 33);
+  };
 
   // ten minutes on the wall. Zero → straight into the disaster, mid-word if
   // need be.
@@ -117,17 +145,56 @@ export function showBoardsExam(game, onDone) {
     row.appendChild(inp); row.appendChild(go);
     setTimeout(() => inp.focus(), 60);
   });
+  // a slider you actually SLIDE: press anywhere on the track and drag, and the
+  // value tracks your finger until you let go. (A native range input inside a
+  // page that eats touchmove only ever registered taps.)
   const slider = (min, max, buttonLabel) => new Promise((res) => {
     const row = line('inrow');
     const s = document.createElement('input');
     s.type = 'range'; s.min = min; s.max = max; s.step = 1; s.value = Math.round((min + max) / 2);
     const val = document.createElement('div');
     val.className = 'slval'; val.textContent = s.value;
-    s.addEventListener('input', () => { val.textContent = s.value; game.audio?.click?.(); });
+    const show = () => { val.textContent = s.value; game.audio?.click?.(); };
+    s.addEventListener('input', show);
+    // drive the value straight from the pointer position so a hold-and-drag
+    // works even where the browser's own thumb tracking is being suppressed
+    const setFromX = (clientX) => {
+      const r = s.getBoundingClientRect();
+      if (!r.width) return;
+      const f = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
+      const v = Math.round(min + f * (max - min));
+      if (String(v) !== s.value) { s.value = String(v); show(); }
+    };
+    s.addEventListener('pointerdown', (e) => {
+      s.setPointerCapture?.(e.pointerId);       // the finger keeps the slider even if it wanders off
+      setFromX(e.clientX);
+    });
+    s.addEventListener('pointermove', (e) => {
+      if (e.buttons === 0 && e.pointerType === 'mouse') return;
+      if (!s.hasPointerCapture?.(e.pointerId)) return;
+      e.preventDefault();
+      setFromX(e.clientX);
+    });
+    s.addEventListener('touchmove', (e) => {
+      const t = e.touches[0];
+      if (t) { e.preventDefault(); setFromX(t.clientX); }
+    }, { passive: false });
     const go = document.createElement('button');
     go.textContent = buttonLabel;
     go.addEventListener('click', () => { if (done) return; game.audio?.tap?.(); const v = +s.value; row.remove(); res(v); });
     row.appendChild(val); row.appendChild(s); row.appendChild(go);
+  });
+
+  // a lettered multiple-choice block: each option is its own wide, tappable row
+  const choices = (opts) => new Promise((res) => {
+    const wrap = line('mcq');
+    for (const [letter, text] of opts) {
+      const b = document.createElement('button');
+      b.className = 'mcqopt';
+      b.innerHTML = `<span class="mcql">${letter}</span><span class="mcqt">${esc(text)}</span>`;
+      b.addEventListener('click', () => { if (done) return; game.audio?.tap?.(); wrap.remove(); res(letter); });
+      wrap.appendChild(b);
+    }
   });
 
   // ---- the exam itself ----
@@ -210,13 +277,31 @@ export function showBoardsExam(game, onDone) {
     await sleep(8000);
 
     // ---------- QUESTION SIX ----------
+    // and suddenly, without warning, a real board question. Immaculately
+    // written. Genuinely answerable. It does not matter in the slightest.
     clear();
-    await say('QUESTION SIX:\n\nWhat series of numbers represents the devil or dark magic?', 'q');
-    await textInput();
+    await say('QUESTION SIX:', 'hdr', 20);
+    await say('A 34-year-old woman presents with recurrent episodes of muscle weakness that are worse after exercise. She also reports intermittent palpitations and nephrolithiasis. Blood pressure is 168/96 mmHg.', 'q', 9);
     if (done) return;
+    await say('Laboratory studies:\n  Sodium: 143 mEq/L\n  Potassium: 2.6 mEq/L\n  Chloride: 96 mEq/L\n  Bicarbonate: 35 mEq/L\n  Creatinine: Normal\n  Plasma renin activity: Suppressed\n  Plasma aldosterone: Elevated', 'labs', 7);
+    if (done) return;
+    await say('CT imaging reveals a 1.8-cm unilateral adrenal nodule.\n\nWhich of the following is the mechanism most directly responsible for this patient’s metabolic alkalosis?', 'q', 9);
+    if (done) return;
+    await choices([
+      ['A', 'Increased hydrogen ion secretion by α-intercalated cells secondary to mineralocorticoid receptor activati'],
+      ['B', 'Increased bicarbonate reabsorption caused by proximal tubular carbonic anhydrase overexpression'],
+      ['C', 'Decreased chloride delivery to the distal nephron leading to impaired pendrin activity'],
+      ['D', 'Increased ammoniagenesis caused primarily by chronic hypokalemia, independent of aldosterone'],
+    ]);
+    if (done) return;
+    // whichever they picked. It was never being graded.
+    clear();
+    el.classList.add('quake');                            // the whole machine starts shaking
+    shakeEyes(true);                                      // and the googly pupils rattle loose
     game.audio?.alarm?.();
-    await say('IDK IF THAT WAS RIGHT OR NOT BUT TEN PATIENTS STARTED CRASHING AS YOU TOOK THAT TEST WTF ARE YOU DOING XD', 'wtf', 24);
-    await sleep(6000);                                    // the last message hangs there
+    const verdict = line('verdict');
+    verdict.textContent = 'If you’re confident enough to answer that question you should be confident enough to handle this';
+    await sleep(3000);
     finish();
   })();
 }

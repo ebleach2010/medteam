@@ -946,9 +946,11 @@ export class Game {
     // fake diseases: ANY attempted intervention — cure, comfort, hug, juice —
     // kills them instantly. Helping is the one thing they cannot survive.
     if (sim.incurable && sim.state !== 'dead') {
-      sim.recordTx?.(label || 'intervention', 'fatal');
-      this.ui.announce(`☠ You try "${label || 'something'}" — they die instantly. There was never a cure.`, 'bad');
-      sim.die?.(`${label || 'an intervention'} — there was no cure`, true);
+      const cat = sim.catastrophe(label || 'that');
+      sim.recordTx?.(label || 'intervention', `☠ ${cat.short}`);
+      this.ui.announce(`☠ ${cat.line}`, 'bad');
+      this.ui.toast(`☠ ${sim.displayName}: ${cat.short.toUpperCase()}`, 'bad');
+      sim.die?.(cat.short, true);
       this.addScore(-50, 'You tried to help');
       return;
     }
@@ -1686,10 +1688,13 @@ export class Game {
       if (t.wait > 0) return;
       sim.surgeryDone = t.surgery.id;
       if (sim.incurable) {
-        // you cannot operate on a disease that does not exist
-        sim.recordTx?.(`🔪 ${t.surgery.label}`, 'fatal');
-        this.ui.toast(`☠ ${t.surgery.label} — they die on the table instantly. There was never a cure.`, 'bad');
-        sim.die?.(`${t.surgery.label} — there was no cure`, true);
+        // you cannot operate on a disease that does not exist — the table finds
+        // its own way to kill them
+        const cat = sim.catastrophe(t.surgery.label);
+        sim.recordTx?.(`🔪 ${t.surgery.label}`, `☠ ${cat.short}`);
+        this.ui.announce(`☠ On the table: ${cat.line}`, 'bad');
+        this.ui.toast(`☠ ${sim.displayName}: ${cat.short.toUpperCase()}`, 'bad');
+        sim.die?.(cat.short, true);
         this.addScore(-50, 'You tried to help');
       } else if (sim.case.surgery && sim.case.surgery === t.surgery.id) {
         sim.recordTx(`🔪 ${t.surgery.label}`, 'curative ✓');
