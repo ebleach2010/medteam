@@ -7,7 +7,9 @@ export function installTestApi(game) {
   window.__game = {
     game,
     ready: true,
-    start() { game.ui.screens.hide(); game.startDay(1); },
+    // tests bypass the A-DUMB exam and play the normal campaign systems
+    start() { game._exam?.destroy(); game.ui.screens.hide(); game.startDay(1); },
+    startChaos() { game._exam?.destroy(); game.ui.screens.hide(); game.startChaos(); },
     inject(intent) { game.enqueue(intent); },
     state() {
       const chars = [game.nurse, game.doctor].map((c) => ({

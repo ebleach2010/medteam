@@ -88,7 +88,8 @@ export class HUD {
     this.quota.textContent = `✅ ${tr}/${g.quota}`;
     const met = tr >= g.quota;
     this.quota.style.color = met ? '#7dffb0' : '#ffb03c';
-    this.endShift.style.display = (met && g.mode === 'playing') ? 'block' : 'none';
+    // no End-shift in chaos — there is no next shift, only the mop
+    this.endShift.style.display = (met && g.mode === 'playing' && !g.chaos) ? 'block' : 'none';
     const edBeds = g.map.beds;
     const used = edBeds.filter((b) => b.occupant).length;
     const waiting = [...g.world.byTag('patients')]

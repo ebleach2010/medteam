@@ -11,9 +11,9 @@ async function boot(page) {
   await page.waitForFunction(() => window.__game?.ready, null, { timeout: 20000 });
 }
 
-test('title button starts the game; SWAP toggles roles', async ({ page }) => {
+test('boot starts the game; SWAP toggles roles', async ({ page }) => {
   await boot(page);
-  await page.locator('#screen .go').click();
+  await page.evaluate(() => window.__game.start());
   await page.waitForFunction(() => window.__game.state().mode === 'playing');
   // you ARE the physician — the nurse is the swap-in sidekick
   expect((await page.evaluate(() => window.__game.state().active))).toBe('doctor');
@@ -23,7 +23,7 @@ test('title button starts the game; SWAP toggles roles', async ({ page }) => {
 
 test('joystick drag moves the character', async ({ page }) => {
   await boot(page);
-  await page.locator('#screen .go').click();
+  await page.evaluate(() => window.__game.start());
   const before = await page.evaluate(() => window.__game.state().chars[1].pos.x);
   // drag on the joystick zone with the mouse (same pointer pipeline)
   await page.mouse.move(180, 250);
@@ -37,7 +37,7 @@ test('joystick drag moves the character', async ({ page }) => {
 
 test('GRAB button toggles: tap grabs, tap again lets go', async ({ page }) => {
   await boot(page);
-  await page.locator('#screen .go').click();
+  await page.evaluate(() => window.__game.start());
   await page.evaluate(() => {
     const g = window.__game;
     const id = g.spawnCase('strep', -19.5, 8.8);
@@ -57,7 +57,7 @@ test('GRAB button toggles: tap grabs, tap again lets go', async ({ page }) => {
 
 test('contextual prompt button opens the med cabinet', async ({ page }) => {
   await boot(page);
-  await page.locator('#screen .go').click();
+  await page.evaluate(() => window.__game.start());
   await page.evaluate(() => window.__game.teleport('doctor', -6, 17.7));
   await page.waitForSelector('#prompt', { state: 'visible' });
   await page.locator('#prompt').dispatchEvent('pointerdown');
@@ -70,7 +70,7 @@ test('contextual prompt button opens the med cabinet', async ({ page }) => {
 test('MED-DOC is coin-op: sit → no credit blocks, coins boot the terminal', async ({ page }) => {
   test.setTimeout(45000);
   await boot(page);
-  await page.locator('#screen .go').click();
+  await page.evaluate(() => window.__game.start());
   await page.waitForTimeout(400);
 
   // sit down at the green terminal's chair — the context action is SIT
@@ -105,7 +105,7 @@ test('MED-DOC is coin-op: sit → no credit blocks, coins boot the terminal', as
 
 test('treating a patient well drops a coin in the counter', async ({ page }) => {
   await boot(page);
-  await page.locator('#screen .go').click();
+  await page.evaluate(() => window.__game.start());
   const before = await page.evaluate(() => window.__game.game.coins);
   await page.evaluate(() => {
     const g = window.__game.game;
@@ -119,7 +119,7 @@ test('treating a patient well drops a coin in the counter', async ({ page }) => 
 
 test('quota met shows End-shift button; it ends the day', async ({ page }) => {
   await boot(page);
-  await page.locator('#screen .go').click();
+  await page.evaluate(() => window.__game.start());
   await page.waitForTimeout(300);
   // not met yet → hidden
   expect(await page.locator('#endshift').isVisible()).toBe(false);
@@ -131,7 +131,7 @@ test('quota met shows End-shift button; it ends the day', async ({ page }) => {
 
 test('empty ED gets topped up mid-shift instead of going dead', async ({ page }) => {
   await boot(page);
-  await page.locator('#screen .go').click();
+  await page.evaluate(() => window.__game.start());
   await page.waitForTimeout(300);
   const refilled = await page.evaluate(async () => {
     const g = window.__game.game;
@@ -147,7 +147,7 @@ test('empty ED gets topped up mid-shift instead of going dead', async ({ page })
 
 test('surgery board: tabbed categories, live filter, tap resolves the operation', async ({ page }) => {
   await boot(page);
-  await page.locator('#screen .go').click();
+  await page.evaluate(() => window.__game.start());
   await page.waitForTimeout(300);
 
   const setup = await page.evaluate(async () => {

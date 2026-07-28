@@ -102,8 +102,31 @@ export class Blood {
       const t = p.body.translation();
       this.addAt(t.x, t.z, rate * dt);
     }
+    this._mopSmear();
     this._paint();
     this._slipChecks();
+  }
+
+  // the mop. It does not clean. Dragging it across a pool only smears fresh
+  // blood along wherever you walk — the floor can only ever get worse.
+  _mopSmear() {
+    const g = this.game;
+    const mop = g._mop;
+    if (!mop?.heldBy) return;
+    const ch = mop.heldBy;
+    const t = ch.body.translation();
+    const v = ch.body.linvel();
+    if (Math.hypot(v.x, v.z) < 0.6) return;    // you have to be pushing it
+    for (const p of this.pools) {
+      if (p.r < 0.2) continue;
+      if (Math.hypot(p.x - t.x, p.z - t.z) < p.r + 0.55) {
+        this._smearAcc = (this._smearAcc ?? 0) + 1;
+        if (this._smearAcc % 8 === 0) {
+          this.addAt(t.x + Math.sin(ch.yaw) * 0.55, t.z + Math.cos(ch.yaw) * 0.55, 0.11);
+        }
+        return;
+      }
+    }
   }
 
   _paint() {
@@ -140,13 +163,20 @@ export class Blood {
       if (!wet || was) continue;                 // only on entering the pool
       if (ch.sprawlTimer > 0) continue;          // already down
       const v = ch.body.linvel();
+      const speed = Math.hypot(v.x, v.z);
       // a true, independent 10% roll on EVERY crossing — the only thing that
       // skips the roll is standing still ON the rim (you have to be crossing it)
-      if (Math.hypot(v.x, v.z) < 0.2) continue;
-      if (!this.game.rng.chance(SLIP_CHANCE)) continue;
+      if (speed < 0.2) continue;
+      if (this.game.chaos) {
+        // chaos rules: hit blood at a run and you GO DOWN, every single time.
+        // The only way across is to slow to a careful walk.
+        if (speed < 3.3) continue;
+      } else if (!this.game.rng.chance(SLIP_CHANCE)) continue;
       ch.slip();
       if (ch === this.game.active) {
-        this.game.ui.toast('🩸 You hit the blood and go down. Wonderful.', 'bad');
+        this.game.ui.toast(this.game.chaos
+          ? '🩸 The blood takes you down AGAIN. Walk. Slowly.'
+          : '🩸 You hit the blood and go down. Wonderful.', 'bad');
         this.game.barks?.say('slip', true);   // ch.slip() already made the wet skid
       }
     }

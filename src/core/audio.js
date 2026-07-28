@@ -167,4 +167,8 @@ export class Audio {
   }
   arrive() { this._tone(520, 0.09, { gain: 0.03 }); this._tone(700, 0.11, { gain: 0.028, at: 0.08 }); }
   fire() { this._noise(0.5, { gain: 0.05, freq: 300, q: 0.5, sweepTo: 90 }); }
+  spark() { // the breaker arcing — a hot crackle and a snap
+    this._noise(0.1, { gain: 0.05, freq: 3800, q: 0.7, sweepTo: 900 });
+    this._tone(150, 0.05, { type: 'sawtooth', gain: 0.03, glide: 60 });
+  }
 }

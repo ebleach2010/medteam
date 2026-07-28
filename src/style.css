@@ -444,6 +444,48 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0e1420; t
 
 #btn-pager { left: 14px; bottom: 22px; width: 64px; height: 64px; background: #c95b84; }
 
+/* 👀 A-DUMB COMPUTER — the IQ Boards exam CRT that gates (and dooms) the shift */
+#adumb { position: fixed; inset: 0; z-index: 200; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  background: radial-gradient(ellipse at 50% 38%, #062512 0%, #010b04 78%);
+  color: #56ff8a; font-family: 'Courier New', monospace;
+  display: flex; flex-direction: column; align-items: center;
+  padding: max(18px, env(safe-area-inset-top)) 18px calc(30px + env(safe-area-inset-bottom));
+  text-shadow: 0 0 7px rgba(70, 255, 130, .75); }
+#adumb .crt-scan { pointer-events: none; position: fixed; inset: 0;
+  background: repeating-linear-gradient(0deg, rgba(0,0,0,.22) 0 1px, transparent 1px 3px); }
+#adumb .crt-eyes { display: flex; gap: 26px; margin: 8px 0 4px; }
+#adumb .ceye { width: 46px; height: 46px; border-radius: 50%; background: #eafff0; border: 3px solid #14883e;
+  display: flex; align-items: center; justify-content: center; box-shadow: 0 0 18px rgba(90,255,140,.55); }
+#adumb .ceye b { width: 15px; height: 15px; border-radius: 50%; background: #04170a; display: block;
+  transition: transform 1.05s cubic-bezier(.3,.9,.4,1.35); }
+#adumb .crt-timer { position: fixed; top: max(12px, env(safe-area-inset-top)); right: 16px;
+  font-size: 20px; letter-spacing: 2px; color: #aaffc0; }
+#adumb .crt-timer.low { color: #ff5d5d; text-shadow: 0 0 9px rgba(255,90,90,.8); animation: adblink .6s steps(1) infinite; }
+#adumb .crt-body { width: min(560px, 94vw); font-size: 15px; line-height: 1.55; margin-top: 8px; }
+#adumb .crt-body .hdr { font-size: 17px; letter-spacing: 2px; margin-bottom: 8px; }
+#adumb .crt-body .q { margin: 4px 0 10px; }
+#adumb .crt-body .resp { color: #ffd23c; text-shadow: 0 0 7px rgba(255,210,60,.55); margin-top: 12px; }
+#adumb .crt-body .you { color: #9fffbe; opacity: .85; margin-top: 8px; }
+#adumb .crt-body .wtf { color: #ff5d5d; font-size: 17px; margin-top: 14px; text-shadow: 0 0 9px rgba(255,90,90,.8); }
+#adumb .cur { animation: adblink .85s steps(1) infinite; }
+@keyframes adblink { 50% { opacity: 0; } }
+#adumb button { font-family: inherit; background: #06301a; color: #7dff9d; border: 2px solid #1d7a40;
+  border-radius: 4px; padding: 12px 18px; font-size: 15px; letter-spacing: 1px; margin: 10px 8px 0 0;
+  cursor: pointer; text-shadow: inherit; touch-action: manipulation; }
+#adumb button.exe { display: block; margin: 24px auto 0; font-size: 17px; padding: 15px 26px;
+  animation: adblink 1s steps(1) infinite; }
+#adumb .btnrow { display: flex; flex-wrap: wrap; }
+#adumb .inrow { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+#adumb .inrow input[type=text] { flex: 1; min-width: 0; background: #02180c; border: 2px solid #1d7a40;
+  color: #7dff9d; font: inherit; padding: 11px; text-shadow: inherit; border-radius: 4px; }
+#adumb .inrow input[type=range] { flex: 1; accent-color: #38e07a; }
+#adumb .slval { min-width: 26px; text-align: center; font-size: 18px; color: #aaffc0; }
+#adumb.off { animation: adoff .9s ease forwards; pointer-events: none; }
+@keyframes adoff {
+  55% { transform: scaleY(.015) scaleX(1.08); filter: brightness(3); opacity: 1; }
+  100% { transform: scaleY(.001) scaleX(0); filter: brightness(6); opacity: 0; }
+}
+
 /* adrenaline: cartoon anxiety scribbles over your head */
 #anxiety { position: absolute; width: 96px; height: 48px; pointer-events: none; z-index: 58;
   filter: drop-shadow(0 1px 2px rgba(0,0,0,.55)); }
