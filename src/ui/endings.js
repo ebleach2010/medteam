@@ -20,9 +20,19 @@ export function showYouDied(game) {
       <p>Try again?</p>
       <div class="ydrow"><button id="yd-y">Y</button><button id="yd-n">N</button></div>`;
     document.body.appendChild(el);
-    const onward = () => { el.remove(); showBSOD(game); };
-    el.querySelector('#yd-y').addEventListener('click', onward);
-    el.querySelector('#yd-n').addEventListener('click', onward);
+    // Y and N are the same door — and so is anywhere else on the screen.
+    // pointerdown (not click) so a nervous thumb on iOS can't miss it; a short
+    // arming delay so the tap that was already in flight doesn't skip the screen.
+    let armed = false, gone = false;
+    setTimeout(() => { armed = true; }, 500);
+    const onward = () => {
+      if (!armed || gone) return;
+      gone = true;
+      el.remove();
+      showBSOD(game);
+    };
+    el.addEventListener('pointerdown', onward);
+    el.addEventListener('click', onward);
   }, 3400);
 }
 

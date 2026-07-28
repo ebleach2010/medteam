@@ -5,7 +5,9 @@ import { preloadModels } from './render/models.js';
 
 // stop touch drags from ever scrolling/bouncing the page (or an embedding host)
 document.addEventListener('touchmove', (e) => {
-  if (!e.target.closest?.('#modal')) e.preventDefault();
+  // fullscreen overlays (exam, You Died, BSOD) own their own touches — killing
+  // their touchmove on iOS also killed the tap that followed it
+  if (!e.target.closest?.('#modal, #adumb, #youdied, #bsod')) e.preventDefault();
 }, { passive: false });
 document.addEventListener('gesturestart', (e) => e.preventDefault());
 

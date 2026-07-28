@@ -466,14 +466,32 @@ export class Game {
     this.renderer.scene.add(flash);
     this.timers.push({ at: this.timeReal + 0.13, fn: () => this.renderer.scene.remove(flash) });
     // the player ragdolls across the floor, through the blood, until something
-    // solid stops them. Physics supplies the furniture.
+    // solid stops them. Physics supplies the furniture. They do NOT get up.
     const ch = this.active;
     if (ch.carrying) { ch.carrying.heldBy = null; ch.carrying = null; }  // the mop clatters away
     const dx = ch.pos.x - np.x, dz = ch.pos.z - np.z;
     const d = Math.hypot(dx, dz) || 1;
     ch.sprawlTimer = 6; ch.slipMax = 6;
     ch.slipDir = { x: dx / d, z: dz / d };
+    ch.downForever = true;
     ch.body.setLinvel({ x: (dx / d) * 13, y: 2.4, z: (dz / d) * 13 }, true);
+    // soaked: the whole rig — chest first — tints toward their own blood
+    ch.mesh.traverse((o) => {
+      if (o.isMesh && o.material?.color) {
+        o.material = o.material.clone();
+        o.material.color.lerp(new THREE.Color(0x7a0e12), 0.72);
+      }
+    });
+    // the spray carries THROUGH them and paints whatever wall is behind
+    {
+      const dir = { x: dx / d, y: 0, z: dz / d };
+      const ray = new RAPIER.Ray({ x: ch.pos.x + dir.x * 0.5, y: 1.15, z: ch.pos.z + dir.z * 0.5 }, dir);
+      const hit = this.physics.world.castRay(ray, 10, true, undefined, undefined, undefined, ch.body);
+      const pt = hit ? ray.pointAt(hit.timeOfImpact) : { x: ch.pos.x + dir.x * 2.4, y: 1.15, z: ch.pos.z + dir.z * 2.4 };
+      const spray = this.blood.wallSpray(pt.x - dir.x * 0.06, Math.min(pt.y, 1.4), pt.z - dir.z * 0.06,
+        Math.atan2(-dir.x, -dir.z));
+      if (spray) this.renderer.scene.add(spray);
+    }
     this._bloodTrailT = 2.6;                          // he picks the floor's blood up as he slides
     // ten seconds of lying in it, then the slow fade and the verdict
     this.timers.push({ at: this.timeReal + 10, fn: () => showYouDied(this) });
