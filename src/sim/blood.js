@@ -246,15 +246,27 @@ export class Blood {
       const t = p.body.translation();
       this.addAt(t.x, t.z, rate * dt);
     }
-    if (this.game.chaos) this._creep(dt);
+    if (this.game.chaos) { this._creep(dt); this._flow(dt); }
     this._mopSmear();
     this._paint();
     this._slipChecks();
   }
 
-  // the mop. It does not clean. Dragging its head across a pool lays lighter,
-  // striated smear marks along the direction of travel — spreading the blood
-  // is the only thing it will ever do.
+  // force a NEW blob at (x,z) — used where we want the blood to visibly travel
+  // rather than quietly fatten the pool it came from
+  _spreadTo(x, z, r) {
+    if (this.pools.length >= MAX_POOLS) return;
+    for (const p of this.pools) {              // don't stack blobs on top of each other
+      if (Math.hypot(p.x - x, p.z - z) < 0.22) { p.r = Math.min(POOL_MAX_R, p.r + r * 0.5); return; }
+    }
+    this._newPool(x, z, r);
+  }
+
+  // THE MOP. It does not clean — it redistributes. The head physically shoves
+  // every pool it touches along the direction of travel: the blood slides,
+  // thins out over more floor, stretches along the drag, throws off streaks,
+  // and sheds new blobs ahead and off the sides. Mop long enough and the whole
+  // department is a thin red film.
   _mopSmear() {
     const g = this.game;
     const mop = g._mop;
@@ -263,20 +275,55 @@ export class Blood {
     const t = mop.body.translation();          // the head is what smears
     const v = ch.body.linvel();
     const speed = Math.hypot(v.x, v.z);
-    if (speed < 0.6) return;                   // you have to be pushing it
+    if (speed < 0.5) return;                   // you have to be pushing it
+    const dx = v.x / speed, dz = v.z / speed;
+    const HEAD = 0.62;                         // how wide the head bites
+    let touched = 0;
     for (const p of this.pools) {
-      if (p.r < 0.2) continue;
-      if (Math.hypot(p.x - t.x, p.z - t.z) < p.r + 0.55) {
-        this._smearAcc = (this._smearAcc ?? 0) + 1;
-        if (this._smearAcc % 6 === 0) {
-          const yaw = Math.atan2(v.x, v.z);    // streak lies along the drag
-          this.addStreak(t.x + Math.sin(yaw) * 0.3, t.z + Math.cos(yaw) * 0.3, yaw);
-        }
-        if (this._smearAcc % 18 === 0) {       // and the blood itself travels
-          this.addAt(t.x + Math.sin(ch.yaw) * 0.5, t.z + Math.cos(ch.yaw) * 0.5, 0.1);
-        }
-        return;
+      if (p.r < 0.14) continue;
+      const d = Math.hypot(p.x - t.x, p.z - t.z);
+      if (d > p.r + HEAD) continue;
+      touched++;
+      // shove it: the pool physically travels with the head
+      const push = Math.min(0.085, 0.035 + speed * 0.008);
+      p.x += dx * push;
+      p.z += dz * push;
+      // dragged over more floor, it thins...
+      if (p.r > 0.2) p.r -= 0.0045;
+      // ...and smears out long in the direction it's being pushed
+      p.sx = Math.min(1.9, p.sx + 0.007);
+      p.rot += (Math.atan2(dx, dz) - p.rot) * 0.04;
+      // it also sheds blood sideways off the head — the spreading everyone
+      // who has ever mopped a spill knows about
+      if (this.game.rng.next() < 0.05) {
+        const side = this.game.rng.next() < 0.5 ? 1 : -1;
+        this._spreadTo(t.x + dz * 0.45 * side + this.game.rng.range(-0.1, 0.1),
+          t.z - dx * 0.45 * side + this.game.rng.range(-0.1, 0.1), 0.13);
       }
+    }
+    if (!touched) return;
+    this._smearAcc = (this._smearAcc ?? 0) + 1;
+    const yaw = Math.atan2(v.x, v.z);
+    if (this._smearAcc % 3 === 0) this.addStreak(t.x, t.z, yaw);           // the streak marks
+    if (this._smearAcc % 5 === 0) {                                        // and a trail carried forward
+      this._spreadTo(t.x + dx * 0.6 + this.game.rng.range(-0.12, 0.12),
+        t.z + dz * 0.6 + this.game.rng.range(-0.12, 0.12), 0.14);
+    }
+  }
+
+  // blood flows. Every pool slowly slumps outward — spreading thinner and
+  // wider under its own weight, the way a spill on a flat floor actually does.
+  _flow(dt) {
+    this._flowAcc = (this._flowAcc ?? 0) + dt;
+    if (this._flowAcc < 0.9) return;
+    this._flowAcc = 0;
+    const rng = this.game.rng;
+    for (const p of this.pools) {
+      if (p.r < 0.3 || p.r >= POOL_MAX_R) continue;
+      p.r += 0.006;                                   // it keeps creeping outward
+      p.sx += (1 - p.sx) * 0.01;                      // and relaxes back toward round as it settles
+      p.x += rng.range(-0.006, 0.006);
+      p.z += rng.range(-0.004, 0.008);                // with a faint downhill drift
     }
   }
 
