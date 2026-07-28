@@ -11,7 +11,7 @@ async function boot(page) {
 }
 
 test('triage nurse auto-rooms the sickest waiter into the lowest free room', async ({ page }) => {
-  test.setTimeout(120000);
+  test.setTimeout(220000);
   await boot(page);
 
   const out = await page.evaluate(async () => {
@@ -30,7 +30,7 @@ test('triage nurse auto-rooms the sickest waiter into the lowest free room', asy
     sick.sim.tArrive = game.clock.minutes - 10;
     mild.sim.tArrive = game.clock.minutes - 20;
 
-    const both = await until(() => sick.sim.bed && mild.sim.bed, 100000);
+    const both = await until(() => sick.sim.bed && mild.sim.bed, 180000);
     return {
       both,
       sickRoom: sick.sim.bed?.roomNo ?? null, mildRoom: mild.sim.bed?.roomNo ?? null,

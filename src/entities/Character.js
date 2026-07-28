@@ -109,8 +109,16 @@ export class Character {
 
     // carry springs
     if (this.carrying) {
-      const a = this.handAnchor();
-      springToward(this.carrying.body, a, { k: 55, c: 4, maxForce: 30, dt });
+      if (this.carrying.data?.mop) {
+        // the mop is DRAGGED, not carried: its head stays planted on the floor
+        // ahead of you, sliding along the tiles as you move
+        const mp = this.pos;
+        const a = { x: mp.x + Math.sin(this.yaw) * 0.95, y: 0.14, z: mp.z + Math.cos(this.yaw) * 0.95 };
+        springToward(this.carrying.body, a, { k: 42, c: 6, maxForce: 26, dt });
+      } else {
+        const a = this.handAnchor();
+        springToward(this.carrying.body, a, { k: 55, c: 4, maxForce: 30, dt });
+      }
     }
     if (this.dragging) {
       // staff wheeling a patient thread tight doorways, so they keep the looser
@@ -165,11 +173,16 @@ export class Character {
       this.mesh.position.set(p.x, p.y - 0.8, p.z);
       this.mesh.quaternion.copy(_yawQ);
     } else if (prone > 0) {
-      // face the slide direction, pitched forward onto the belly
+      // face the slide direction, pitched forward onto the belly.
+      // CLAMP to the floor: when the capsule tips horizontal its centre drops
+      // to its radius, and the old body-relative offset shoved the whole rig
+      // ~0.8 m under the tiles — the infamous "slips and falls through the
+      // floor". The mesh origin is the feet, so prone it sits ON the floor.
       const yaw = this.slipDir ? Math.atan2(this.slipDir.x, this.slipDir.z) : this.yaw;
       _yawQ.setFromAxisAngle(_up, yaw);
       _tiltQ.setFromAxisAngle(_side, prone * 1.5);   // pitch toward face-down
-      this.mesh.position.set(p.x, p.y - 0.8 - prone * 0.35, p.z);
+      const fy = this.game.map?.floorYAt?.(p.x, p.z) ?? 0;
+      this.mesh.position.set(p.x, Math.max(p.y - 0.8 - prone * 0.35, fy + 0.06), p.z);
       this.mesh.quaternion.copy(_yawQ).multiply(_tiltQ);
     } else {
       this.mesh.position.set(p.x, p.y - 0.8, p.z);

@@ -71,6 +71,11 @@ const ROLE_RIGS = {
   // visiting specialist: white coat, badge + stethoscope, satchel-grey slacks
   specialist: { top: 0xf1f3f6, bottom: 0x3a4658, skin: 0xd8a87c, hairColor: 0x30251c, hairStyle: 'short',
     stethoscope: true, badge: true, shoes: 0x2e3440 },
+  // the last two people you will ever meet
+  janitor: { top: 0x7a8087, bottom: 0x5a6068, skin: 0xd8a87c, hairColor: 0x9aa0a8, hairStyle: 'bald',
+    shoes: 0x2e3440 },
+  gunman: { top: 0x2e2a30, bottom: 0x241f26, skin: 0xe8c39e, hairColor: 0x2e2620, hairStyle: 'short',
+    shoes: 0x1c181e },
 };
 export function makeCharacterMesh(role) {
   return buildRig(ROLE_RIGS[role] ?? ROLE_RIGS.nurse);
@@ -234,6 +239,30 @@ const paperGeo = new THREE.BoxGeometry(0.26, 0.02, 0.34);
 export function makeItemMesh(kind, color, size) {
   if (kind === 'vial') return new THREE.Mesh(vialGeo, mat(0xb02030));
   if (kind === 'paper') return new THREE.Mesh(paperGeo, mat(0xf6f2e6));
+  if (kind === 'mop') {
+    // an actual mop: long wooden handle, steel collar, and a skirt of drooping
+    // string strands around a core. Origin at the HEAD (the floor end) so the
+    // drag mechanic can plant it and lean the handle toward the hands.
+    const g = new THREE.Group();
+    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.032, 1.25, 8), mat(0xa87c4f));
+    handle.position.y = 0.75; handle.castShadow = true;
+    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.075, 0.09, 10), mat(0x9aa2ac));
+    collar.position.y = 0.16;
+    const core = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.11, 0.14, 10), mat(0xd8d4c4));
+    core.position.y = 0.08;
+    g.add(handle, collar, core);
+    const strandM = mat(0xcfc9b4);
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2;
+      const s = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.028, 0.2, 5), strandM);
+      s.position.set(Math.cos(a) * 0.085, 0.05, Math.sin(a) * 0.085);
+      s.rotation.z = Math.cos(a) * 0.5;         // strands splay outward
+      s.rotation.x = -Math.sin(a) * 0.5;
+      s.castShadow = true;
+      g.add(s);
+    }
+    return g;
+  }
   if (kind === 'prop' && size) {
     const m = new THREE.Mesh(new THREE.BoxGeometry(size.hx * 2, size.hy * 2, size.hz * 2), mat(color ?? 0xcccccc));
     m.castShadow = true;
