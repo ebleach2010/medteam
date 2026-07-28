@@ -100,28 +100,40 @@ test('the exam is unpassable and every scripted answer is wrong on cue', async (
   expect(state.alarms).toBe(true);
 });
 
-test('chaos: the fuses kill the untreated, and the ending is a mop that only smears', async ({ page }) => {
-  test.setTimeout(120000);
+test('chaos: 10-min grace, then janitor → mop → gunman → You Died → BSOD', async ({ page }) => {
+  test.setTimeout(150000);
   await boot(page);
   await page.evaluate(() => window.__game.startChaos());
   await page.waitForFunction(() => window.__game.game.chaos === true, null, { timeout: 10000 });
 
-  const out = await page.evaluate(async () => {
+  // nobody dies inside the ten-minute grace window — every fuse sits out past it
+  const graceOk = await page.evaluate(() => {
     const g = window.__game.game;
-    const until = async (fn, ms) => {
-      const t0 = Date.now();
-      while (!fn()) { if (Date.now() - t0 > ms) return false; await new Promise((r) => setTimeout(r, 100)); }
-      return true;
-    };
-    // burn every fuse now — nobody was treated in time
-    for (const t of g.timers) t.at = g.timeReal;
-    const allDead = await until(() => [...g.world.byTag('patients')].every((p) => p.sim.state === 'dead'), 15000);
-    // ...and the ending arrives: silence, and a mop
-    const mopped = await until(() => !!g._mop, 10000);
+    return g.timers.filter((t) => t.at - g.timeReal > 500).length >= 10;
+  });
+  expect(graceOk).toBe(true);
+
+  // burn every fuse → they die off → the janitor scene begins
+  await page.evaluate(() => { const g = window.__game.game; for (const t of g.timers) t.at = g.timeReal; });
+  await page.waitForFunction(() =>
+    [...window.__game.game.world.byTag('patients')].every((p) => p.sim.state === 'dead'), null, { timeout: 15000 });
+  await page.waitForFunction(() => !!window.__game.game._cut, null, { timeout: 12000 });
+  // skip the long walk: put the janitor at the player's elbow
+  await page.evaluate(() => {
+    const g = window.__game.game, c = g._cut, ap = g.active.pos;
+    c.route = [];
+    c.npc.body.setTranslation({ x: ap.x + 1.2, y: 1, z: ap.z }, true);
+  });
+  // the line is said, the mop is handed over, daylight locks over the wreckage
+  await page.waitForFunction(() => !!window.__game.game._mop?.heldBy, null, { timeout: 20000 });
+  expect(await page.evaluate(() => window.__game.game._lockNoon)).toBe(true);
+  expect(await page.evaluate(() => !window.__game.game._chaosAlarms)).toBe(true);
+
+  // the mop only ever spreads the blood
+  const smear = await page.evaluate(async () => {
+    const g = window.__game.game;
     const poolsBefore = g.blood.pools.length;
-    // carrying the mop across the blood only makes MORE blood
-    const ch = g.active;
-    g._mop.heldBy = ch; ch.carrying = g._mop;
+    const ch = g._mop.heldBy;
     const pool = g.blood.pools[0];
     ch.body.setTranslation({ x: pool.x, y: 1, z: pool.z }, true);
     ch.body.setLinvel({ x: 2.5, y: 0, z: 0 }, true);
@@ -131,11 +143,29 @@ test('chaos: the fuses kill the untreated, and the ending is a mop that only sme
       if (g.blood.pools.length > poolsBefore) { grew = true; break; }
       await new Promise((r) => setTimeout(r, 10));
     }
-    return { allDead, mopped, alarmsOff: !g._chaosAlarms, grew, poolsBefore, poolsAfter: g.blood.pools.length };
+    return { grew };
   });
+  expect(smear.grew).toBe(true);
 
-  expect(out.allDead).toBe(true);
-  expect(out.mopped).toBe(true);        // failure is also rewarded with a mop
-  expect(out.alarmsOff).toBe(true);     // the silent part of the silent ending
-  expect(out.grew).toBe(true);          // the mop only ever spreads it
+  // three minutes of mopping later: the gunman
+  await page.evaluate(() => {
+    const g = window.__game.game;
+    if (g._cut) { g._despawnConsultant(g._cut.npc); g._cut = null; }  // hurry the janitor out
+    g._mopT = 180;
+  });
+  await page.waitForFunction(() => window.__game.game._cut?.phase?.startsWith('gunman'), null, { timeout: 10000 });
+  await page.evaluate(() => {
+    const g = window.__game.game, c = g._cut, ap = g.active.pos;
+    c.route = [];
+    c.npc.body.setTranslation({ x: ap.x + 3.4, y: 1, z: ap.z }, true);
+  });
+  await page.waitForFunction(() => window.__game.game._shotFired === true, null, { timeout: 15000 });
+
+  // ten seconds later: the slow fade, You Died, and both answers are the BSOD
+  await page.evaluate(() => { const g = window.__game.game; for (const t of g.timers) t.at = g.timeReal; });
+  await page.waitForSelector('#youdied', { timeout: 15000 });
+  await page.locator('#yd-y').click();
+  await page.waitForSelector('#bsod', { timeout: 5000 });
+  expect(await page.locator('#bsod').textContent()).toContain('CRITICAL PROCESS DIED');
+  expect(await page.evaluate(() => window.__game.game.paused)).toBe(true); // nothing runs behind the blue
 });

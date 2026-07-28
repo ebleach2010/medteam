@@ -134,7 +134,7 @@ export function showBoardsExam(game, onDone) {
   (async () => {
     await say('MEDTEAM GENERAL — NOTICE OF CLOSURE', 'hdr', 22);
     await sleep(300);
-    await say('THE EMERGENCY DEPARTMENT IS SHUT DOWN.\n\nBy order of the Board, no shift may begin until the attending on duty passes the A-DUMB COMPUTER IQ BOARDS EXAM.\n\nThe exam is timed. The exam is fair. One of those statements is true.', 'note', 14);
+    await say('THE EMERGENCY DEPARTMENT IS SHUT DOWN.\n\nBy order of the Board, no shift may begin until the attending on duty passes the A-DUMB COMPUTER IQ BOARDS EXAM.', 'note', 14);
     if (done) return;
     const exe = line('');
     const b = document.createElement('button');
@@ -164,7 +164,7 @@ export function showBoardsExam(game, onDone) {
     await buttons(['Y', 'N']);
     if (done) return;
     await say('There’s no time. Next question..');
-    await sleep(700);
+    await sleep(8000);   // the wrong answer hangs there. you sit with it.
 
     // ---------- QUESTION 2 ----------
     clear();
@@ -174,7 +174,7 @@ export function showBoardsExam(game, onDone) {
     await say('Incorrect answer. Emotional intelligence lies on the z axis because it requires depth.');
     await sleep(500);
     await say('this isn’t looking good');
-    await sleep(800);
+    await sleep(8000);
 
     // ---------- QUESTION 3 ----------
     clear();
@@ -182,7 +182,7 @@ export function showBoardsExam(game, onDone) {
     await textInput();
     if (done) return;
     await say('Wrong answer, that was not the slant rhyme I was looking for');
-    await sleep(800);
+    await sleep(8000);
 
     // ---------- QUESTION 4 ----------
     clear();
@@ -190,7 +190,7 @@ export function showBoardsExam(game, onDone) {
     await textInput();
     if (done) return;
     await say('ha, clever but no points for being clever');
-    await sleep(800);
+    await sleep(8000);
 
     // ---------- QUESTION 4 (the computer is confident this is fine) ----------
     clear();
@@ -199,7 +199,7 @@ export function showBoardsExam(game, onDone) {
     if (done) return;
     if (q4b === 0) await say('Correct; you get 0 points. No points awarded for that correct answer.');
     else await say('Wrong answer: 0 points. How did you get your medical license?');
-    await sleep(800);
+    await sleep(8000);
 
     // ---------- QUESTION 5 ----------
     clear();
@@ -207,7 +207,7 @@ export function showBoardsExam(game, onDone) {
     await textInput();
     if (done) return;
     await say('Wrong answer. Correct answer: ‘this many’');
-    await sleep(800);
+    await sleep(8000);
 
     // ---------- QUESTION SIX ----------
     clear();

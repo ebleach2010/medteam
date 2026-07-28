@@ -486,6 +486,29 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0e1420; t
   100% { transform: scaleY(.001) scaleX(0); filter: brightness(6); opacity: 0; }
 }
 
+/* ---- the last two screens ---- */
+#youdied { position: fixed; inset: 0; z-index: 300; background: #000;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  font-family: 'Courier New', monospace; animation: ydIn 2.4s ease; }
+@keyframes ydIn { from { opacity: 0; } }
+#youdied h1 { font-size: 46px; letter-spacing: 5px; color: #c22832; margin: 0 0 10px;
+  text-shadow: 0 0 22px rgba(200, 40, 50, .55); }
+#youdied p { color: #8a929c; font-size: 16px; margin: 0; }
+#youdied .ydrow { margin-top: 18px; }
+#youdied button { width: 64px; margin: 0 8px; padding: 12px; font: inherit; font-size: 18px;
+  background: #14161a; color: #cfd4da; border: 1px solid #3a4048; border-radius: 4px; cursor: pointer; }
+
+#bsod { position: fixed; inset: 0; z-index: 400; background: #0078d7; color: #fff; cursor: default;
+  font-family: 'Segoe UI', -apple-system, system-ui, sans-serif;
+  display: flex; align-items: center; justify-content: center; padding: 7vw 8vw; user-select: none; }
+#bsod .b-inner { max-width: 620px; }
+#bsod .b-face { font-size: 94px; font-weight: 300; margin-bottom: 26px; }
+#bsod .b-msg { font-size: 19px; line-height: 1.45; font-weight: 300; margin: 0; }
+#bsod .b-pct { font-size: 19px; font-weight: 300; margin: 24px 0 0; }
+#bsod .b-foot { display: flex; gap: 14px; margin-top: 34px; align-items: flex-start; }
+#bsod .b-qr { width: 76px; height: 76px; background: #fff; image-rendering: pixelated; flex: none; }
+#bsod .b-notes p { font-size: 11.5px; line-height: 1.5; font-weight: 300; margin: 0 0 10px; }
+
 /* adrenaline: cartoon anxiety scribbles over your head */
 #anxiety { position: absolute; width: 96px; height: 48px; pointer-events: none; z-index: 58;
   filter: drop-shadow(0 1px 2px rgba(0,0,0,.55)); }

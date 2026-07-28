@@ -11,6 +11,7 @@ import { Character } from './entities/Character.js';
 import { syncPatientMesh, spawnPatient } from './entities/Patient.js';
 import { generateCase } from './sim/generator.js';
 import { showBoardsExam } from './ui/examScreen.js';
+import { showYouDied } from './ui/endings.js';
 import { makeCharacterMesh } from './render/meshes.js';
 import { animateRig } from './render/rig.js';
 import { spawnCarryable } from './entities/Carryable.js';
@@ -208,8 +209,9 @@ export class Game {
       }
       sim._goCritical?.();
       sim._sayRaw?.(c.complaint[0], 'critical');       // they moan their symptoms
-      // the fuse: 1–5 minutes of real time, staggered so they fall one by one
-      const fuse = 58 + i * 26 + this.rng.range(-8, 8);
+      // the fuse: ten minutes of real time to treat everyone. After that,
+      // whoever's still untreated starts dying off, one by one.
+      const fuse = 600 + i * 22 + this.rng.range(-6, 6);
       this.timers.push({ at: this.timeReal + fuse, fn: () => {
         if (sim.treated || sim.resolved || sim.state === 'dead') return;
         sim.die?.(`untreated ${c.name}`);
@@ -273,6 +275,29 @@ export class Game {
       if (pt) { pt.position.set(x, 1.1, z); scene.add(pt); }
       fx.flames.push({ x, z, grp, glow, pt, phase: this.rng.next() * 6 });
     }
+    // each room is lit by its own monitor — sick light for sick people. The
+    // colour tracks the occupant's vitals, pulsing red while they crash.
+    fx.monLights = this.map.beds.map((bed) => {
+      const glow = glowSprite(0xff4444, 2.4, 0);
+      glow.position.set(bed.x, 1.35, bed.z - 1.3);
+      scene.add(glow);
+      const pt = this.lite ? null : new THREE.PointLight(0xff4040, 0, 8, 2);
+      if (pt) { pt.position.set(bed.x, 1.5, bed.z - 1.1); scene.add(pt); }
+      return { bed, glow, pt };
+    });
+    // one broken overhead tube, hanging crooked, flickering with no rhythm you
+    // can trust — the haunted-corridor light
+    const tube = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.08, 0.24),
+      new THREE.MeshStandardMaterial({ color: 0xeef2f6, emissive: 0xcfe4ff, emissiveIntensity: 0 }));
+    tube.position.set(-16, 2.6, -4);
+    tube.rotation.z = 0.06;
+    scene.add(tube);
+    const flickPt = this.lite ? null : new THREE.PointLight(0xcfe4ff, 0, 13, 2);
+    if (flickPt) { flickPt.position.set(-16, 2.35, -4); scene.add(flickPt); }
+    const flickGlow = glowSprite(0xcfe4ff, 2.8, 0);
+    flickGlow.position.set(-16, 2.45, -4);
+    scene.add(flickGlow);
+    fx.flicker = { tube, pt: flickPt, glow: flickGlow, on: false, nextAt: 0.5 };
     this._chaosFx = fx;
   }
 
@@ -286,6 +311,116 @@ export class Game {
     this._chaosAlarms = false;                        // the alarms just... stop
     this._mop = spawnCarryable(this, 'prop', -15, 1.0, 2.5,
       { color: 0x9a8a6a, label: 'Mop', size: { hx: 0.06, hy: 0.75, hz: 0.06, mass: 1.0 } });
+  }
+
+  // ---- the ending, when anyone died ----
+  // Fade out of the dark, back in on a normal DAYTIME ED — still wrecked,
+  // still burning, still bloody — and the janitor has seen enough.
+  _startJanitorScene() {
+    if (this._mopGranted || this._cut) return;
+    this._mopGranted = true;
+    this._chaosAlarms = false;
+    this.ui.screens.fade(true);
+    this.timers.push({ at: this.timeReal + 1.5, fn: () => {
+      this._lockNoon = true;                          // normal daylight over the wreckage
+      const j = this.world.add(new Character(this, 'janitor', this.map.spawnOutside.x, this.map.spawnOutside.z), 'chars');
+      j.isConsultant = true;                           // swept up by the reset codepaths
+      this._cut = { phase: 'janitor-in', t: 0, npc: j,
+        route: [{ ...this.map.entrance }, { ...this.map.insideWaypoint }] };
+      this.ui.screens.fade(false);
+    } });
+  }
+
+  _startGunmanScene() {
+    if (this._cut || this._shotFired) return;
+    const g = this.world.add(new Character(this, 'gunman', this.map.spawnOutside.x, this.map.spawnOutside.z), 'chars');
+    g.isConsultant = true;
+    this._cut = { phase: 'gunman-in', t: 0, npc: g,
+      route: [{ ...this.map.entrance }, { ...this.map.insideWaypoint }] };
+  }
+
+  // the little cutscene state machine: walk in → say the line → do the thing →
+  // walk out. Runs off fixedTick so it pauses with everything else.
+  _cutTick(dt) {
+    const c = this._cut;
+    if (!c) return;
+    c.t += dt;
+    const npc = c.npc;
+    if (!npc?.body) { this._cut = null; return; }
+    const ap = this.active.pos;
+    const np = npc.pos;
+    const stepRoute = (speed) => {
+      const wp = c.route?.[0];
+      if (!wp) return true;
+      if (Math.hypot(wp.x - np.x, wp.z - np.z) < 0.9) { c.route.shift(); return c.route.length === 0; }
+      this._steer(npc, wp.x, wp.z, speed, dt);
+      return false;
+    };
+    if (c.phase === 'janitor-in') {
+      if (c.route?.length) { stepRoute(0.6); return; }
+      const d = Math.hypot(ap.x - np.x, ap.z - np.z);
+      if (d > 1.7 && c.t < 45) { this._steer(npc, ap.x, ap.z, 0.6, dt); return; }
+      npc.applyMove(0, 0);
+      npc.yaw = Math.atan2(ap.x - np.x, ap.z - np.z);
+      this.ui.bubbles.say(npc, 'Fuck this, I quit. You can clean up after your own mess.', { hold: 6 });
+      c.phase = 'janitor-hand'; c.t = 0;
+      return;
+    }
+    if (c.phase === 'janitor-hand') {
+      if (c.t < 3.0) return;
+      const ch = this.active;                          // the mop changes hands
+      if (ch.carrying) this._consumeHeld(ch);
+      const a = ch.handAnchor();
+      this._mop = spawnCarryable(this, 'prop', a.x, 1.0, a.z,
+        { color: 0x9a8a6a, label: 'Mop', size: { hx: 0.06, hy: 0.75, hz: 0.06, mass: 1.0 } });
+      ch.carrying = this._mop; this._mop.heldBy = ch;
+      c.phase = 'npc-out'; c.t = 0;
+      c.route = [...this._routeTo(np, this.map.insideWaypoint), { ...this.map.spawnOutside }];
+      return;
+    }
+    if (c.phase === 'gunman-in') {
+      if (c.route?.length) { stepRoute(0.7); return; }
+      const d = Math.hypot(ap.x - np.x, ap.z - np.z);
+      if (d > 4.4 && c.t < 45) { this._steer(npc, ap.x, ap.z, 0.7, dt); return; }
+      npc.applyMove(0, 0);
+      npc.yaw = Math.atan2(ap.x - np.x, ap.z - np.z);
+      this.ui.bubbles.say(npc, 'This is for my mother, you sick fuck.', { hold: 5 });
+      c.phase = 'gunman-aim'; c.t = 0;
+      return;
+    }
+    if (c.phase === 'gunman-aim') {
+      npc.yaw = Math.atan2(ap.x - np.x, ap.z - np.z);
+      if (c.t < 1.6) return;
+      this._shotgunBlast(npc);
+      c.phase = 'npc-out'; c.t = 0;
+      c.route = [...this._routeTo(np, this.map.insideWaypoint), { ...this.map.spawnOutside }];
+      return;
+    }
+    if (c.phase === 'npc-out') {
+      if (stepRoute(0.66) || c.t > 35) { this._despawnConsultant(npc); this._cut = null; }
+    }
+  }
+
+  _shotgunBlast(npc) {
+    this._shotFired = true;
+    this.audio.shotgun?.();
+    const np = npc.pos;
+    const flash = glowSprite(0xffe9b0, 3.4, 0.95);     // muzzle flash
+    flash.position.set(np.x + Math.sin(npc.yaw) * 0.7, 1.2, np.z + Math.cos(npc.yaw) * 0.7);
+    this.renderer.scene.add(flash);
+    this.timers.push({ at: this.timeReal + 0.13, fn: () => this.renderer.scene.remove(flash) });
+    // the player ragdolls across the floor, through the blood, until something
+    // solid stops them. Physics supplies the furniture.
+    const ch = this.active;
+    if (ch.carrying) { ch.carrying.heldBy = null; ch.carrying = null; }  // the mop clatters away
+    const dx = ch.pos.x - np.x, dz = ch.pos.z - np.z;
+    const d = Math.hypot(dx, dz) || 1;
+    ch.sprawlTimer = 6; ch.slipMax = 6;
+    ch.slipDir = { x: dx / d, z: dz / d };
+    ch.body.setLinvel({ x: (dx / d) * 13, y: 2.4, z: (dz / d) * 13 }, true);
+    this._bloodTrailT = 2.6;                          // he picks the floor's blood up as he slides
+    // ten seconds of lying in it, then the slow fade and the verdict
+    this.timers.push({ at: this.timeReal + 10, fn: () => showYouDied(this) });
   }
 
   // waiting-room physics props, reset fresh each day — angry patients shove
@@ -390,6 +525,8 @@ export class Game {
     if (this.chaos) {
       // there is no do-over from the disaster — only the disaster, again
       this._mopGranted = false; this._mop = null; this._silentEternity = false;
+      this._cut = null; this._mopT = 0; this._shotFired = false;
+      this._bloodTrailT = 0; this._lockNoon = false;
       this.startChaos();
       return;
     }
@@ -472,10 +609,25 @@ export class Game {
         this._lastAlarmAt = this.timeReal;
         this.audio.alarm();
       }
-      // when every one of the ten is discharged or dead, the mop is provided
+      // when every one of the ten is discharged or dead, the ending begins
       if (!this._mopGranted && this._chaosPatients?.length &&
           this._chaosPatients.every((p) => p.sim.resolved || p.sim.state === 'dead')) {
-        this._grantMop();
+        if (this._chaosPatients.every((p) => p.sim.resolved)) this._grantMop(); // perfect run: the silent eternity
+        else this._startJanitorScene();                 // anyone died: the janitor has had enough
+      }
+      this._cutTick(dt);
+      // the mopping clock: three minutes of pushing that mop is all a grieving
+      // family will allow
+      if (this._mop?.heldBy && !this._shotFired && !this._cut) {
+        this._mopT = (this._mopT ?? 0) + dt;
+        if (this._mopT >= 180 && this._chaosPatients?.some((p) => p.sim.state === 'dead')) {
+          this._startGunmanScene();
+        }
+      }
+      // shot: he slides through the blood, picking it up as he goes
+      if (this._bloodTrailT > 0) {
+        this._bloodTrailT -= dt;
+        if ((this._tickN & 3) === 0) { const bp = this.active.pos; this.blood.addAt(bp.x, bp.z, 0.15); }
       }
       // days roll over silently, forever — there is no shift change coming
       if (this.clock.dayDone) { this.clock.minutes -= 24 * 60; this.clock.day += 1; }
@@ -1053,6 +1205,31 @@ export class Game {
         s.vz = 1.2 + this.rng.next() * 2.2;
       }
     }
+    // monitor light per room, tracking the occupant's vitals
+    for (const m of fx.monLights) {
+      const sim = m.bed.occupant?.sim;
+      let c = 0x223244, k = 0;
+      if (sim && sim.state !== 'dead') {
+        if (sim.critical) { c = 0xff3030; k = 1.3 + Math.sin(now * 9) * 0.8; } // crashing — pulses with the alarm
+        else if (sim.treated) { c = 0x35e06a; k = 0.8; }
+        else { c = 0xffc23c; k = 0.7; }
+      }
+      m.glow.material.color.setHex(c);
+      m.glow.material.opacity = Math.max(0, k) * 0.24;
+      if (m.pt) { m.pt.color.setHex(c); m.pt.intensity = Math.max(0, k) * 1.7; }
+    }
+    // the broken tube: dead, dead, STROBE, dead — never a rhythm you can trust
+    const fl = fx.flicker;
+    fl.nextAt -= dt;
+    if (fl.nextAt <= 0) {
+      fl.on = !fl.on && this.rng.next() < 0.72;
+      fl.nextAt = fl.on ? 0.05 + this.rng.next() * 0.3
+        : 0.06 + this.rng.next() * (this.rng.next() < 0.25 ? 2.4 : 0.4);
+    }
+    const fi = fl.on ? 1.5 + this.rng.next() * 1.5 : 0;
+    fl.tube.material.emissiveIntensity = fi;
+    fl.glow.material.opacity = fi * 0.16;
+    if (fl.pt) fl.pt.intensity = fi * 2.4;
     if (fx.flash && fx.flash.intensity > 0) fx.flash.intensity = Math.max(0, fx.flash.intensity - dt * 42);
     for (const s of fx.sparks) {
       if (s.life <= 0) { s.sp.visible = false; continue; }
@@ -1640,7 +1817,7 @@ export class Game {
     }
     // day/night: drift the whole ward from a bright noon to a dark 12 AM lit
     // mostly by its own fixtures + the call lights
-    this.renderer.setTimeOfDay(this.clock.running ? this.clock.minutes : 660);
+    this.renderer.setTimeOfDay(this._lockNoon ? 720 : this.clock.running ? this.clock.minutes : 660);
     const dark = 1 - this.renderer.daylight;   // 0 midday … 1 midnight
 
     // per-room CALL LIGHTS, by acuity:

@@ -171,4 +171,9 @@ export class Audio {
     this._noise(0.1, { gain: 0.05, freq: 3800, q: 0.7, sweepTo: 900 });
     this._tone(150, 0.05, { type: 'sawtooth', gain: 0.03, glide: 60 });
   }
+  shotgun() { // close-range 12-gauge: a slam of noise over a low body, then the ring
+    this._noise(0.3, { gain: 0.4, freq: 700, q: 0.4, sweepTo: 120 });
+    this._tone(58, 0.42, { type: 'sawtooth', gain: 0.2, glide: 32 });
+    this._noise(0.55, { gain: 0.1, freq: 2400, q: 0.6, sweepTo: 300, at: 0.06 });
+  }
 }
