@@ -171,11 +171,14 @@ test('chaos: two-minute die-off, then janitor → mop → gunman → You Died �
   expect(smear.streaked).toBe(true);   // the smear marks appear...
   expect(smear.poolsKept).toBe(true);  // ...and nothing is ever cleaned
 
-  // three minutes of mopping later: the gunman
+  // thirty seconds after the mop reaches your hands, the gunman comes —
+  // whether or not you are still holding it (put it down to prove the point)
   await page.evaluate(() => {
     const g = window.__game.game;
-    if (g._cut) { g._despawnConsultant(g._cut.npc); g._cut = null; }  // hurry the janitor out
-    g._mopT = 60;
+    const ch = g._mop.heldBy;
+    if (ch) ch.carrying = null;
+    g._mop.heldBy = null;                       // dropped. he is coming anyway.
+    g._mopGivenAt = g.timeReal - 30;
   });
   await page.waitForFunction(() => window.__game.game._cut?.phase?.startsWith('gunman'), null, { timeout: 10000 });
   await page.evaluate(() => {

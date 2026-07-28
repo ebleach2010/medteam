@@ -601,7 +601,7 @@ export class Game {
       // there is no do-over from the disaster — only the disaster, again
       this._mopGranted = false; this._mop = null; this._silentEternity = false;
       this._cut = null; this._mopT = 0; this._shotFired = false;
-      this._mopGivenAt = null;
+      this._mopGivenAt = null; this._gunmanSent = false;
       this._bloodTrailT = 0; this._lockNoon = false;
       this.startChaos();
       return;
@@ -695,9 +695,10 @@ export class Game {
       // the mopping clock: THIRTY SECONDS from the moment the mop is in your
       // hands. A wall clock, not a "while you're holding it" clock — put the
       // mop down, run, hide; he is coming anyway.
-      if (this._mopGivenAt != null && !this._shotFired &&
+      if (this._mopGivenAt != null && !this._shotFired && !this._gunmanSent &&
           this.timeReal - this._mopGivenAt >= 30 &&
           this._chaosPatients?.some((p) => p.sim.state === 'dead')) {
+        this._gunmanSent = true;              // ONCE — he doesn't need a second invitation
         // if the janitor is still shuffling toward the door, he can see himself out
         if (this._cut) { this._despawnConsultant(this._cut.npc); this._cut = null; }
         this._startGunmanScene();
