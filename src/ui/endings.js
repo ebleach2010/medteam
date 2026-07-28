@@ -45,6 +45,18 @@ export function showBSOD(game) {
       </div>
     </div>`;
   document.body.appendChild(el);
+  // the percentage CLIMBS — 20% to 99% over about four minutes, with the
+  // stalls and little jumps of a machine that is genuinely about to restart
+  // into the next thing. It is not. 99% is where it lives now. Forever.
+  const pct = el.querySelector('.b-pct');
+  let p = 20, stall = 0;
+  const tick = setInterval(() => {
+    if (p >= 99) { clearInterval(tick); return; }     // and that's the game
+    if (stall > 0) { stall -= 1; return; }
+    p = Math.min(99, p + (p > 90 ? 1 : Math.random() < 0.25 ? 2 : 1));
+    if (Math.random() < 0.1) stall = 3 + Math.floor(Math.random() * 6);
+    pct.textContent = `${p}% complete`;
+  }, 2400);
   // a QR-looking block of noise — deterministic, and deliberately unscannable
   const ctx = el.querySelector('.b-qr').getContext('2d');
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 60, 60);
