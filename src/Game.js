@@ -352,7 +352,7 @@ export class Game {
     const a = ch.handAnchor();
     this._mop = this._spawnMop(a.x, a.z);
     ch.carrying = this._mop; this._mop.heldBy = ch;
-    this._mopT = 55;                      // the gunman is seconds away
+    this._mopGivenAt = this.timeReal - 25;   // the gunman is ~5 seconds away
   }
 
   // a real mop: stringy head at the origin, wooden handle leaning to whoever
@@ -430,6 +430,7 @@ export class Game {
       const a = ch.handAnchor();
       this._mop = this._spawnMop(a.x, a.z);
       ch.carrying = this._mop; this._mop.heldBy = ch;
+      this._mopGivenAt = this.timeReal;        // thirty seconds on the clock
       c.phase = 'npc-out'; c.t = 0;
       c.route = [...this._routeTo(np, this.map.insideWaypoint), { ...this.map.spawnOutside }];
       return;
@@ -600,6 +601,7 @@ export class Game {
       // there is no do-over from the disaster — only the disaster, again
       this._mopGranted = false; this._mop = null; this._silentEternity = false;
       this._cut = null; this._mopT = 0; this._shotFired = false;
+      this._mopGivenAt = null; this._gunmanSent = false;
       this._bloodTrailT = 0; this._lockNoon = false;
       this.startChaos();
       return;
@@ -690,13 +692,16 @@ export class Game {
         else this._startJanitorScene();                 // anyone died: the janitor has had enough
       }
       this._cutTick(dt);
-      // the mopping clock: ONE minute of pushing that mop is all a grieving
-      // family will allow. Counts while you're holding it.
-      if (this._mop?.heldBy && !this._shotFired && !this._cut) {
-        this._mopT = (this._mopT ?? 0) + dt;
-        if (this._mopT >= 60 && this._chaosPatients?.some((p) => p.sim.state === 'dead')) {
-          this._startGunmanScene();
-        }
+      // the mopping clock: THIRTY SECONDS from the moment the mop is in your
+      // hands. A wall clock, not a "while you're holding it" clock — put the
+      // mop down, run, hide; he is coming anyway.
+      if (this._mopGivenAt != null && !this._shotFired && !this._gunmanSent &&
+          this.timeReal - this._mopGivenAt >= 30 &&
+          this._chaosPatients?.some((p) => p.sim.state === 'dead')) {
+        this._gunmanSent = true;              // ONCE — he doesn't need a second invitation
+        // if the janitor is still shuffling toward the door, he can see himself out
+        if (this._cut) { this._despawnConsultant(this._cut.npc); this._cut = null; }
+        this._startGunmanScene();
       }
       // shot: he slides through the blood, picking it up as he goes
       if (this._bloodTrailT > 0) {
@@ -946,9 +951,11 @@ export class Game {
     // fake diseases: ANY attempted intervention — cure, comfort, hug, juice —
     // kills them instantly. Helping is the one thing they cannot survive.
     if (sim.incurable && sim.state !== 'dead') {
-      sim.recordTx?.(label || 'intervention', 'fatal');
-      this.ui.announce(`☠ You try "${label || 'something'}" — they die instantly. There was never a cure.`, 'bad');
-      sim.die?.(`${label || 'an intervention'} — there was no cure`, true);
+      const cat = sim.catastrophe(label || 'that');
+      sim.recordTx?.(label || 'intervention', `☠ ${cat.short}`);
+      this.ui.announce(`☠ ${cat.line}`, 'bad');
+      this.ui.toast(`☠ ${sim.displayName}: ${cat.short.toUpperCase()}`, 'bad');
+      sim.die?.(cat.short, true);
       this.addScore(-50, 'You tried to help');
       return;
     }
@@ -1686,10 +1693,13 @@ export class Game {
       if (t.wait > 0) return;
       sim.surgeryDone = t.surgery.id;
       if (sim.incurable) {
-        // you cannot operate on a disease that does not exist
-        sim.recordTx?.(`🔪 ${t.surgery.label}`, 'fatal');
-        this.ui.toast(`☠ ${t.surgery.label} — they die on the table instantly. There was never a cure.`, 'bad');
-        sim.die?.(`${t.surgery.label} — there was no cure`, true);
+        // you cannot operate on a disease that does not exist — the table finds
+        // its own way to kill them
+        const cat = sim.catastrophe(t.surgery.label);
+        sim.recordTx?.(`🔪 ${t.surgery.label}`, `☠ ${cat.short}`);
+        this.ui.announce(`☠ On the table: ${cat.line}`, 'bad');
+        this.ui.toast(`☠ ${sim.displayName}: ${cat.short.toUpperCase()}`, 'bad');
+        sim.die?.(cat.short, true);
         this.addScore(-50, 'You tried to help');
       } else if (sim.case.surgery && sim.case.surgery === t.surgery.id) {
         sim.recordTx(`🔪 ${t.surgery.label}`, 'curative ✓');
